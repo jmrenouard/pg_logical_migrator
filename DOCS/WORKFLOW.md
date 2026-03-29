@@ -1,0 +1,145 @@
+# Migration Workflow — 14 Steps
+
+The `pg_logical_migrator` operates through a predefined 14-step sequence to ensure data integrity and minimal downtime. Each step maps to a specific function in the Python source code.
+
+---
+
+## Phase 1 — Pre-Flight Checks
+
+### Step 1: Connectivity Check
+
+- **Module**: `src/checker.py` → `DBChecker.check_connectivity()`
+- **Purpose**: Verify network connectivity and authentication for both source and destination servers.
+- **Action**: Attempt a connection using parameters from `config_migrator.ini`.
+- **Outcome**: OK if both connections succeed; FAIL if either one fails.
+
+### Step 2: Problematic Objects Analysis
+
+- **Module**: `src/checker.py` → `DBChecker.check_problematic_objects()`
+- **Purpose**: Identify potential migration blockers before starting replication.
+- **Checks**:
+  - Tables without a Primary Key (`pg_class` + `pg_index`)
+  - Count of Large Objects (`pg_largeobject_metadata`)
+  - Tables with Identity Columns (`information_schema.columns`)
+  - Sequences without an owning table (`pg_depend`)
+- **Outcome**: A diagnostic summary in the Result Zone.
+
+### Step 3: Parameter Verification
+
+- **Module**: `src/checker.py` → `DBChecker.check_replication_params()`
+- **Purpose**: Ensure the source PostgreSQL server is configured for logical replication.
+- **Checks**: `wal_level`, `max_replication_slots`, `max_wal_senders`, `max_worker_processes`, `server_version`.
+- **Details**: See [Configuration Guide](CONFIGURATION.md).
+
+---
+
+## Phase 2 — Replication Setup
+
+### Step 4: Schema Migration
+
+- **Module**: `src/migrator.py` → `Migrator.step4_migrate_schema()`
+- **Purpose**: Replicate the entire database structure to the destination.
+- **Action**: Runs `pg_dump -s --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 5: Source Replication Setup
+
+- **Module**: `src/migrator.py` → `Migrator.step5_setup_source()`
+- **Purpose**: Prepare the source instance for data streaming.
+- **Action**: Creates the logical Publication (for `ALL TABLES`) and the Replication Slot on the source.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 6: Destination Replication Setup
+
+- **Module**: `src/migrator.py` → `Migrator.step6_setup_destination()`
+- **Purpose**: Start data ingestion from the source.
+- **Action**: Creates the logical Subscription on the destination server, linking it to the source publication.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 7: Replication Monitoring (Watch)
+
+- **Module**: `src/migrator.py` → `Migrator.get_replication_status()`
+- **Purpose**: Track the progress of initial data synchronization and ongoing replication.
+- **Action**: Queries `pg_stat_subscription` on the destination to display the current replication lag and sync state.
+- **TUI Only**: Real-time monitoring in the TUI Result Zone.
+
+---
+
+## Phase 3 — Post-Synchronization
+
+> These steps are executed after the initial table data sync is complete. In `--auto` mode, a 10-second pause is injected after Step 6 before proceeding.
+
+### Step 8: Materialized Views Refresh
+
+- **Module**: `src/post_sync.py` → `PostSync.refresh_materialized_views()`
+- **Purpose**: Synchronize non-table objects that are not replicated by logical subscription.
+- **Action**: Queries all materialized views on the destination and executes `REFRESH MATERIALIZED VIEW CONCURRENTLY` for each.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 9: Sequence Synchronization (Fetch)
+
+- **Module**: `src/post_sync.py` → `PostSync.sync_sequences()` (fetch phase)
+- **Purpose**: Capture the current sequence values from the source to prevent ID collisions on the destination.
+- **Action**: Fetches `last_value` for all sequences using `pg_sequences` on the source.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 10: Sequence Activation (Apply)
+
+- **Module**: `src/post_sync.py` → `PostSync.sync_sequences()` (apply phase)
+- **Purpose**: Update sequences on the destination to match the source's current state.
+- **Action**: Executes `SELECT setval(...)` for each sequence using the values fetched in Step 9.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+### Step 11: Trigger Activation
+
+- **Module**: `src/post_sync.py` → `PostSync.enable_triggers()`
+- **Purpose**: Re-enable business logic triggers that may have been disabled during the initial sync.
+- **Action**: Executes `ALTER TABLE ... ENABLE TRIGGER ALL` for each user table on the destination.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+---
+
+## Phase 4 — Validation & Cutover
+
+### Step 13: Object Audit
+
+- **Module**: `src/validation.py` → `Validator.audit_objects()`
+- **Purpose**: Verify 100% schema parity between source and destination.
+- **Action**: Counts all objects (TABLE, VIEW, INDEX, SEQUENCE, FUNCTION) on both servers using `pg_class` and compares the totals.
+- **Returns**: `(success, message, commands_run, outputs, report_list)`
+
+### Step 14: Data Validation (Row Parity)
+
+- **Module**: `src/validation.py` → `Validator.compare_row_counts()`
+- **Purpose**: Confirm data consistency after synchronization.
+- **Action**: Executes `SELECT count(*)` for every user table on both servers and compares the results. Reports OK or DIFF per table.
+- **Returns**: `(success, message, commands_run, outputs, report_list)`
+
+---
+
+## Phase 5 — Cleanup
+
+### Step 12: Replication Termination
+
+- **Module**: `src/migrator.py` → `Migrator.step12_terminate_replication()`
+- **Purpose**: Finalise the migration and free all replication resources.
+- **Action**: Drops the Subscription on the destination, then drops the Publication and the Replication Slot on the source.
+- **Returns**: `(success, message, commands_run, outputs)`
+
+> **Note**: Step 12 is displayed last in the TUI sidebar because it is a destructive, one-way action. It should only be triggered after Steps 13 and 14 confirm full data parity.
+
+---
+
+## Automated Mode Execution Order
+
+When run with `--auto`, the steps execute in this strict sequence:
+
+```text
+1 → 4 → 5 → 6 → [10s wait] → 8 → 9/10 → 11 → 13 → 14 → 12
+```
+
+See [TOOLS.md](TOOLS.md) for details on the `--auto` flag.
+
+---
+
+[Return to Documentation Index](README.md)
