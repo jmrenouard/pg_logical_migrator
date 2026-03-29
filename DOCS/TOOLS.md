@@ -1,6 +1,6 @@
 # Tools & Usage Guide
 
-This document covers all the ways to invoke and operate `pg_logical_migrator`, from the interactive Terminal UI (built with [Textual](https://textual.textualize.io/)) to fully automated CI/CD pipelines.
+This document covers all the ways to invoke and operate `pg_logical_migrator`, from single-step commands to the interactive Terminal UI and fully automated CI/CD pipelines.
 
 ---
 
@@ -8,11 +8,13 @@ This document covers all the ways to invoke and operate `pg_logical_migrator`, f
 
 1. [Prerequisites](#1-prerequisites)
 2. [Configuration File](#2-configuration-file)
-3. [Makefile Targets (Recommended Entry Point)](#3-makefile-targets)
-4. [CLI — Direct Invocation](#4-cli--direct-invocation)
-5. [Interactive TUI Mode](#5-interactive-tui-mode)
-6. [Automated Mode (`--auto`)](#6-automated-mode---auto)
-7. [Output Artifacts](#7-output-artifacts)
+3. [Makefile Targets](#3-makefile-targets)
+4. [CLI — pg_migrator.py](#4-cli--pg_migratorpy)
+5. [Global Options](#5-global-options)
+6. [Available Commands](#6-available-commands)
+7. [Interactive TUI Mode](#7-interactive-tui-mode)
+8. [Automated Mode (auto)](#8-automated-mode-auto)
+9. [Output Artifacts](#9-output-artifacts)
 
 ---
 
@@ -38,9 +40,13 @@ This creates `venv/` and installs everything listed in `requirements.txt`.
 
 ## 2. Configuration File
 
-All connection parameters are read from an `.ini` file. Copy the sample before first use:
+All connection parameters are read from an `.ini` file. Generate or copy the sample before first use:
 
 ```bash
+# Generate a new sample config
+python pg_migrator.py generate-config --output config_migrator.ini
+
+# Or copy the existing sample
 cp config_migrator.sample.ini config_migrator.ini
 ```
 
@@ -71,13 +77,11 @@ log_file          = pg_migrator.log       # Default log path (overridden in --au
 
 > **Important**: The PostgreSQL user must have `REPLICATION` privilege on the source and `SUPERUSER` (or appropriate `pg_hba.conf` replication entry) for the destination.
 
-You can point to a different config file with the `--config` flag at runtime.
-
 ---
 
 ## 3. Makefile Targets
 
-The `Makefile` is the primary orchestration interface.
+The `Makefile` provides quick-access orchestration targets.
 
 ```bash
 make help
@@ -115,41 +119,152 @@ make env-down         # clean up containers
 
 ---
 
-## 4. CLI — Direct Invocation
+## 4. CLI — pg_migrator.py
 
-The entry point is `src/main.py`. It accepts the following arguments:
+The primary entry point is `pg_migrator.py` at the project root. It uses subcommands to expose every migration step individually, plus the full pipeline and TUI modes.
 
 ```bash
-venv/bin/python src/main.py [OPTIONS]
+python pg_migrator.py --help
+python pg_migrator.py <command> [options]
 ```
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--config PATH` | string | `config_migrator.ini` | Path to the `.ini` configuration file |
-| `--auto` | flag | `False` | Run in non-interactive automated mode |
-| `--results-dir PATH` | string | `RESULTS/<timestamp>` | Directory where logs and HTML reports are written |
+> **Note**: The legacy entry point `src/main.py` is still functional but `pg_migrator.py` is now the recommended CLI with richer options.
 
-### Examples
+---
+
+## 5. Global Options
+
+These options apply to **all** commands and must be placed **before** the subcommand:
 
 ```bash
-# Interactive TUI with default config
-venv/bin/python src/main.py
+python pg_migrator.py [GLOBAL OPTIONS] <command> [COMMAND OPTIONS]
+```
 
-# Interactive TUI with a custom config
-venv/bin/python src/main.py --config /etc/pg_migrator/prod.ini
+| Option | Short | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--version` | `-V` | flag | — | Display the program version and exit |
+| `--config FILE` | `-c` | string | `config_migrator.ini` | Path to the `.ini` configuration file |
+| `--results-dir DIR` | — | string | `RESULTS/<timestamp>` | Directory for storing results and HTML reports |
+| `--loglevel LEVEL` | — | choice | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `--log-file FILE` | — | string | auto | Path to the log file |
+| `--sync-delay SECONDS` | — | integer | `10` | Seconds to wait after subscription creation for initial sync |
+| `--dry-run` | `-n` | flag | `False` | Simulate execution without making any changes |
 
-# Fully automated run, results in a custom directory
-venv/bin/python src/main.py --auto --results-dir /var/reports/migration_prod
+### Examples with global options
 
-# Automated run, results auto-named by timestamp
-venv/bin/python src/main.py --auto
+```bash
+# Use a custom config and DEBUG logging
+python pg_migrator.py -c /etc/pg_migrator/prod.ini --loglevel DEBUG check
+
+# Dry-run the full pipeline with a 20s sync delay
+python pg_migrator.py --dry-run --sync-delay 20 auto
+
+# Store results in a custom directory
+python pg_migrator.py --results-dir /var/reports/migration_001 auto
 ```
 
 ---
 
-## 5. Interactive TUI Mode
+## 6. Available Commands
 
-Launched by default (without `--auto`). Presents a full-screen terminal dashboard built with the `textual` framework.
+Each command corresponds to one or more steps in the 14-step migration workflow. Use `python pg_migrator.py <command> --help` for per-command details.
+
+### Pre-Flight Checks (Steps 1–3)
+
+| Command | Step | Description |
+| --- | --- | --- |
+| `check` | 1 | Test connectivity to source and destination databases |
+| `diagnose` | 2 | Pre-migration diagnostics: tables without PK, LOBs, identity columns, unowned sequences |
+| `params` | 3 | Verify replication parameters (`wal_level`, `max_replication_slots`, `max_wal_senders`) |
+
+```bash
+python pg_migrator.py check
+python pg_migrator.py diagnose
+python pg_migrator.py params
+```
+
+### Replication Setup (Steps 4–7)
+
+| Command | Step | Description |
+| --- | --- | --- |
+| `migrate-schema` | 4 | Copy schema from source to destination (`pg_dump -s \| psql`) |
+| `setup-pub` | 5 | Create publication (`FOR ALL TABLES`) on the source |
+| `setup-sub` | 6 | Create subscription on the destination |
+| `repl-status` | 7 | Show current logical replication status from `pg_stat_subscription` |
+
+```bash
+python pg_migrator.py migrate-schema
+python pg_migrator.py setup-pub
+python pg_migrator.py setup-sub
+python pg_migrator.py repl-status
+```
+
+### Post-Sync Operations (Steps 8–11)
+
+| Command | Step | Description |
+| --- | --- | --- |
+| `sync-sequences` | 8/9 | Read current sequence values from source and apply on destination |
+| `enable-triggers` | 10 | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table |
+| `disable-triggers` | — | Utility: disable all triggers (inverse of Step 10) |
+| `refresh-matviews` | 11 | `REFRESH MATERIALIZED VIEW` for every materialized view |
+
+```bash
+python pg_migrator.py sync-sequences
+python pg_migrator.py enable-triggers
+python pg_migrator.py refresh-matviews
+```
+
+### Validation (Steps 13–14)
+
+| Command | Step | Description |
+| --- | --- | --- |
+| `audit-objects` | 13 | Compare object counts (tables, views, indexes, sequences, functions) between source and destination |
+| `validate-rows` | 14 | `SELECT COUNT(*)` on every table in both databases and report differences |
+
+```bash
+python pg_migrator.py audit-objects
+python pg_migrator.py validate-rows
+```
+
+### Cleanup (Step 12)
+
+| Command | Step | Description |
+| --- | --- | --- |
+| `cleanup` | 12 | Drop subscription, publication, and replication slot (**destructive**) |
+
+> **Warning**: Always run `audit-objects` and `validate-rows` **before** `cleanup` to confirm data parity.
+
+```bash
+python pg_migrator.py cleanup
+```
+
+### Pipeline & UI Commands
+
+| Command | Description |
+| --- | --- |
+| `auto` | Run the full 14-step automated pipeline with HTML report generation |
+| `tui` | Launch the interactive Terminal UI (Textual) for supervised migration |
+| `generate-config` | Generate a sample `config_migrator.ini` file |
+
+```bash
+# Full automated pipeline
+python pg_migrator.py auto
+
+# Dry-run (shows steps without executing)
+python pg_migrator.py --dry-run auto
+
+# Interactive TUI
+python pg_migrator.py tui
+
+# Generate a config file
+python pg_migrator.py generate-config --output my_config.ini
+```
+
+---
+
+## 7. Interactive TUI Mode
+
+Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashboard built with the `textual` framework.
 
 ```text
 ┌──────────────────── PostgreSQL Logical Migrator ────────────────────┐
@@ -182,7 +297,7 @@ Launched by default (without `--auto`). Presents a full-screen terminal dashboar
 
 ---
 
-## 6. Automated Mode (`--auto`)
+## 8. Automated Mode (auto)
 
 Runs the full migration pipeline non-interactively in a predefined sequence:
 
@@ -192,7 +307,7 @@ Runs the full migration pipeline non-interactively in a predefined sequence:
 | 4 | `migrator.step4_migrate_schema()` | Schema migration (`pg_dump -s` → destination) |
 | 5 | `migrator.step5_setup_source()` | Create Publication + Replication Slot on source |
 | 6 | `migrator.step6_setup_destination()` | Create Subscription on destination |
-| — | `time.sleep(10)` | Wait 10 seconds for initial table sync |
+| — | `time.sleep(sync_delay)` | Wait for initial table sync (default: 10s, configurable via `--sync-delay`) |
 | 8 | `post_sync.refresh_materialized_views()` | Refresh materialized views on destination |
 | 9/10 | `post_sync.sync_sequences()` | Fetch & apply sequence values |
 | 11 | `post_sync.enable_triggers()` | Re-enable triggers on destination |
@@ -211,9 +326,42 @@ RESULTS/
     └── migration_report.html
 ```
 
+**Dry-run mode**: Use `--dry-run` to preview the sequence without executing any step:
+
+```bash
+python pg_migrator.py --dry-run auto
+```
+
+Output:
+
+```text
+============================================================
+  pg_logical_migrator — Automated Pipeline v1.0.0
+  Config      : config_migrator.ini
+  Results dir : RESULTS/20260329_231754
+  Log level   : INFO
+  Sync delay  : 10s
+  Mode        : DRY-RUN (no changes)
+============================================================
+
+  [DRY-RUN] Step  1 : Connectivity Check
+  [DRY-RUN] Step  4 : Schema Migration (pg_dump -s | psql)
+  [DRY-RUN] Step  5 : Create Publication
+  [DRY-RUN] Step  6 : Create Subscription
+  [DRY-RUN] Step -- : Wait 10s for initial sync
+  [DRY-RUN] Step  8 : Refresh Materialized Views
+  [DRY-RUN] Step  9 : Sync Sequences
+  [DRY-RUN] Step 10 : Enable Triggers
+  [DRY-RUN] Step 13 : Object Audit
+  [DRY-RUN] Step 14 : Row Parity Check
+  [DRY-RUN] Step 12 : Cleanup Replication
+
+  No changes were made.
+```
+
 ---
 
-## 7. Output Artifacts
+## 9. Output Artifacts
 
 | Artifact | Location | Description |
 | --- | --- | --- |

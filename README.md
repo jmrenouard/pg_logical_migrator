@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a full-screen Terminal UI (TUI) for supervised, step-by-step migrations and an automated mode (`--auto`) for pipeline integration.
+**pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and an automated mode for pipeline integration.
 
 ---
 
@@ -23,15 +23,16 @@
 ## Architecture at a Glance
 
 ```text
+pg_migrator.py              # CLI entry point with all commands & options
 src/
-├── config.py           # INI file reader
-├── db.py               # PostgreSQL connection wrapper (psycopg v3)
-├── checker.py          # Steps 1–3: Connectivity, diagnostics, param checks
-├── migrator.py         # Steps 4–7, 12: Schema, pub/sub setup, cleanup
-├── post_sync.py        # Steps 8–11: MatViews, sequences, triggers
-├── validation.py       # Steps 13–14: Object audit, row parity
-├── report_generator.py # HTML report engine
-└── main.py             # TUI App + --auto orchestrator (entry point)
+├── config.py               # INI file reader
+├── db.py                   # PostgreSQL connection wrapper (psycopg v3)
+├── checker.py              # Steps 1–3: Connectivity, diagnostics, param checks
+├── migrator.py             # Steps 4–7, 12: Schema, pub/sub setup, cleanup
+├── post_sync.py            # Steps 8–11: MatViews, sequences, triggers
+├── validation.py           # Steps 13–14: Object audit, row parity
+├── report_generator.py     # HTML report engine
+└── main.py                 # TUI App (Textual)
 ```
 
 ---
@@ -60,14 +61,56 @@ Edit the `[source]`, `[destination]`, and `[replication]` sections with your con
 ### 3. Run
 
 ```bash
-# Interactive TUI (supervised mode)
-venv/bin/python src/main.py
+# Check connectivity first
+python pg_migrator.py check
 
-# Fully automated mode (pipeline-friendly)
+# Pre-flight diagnostics
+python pg_migrator.py diagnose
+
+# Dry-run the full pipeline (no changes)
+python pg_migrator.py --dry-run auto
+
+# Full automated migration
+python pg_migrator.py auto
+
+# Interactive TUI (supervised mode)
+python pg_migrator.py tui
+
+# Or use the Makefile shortcut:
 make run-auto
-# or:
-venv/bin/python src/main.py --auto --results-dir /var/reports/migration_run_1
 ```
+
+---
+
+## CLI Quick Reference
+
+```bash
+python pg_migrator.py [OPTIONS] <command>
+```
+
+| Command | Step | Description |
+| :--- | :--- | :--- |
+| `check` | 1 | Test source/destination connectivity |
+| `diagnose` | 2 | Pre-migration diagnostics (PK, LOBs, sequences) |
+| `params` | 3 | Verify replication parameters |
+| `migrate-schema` | 4 | Copy schema (`pg_dump -s \| psql`) |
+| `setup-pub` | 5 | Create publication on source |
+| `setup-sub` | 6 | Create subscription on destination |
+| `repl-status` | 7 | Show replication status |
+| `sync-sequences` | 8/9 | Synchronize sequence values |
+| `enable-triggers` | 10 | Enable triggers on destination |
+| `disable-triggers` | — | Disable triggers (utility) |
+| `refresh-matviews` | 11 | Refresh materialized views |
+| `audit-objects` | 13 | Compare object counts |
+| `validate-rows` | 14 | Compare row counts per table |
+| `cleanup` | 12 | Drop sub/pub/slot (destructive) |
+| `auto` | All | Full automated 14-step pipeline |
+| `tui` | — | Interactive Terminal UI |
+| `generate-config` | — | Generate sample config file |
+
+**Global options**: `--config`, `--dry-run`, `--loglevel`, `--log-file`, `--results-dir`, `--sync-delay`, `--version`
+
+Full CLI documentation: **[DOCS/TOOLS.md](DOCS/TOOLS.md)**
 
 ---
 
@@ -75,7 +118,7 @@ venv/bin/python src/main.py --auto --results-dir /var/reports/migration_run_1
 
 | Document | Description |
 | :--- | :--- |
-| **[DOCS/TOOLS.md](DOCS/TOOLS.md)** | CLI flags, Makefile targets, TUI walkthrough, automated mode, output artifacts |
+| **[DOCS/TOOLS.md](DOCS/TOOLS.md)** | CLI commands, global options, Makefile targets, TUI walkthrough, automated mode |
 | **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | Deep dive into every one of the 14 migration steps with module references |
 | **[DOCS/CONCEPTS.md](DOCS/CONCEPTS.md)** | PostgreSQL logical replication: publish/subscribe, WAL, replication slots |
 | **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | Required PostgreSQL server parameters and `config_migrator.ini` reference |
