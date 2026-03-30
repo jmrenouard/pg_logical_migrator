@@ -14,6 +14,7 @@ These settings ensure the source can generate and hold logical decoding data.
 | `max_worker_processes` | Sized for load | Total background worker processes. Must support the replication load and match the target server. |
 
 ### Security (`pg_hba.conf`)
+
 You must explicitly authorize the target server's IP to connect using a user with `REPLICATION` or `SUPERUSER` privileges.
 
 ---
@@ -27,7 +28,7 @@ These settings ensure the target can ingest and apply the replicated changes.
 | `wal_level` | `logical` | Recommended to set to `logical` even on the subscriber for consistency. |
 | `max_replication_slots` | `>= 1` | Maximum active subscriptions + `tablesync` workers. (Default: 10). |
 | `max_logical_replication_workers` | `>= 1` | Maximum processes dedicated to applying replication. (Default: 4). |
-| `max_sync_workers_per_subscription` | `>= 1` | Parallelism specifically for the initial data copy phase. |
+| `max_sync_workers_per_subscription` | `>= 4` | Parallelism specifically for the initial data copy phase. |
 | `max_worker_processes` | Sized for load | Should be `>=` source server to avoid connection refusals. |
 
 ---

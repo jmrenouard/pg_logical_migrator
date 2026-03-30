@@ -29,7 +29,7 @@ publication_name = test_pub
     cfg = Config(str(config_file))
     assert cfg.get_source_conn() == "postgresql://user:pwd@localhost:5432/src_db"
     assert cfg.get_dest_conn() == "postgresql://admin:admin_pwd@remote:5433/dst_db"
-    assert cfg.get_replication()['slot_name'] == "test_slot"
+    assert cfg.get_replication()['slot_name'] == "test_slot_src_db_public"
 
 def test_config_not_found():
     with pytest.raises(FileNotFoundError):

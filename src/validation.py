@@ -6,7 +6,7 @@ class Validator:
         self.dest = dest_client
 
     def compare_row_counts(self):
-        logging.info("Comparing row counts between source and destination...")
+        logging.info("[BOTH] Comparing row counts between source and destination...")
         query_tables = """
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
@@ -16,14 +16,14 @@ class Validator:
         """
         tables = self.source.execute_query(query_tables) or []
         report = []
-        cmds = [query_tables]
+        cmds = [f"[SOURCE] {query_tables}"]
         outs = ["Fetched list of tables"]
         
         for row in tables:
             schema = row['schema_name']
             name = row['table_name']
             q_count = f'SELECT count(*) FROM "{schema}"."{name}"'
-            cmds.append(q_count)
+            cmds.append(f"[BOTH] {q_count}")
             try:
                 s_res = self.source.execute_query(q_count)
                 d_res = self.dest.execute_query(q_count)
@@ -40,7 +40,7 @@ class Validator:
                     "status": status
                 })
             except Exception as e:
-                logging.error(f"Error counting table {schema}.{name}: {e}")
+                logging.error(f"[BOTH] Error counting table {schema}.{name}: {e}")
                 outs.append(f"{schema}.{name}: ERROR - {e}")
                 report.append({
                     "table": f"{schema}.{name}",
@@ -55,7 +55,7 @@ class Validator:
 
     def audit_objects(self):
         """Step 13: Audit and compare all object counts."""
-        logging.info("Auditing object counts between source and destination...")
+        logging.info("[BOTH] Auditing object counts between source and destination...")
         query = """
         SELECT 'TABLE' AS type, count(*)::int as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
         UNION ALL
@@ -84,4 +84,4 @@ class Validator:
                 "status": "OK" if s_val == d_val else "DIFF"
             })
         
-        return True, "Object audit completed", [query], ["Source counts: " + str(s_counts) + "\nDest counts: " + str(d_counts)], report
+        return True, "Object audit completed", [f"[BOTH] {query}"], ["Source counts: " + str(s_counts) + "\nDest counts: " + str(d_counts)], report

@@ -67,17 +67,20 @@ python pg_migrator.py check
 # Pre-flight diagnostics
 python pg_migrator.py diagnose
 
-# Dry-run the full pipeline (no changes)
-python pg_migrator.py --dry-run auto
+# Dry-run the pipeline (simulate steps 1-3)
+python pg_migrator.py diagnose
 
-# Full automated migration
-python pg_migrator.py auto
+# Initialize replication (and drop existing DB)
+python pg_migrator.py init-replication --drop-dest
+
+# Finalize migration
+python pg_migrator.py post-migration
 
 # Interactive TUI (supervised mode)
 python pg_migrator.py tui
 
 # Or use the Makefile shortcut:
-make run-auto
+make run-pipeline
 ```
 
 ---
@@ -93,6 +96,7 @@ python pg_migrator.py [OPTIONS] <command>
 | `check` | 1 | Test source/destination connectivity |
 | `diagnose` | 2 | Pre-migration diagnostics (PK, LOBs, sequences) |
 | `params` | 3 | Verify replication parameters |
+| `apply-params` | 3 | Apply required replication parameters to target |
 | `migrate-schema` | 4 | Copy schema (`pg_dump -s \| psql`) |
 | `setup-pub` | 5 | Create publication on source |
 | `setup-sub` | 6 | Create subscription on destination |
@@ -104,7 +108,8 @@ python pg_migrator.py [OPTIONS] <command>
 | `audit-objects` | 13 | Compare object counts |
 | `validate-rows` | 14 | Compare row counts per table |
 | `cleanup` | 12 | Drop sub/pub/slot (destructive) |
-| `auto` | All | Full automated 14-step pipeline |
+| `init-replication` | 1-7 | Initialize replication and sync schema |
+| `post-migration` | 8-14 | Finalize migration and cleanup |
 | `tui` | — | Interactive Terminal UI |
 | `generate-config` | — | Generate sample config file |
 
@@ -122,6 +127,7 @@ Full CLI documentation: **[DOCS/TOOLS.md](DOCS/TOOLS.md)**
 | **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | Deep dive into every one of the 14 migration steps with module references |
 | **[DOCS/CONCEPTS.md](DOCS/CONCEPTS.md)** | PostgreSQL logical replication: publish/subscribe, WAL, replication slots |
 | **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | Required PostgreSQL server parameters and `config_migrator.ini` reference |
+| **[DOCS/DOCKER.md](DOCS/DOCKER.md)** | Building and running the application within an isolated Docker container |
 | **[DOCS/LIFECYCLE.md](DOCS/LIFECYCLE.md)** | High-level migration phases from preparation to final cutover |
 | **[DOCS/VALIDATION.md](DOCS/VALIDATION.md)** | Critical control points and schema verification checklist |
 | **[DOCS/LIMITATIONS.md](DOCS/LIMITATIONS.md)** | Constraints, unsupported objects, and the row identification problem |

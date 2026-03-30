@@ -17,11 +17,13 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 
 - **Module**: `src/checker.py` → `DBChecker.check_problematic_objects()`
 - **Purpose**: Identify potential migration blockers before starting replication.
-- **Checks**:
+- **Checks on Source**:
   - Tables without a Primary Key (`pg_class` + `pg_index`)
   - Count of Large Objects (`pg_largeobject_metadata`)
   - Tables with Identity Columns (`information_schema.columns`)
   - Sequences without an owning table (`pg_depend`)
+  - Unlogged, Temporary, and Foreign tables
+  - Materialized views
 - **Outcome**: A diagnostic summary in the Result Zone.
 
 ### Step 3: Parameter Verification
@@ -60,14 +62,14 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 
 - **Module**: `src/migrator.py` → `Migrator.get_replication_status()`
 - **Purpose**: Track the progress of initial data synchronization and ongoing replication.
-- **Action**: Queries `pg_stat_subscription` on the destination to display the current replication lag and sync state.
-- **TUI Only**: Real-time monitoring in the TUI Result Zone.
+- **Action**: Queries `pg_stat_subscription`, `pg_subscription_rel` on the destination, and `pg_stat_replication`, `pg_replication_slots`, `pg_publication_tables` on the source to display the current synchronization state of tables.
+- **TUI/CLI**: Real-time monitoring in the TUI Result Zone or via the `repl-status` CLI command.
 
 ---
 
 ## Phase 3 — Post-Synchronization
 
-> These steps are executed after the initial table data sync is complete. In `--auto` mode, a 10-second pause is injected after Step 6 before proceeding.
+> These steps are executed as part of the `post-migration` pipeline command after the initial data transfer is complete. They ensure consistency of non-replicated objects (sequences, materialized views, triggers).
 
 ### Step 8: Materialized Views Refresh
 
@@ -130,15 +132,27 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 
 ---
 
-## Automated Mode Execution Order
+## Incremental Pipeline Execution Order
 
-When run with `--auto`, the steps execute in this strict sequence:
+The monolithic `--auto` mode has been replaced by an incremental two-phase pipeline for better safety and control.
+
+### A. Initialization (`init-replication`)
+
+Leaves replication active for continuous syncing.
 
 ```text
-1 → 4 → 5 → 6 → [10s wait] → 8 → 9/10 → 11 → 13 → 14 → 12
+1 (Connectivity) → 2 (Diagnose) → 3 (Params) → 4 (Schema) → 5 (Pub) → 6 (Sub) → 7 (Polling Wait) → 13 (Audit) → 14 (Row Parity)
 ```
 
-See [TOOLS.md](TOOLS.md) for details on the `--auto` flag.
+### B. Post Migration (`post-migration`)
+
+Performs cleanup and finalizes destination objects.
+
+```text
+1 (Connectivity) → 12 (Stop Replication) → 8 (Refresh MatViews) → 9/10 (Sync Sequences) → 11 (Enable Triggers) → 13 (Audit) → 14 (Row Parity)
+```
+
+See [TOOLS.md](TOOLS.md) for full pipeline documentation.
 
 ---
 

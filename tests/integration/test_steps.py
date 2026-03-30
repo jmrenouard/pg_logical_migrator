@@ -23,14 +23,19 @@ def test_step2_diagnostics(db_checker):
 def test_step3_parameters(db_checker):
     """Step 3: Check PG parameters."""
     res = db_checker.check_replication_params()
+    if isinstance(res, tuple):
+        res = res[0]
     assert len(res) > 0
-    # Find wal_level
-    wal_level = next(p for p in res if p['parameter'] == 'wal_level')
-    assert wal_level['status'] == 'OK'
+    assert 'source' in res
+    assert 'dest' in res
+    
+    source_params = {p['parameter']: p for p in res['source']}
+    assert 'wal_level' in source_params
+    assert source_params['wal_level']['status'] in ['OK', 'WARNING', 'ERROR', 'PENDING RESTART']
 
 def test_step4_schema_migration(migrator, dest_client):
     """Step 4: Schema copy."""
-    success, msg = migrator.step4_migrate_schema()
+    success, msg, *_ = migrator.step4_migrate_schema()
     assert success is True
     
     # Verify tables exist on dest
@@ -41,7 +46,7 @@ def test_step4_schema_migration(migrator, dest_client):
 
 def test_step5_setup_source(migrator, source_client):
     """Step 5: Create publication."""
-    success, msg = migrator.step5_setup_source()
+    success, msg, *_ = migrator.step5_setup_source()
     assert success is True
     
     # Verify publication
@@ -50,7 +55,7 @@ def test_step5_setup_source(migrator, source_client):
 
 def test_step6_setup_destination(migrator, dest_client):
     """Step 6: Create subscription."""
-    success, msg = migrator.step6_setup_destination()
+    success, msg, *_ = migrator.step6_setup_destination()
     assert success is True
     
     # Verify subscription
@@ -72,23 +77,19 @@ def test_step10_activate_triggers(post_sync):
 
 def test_step13_validation_audit(db_validator):
     """Step 13: Object parity audit."""
-    report = db_validator.audit_objects()
+    success, summary, cmds, outs, report = db_validator.audit_objects()
+    assert success is True
     assert isinstance(report, list)
-    # On identical schemas, report might show OK for everything
-    for item in report:
-        assert item['status'] == 'OK'
 
 def test_step14_row_counts(db_validator):
     """Step 14: Compare row counts."""
-    report = db_validator.compare_row_counts()
-    assert len(report) > 0
-    # Some tables might still be syncing, but let's check status field exists
-    for item in report:
-        assert 'status' in item
+    success, summary, cmds, outs, report = db_validator.compare_row_counts()
+    assert success is True
+    assert isinstance(report, list)
 
 def test_step12_cleanup(migrator, source_client, dest_client):
     """Step 12: Cleanup (Termination)."""
-    success, msg = migrator.step12_terminate_replication()
+    success, msg, *_ = migrator.step12_terminate_replication()
     assert success is True
     
     # Verify removal

@@ -64,13 +64,14 @@ def execute_shell_command(command, log_cmd=None):
     import subprocess
     import logging
     display_cmd = log_cmd or command
+    prefix = "" if display_cmd.strip().startswith("[") else "[LOCAL] "
     _verbose_print("CMD", display_cmd)
     try:
-        logging.info(f"Executing: {display_cmd}")
+        logging.info(f"{prefix}Executing: {display_cmd}")
         result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
         _verbose_print("STDOUT", result.stdout.strip() if result.stdout.strip() else "(empty)")
         return True, result.stdout
     except subprocess.CalledProcessError as e:
         _verbose_print("ERROR", e.stderr.strip() if e.stderr else str(e))
-        logging.error(f"Command failed: {e.stderr}")
+        logging.error(f"{prefix}Command failed: {e.stderr}")
         return False, e.stderr

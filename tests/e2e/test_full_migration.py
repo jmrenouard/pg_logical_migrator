@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import time
 from src.db import PostgresClient
-from src.main import run_automated
 
 def test_full_migration_e2e(tmp_path):
     """
@@ -20,12 +19,27 @@ def test_full_migration_e2e(tmp_path):
         pytest.skip("config_migrator.ini not found. Run 'make env-up' first.")
 
     # Run the automated migration
-    # Note: run_automated will create a timestamped dir inside RESULTS
-    # We can override the results_dir to be inside our tmp_path
-    from src.main import setup_results_dir
     results_dir = str(tmp_path / "e2e_run")
     
-    run_automated(config_path, results_dir=results_dir)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    
+    python_bin = "venv/bin/python" if os.path.exists("venv/bin/python") else "python3"
+    
+    res = subprocess.run([
+        python_bin, "pg_migrator.py", "init-replication",
+        "--config", config_path,
+        "--drop-dest",
+        "--results-dir", results_dir
+    ], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, f"init-replication failed: {res.stderr}"
+    
+    res = subprocess.run([
+        python_bin, "pg_migrator.py", "post-migration",
+        "--config", config_path,
+        "--results-dir", results_dir
+    ], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, f"post-migration failed: {res.stderr}"
     
     # 1. Check if results directory exists
     assert os.path.exists(results_dir)

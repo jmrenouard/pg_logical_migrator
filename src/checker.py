@@ -13,19 +13,19 @@ class DBChecker:
             with self.source.get_conn() as conn:
                 results["source"] = True
         except Exception as e:
-            logging.error(f"Source Connection Failed: {e}")
+            logging.error(f"[SOURCE] Source Connection Failed: {e}")
 
         if self.dest:
             try:
                 with self.dest.get_conn() as conn:
                     results["dest"] = True
             except Exception as e:
-                logging.error(f"Destination Connection Failed: {e}")
+                logging.error(f"[DEST] Destination Connection Failed: {e}")
         return results
 
     def get_pg_parameters(self, client):
         query = """
-        SELECT name, setting, unit, category
+        SELECT name, setting, unit, category, pending_restart
         FROM pg_settings
         WHERE name IN (
             'wal_level', 'max_replication_slots', 'max_wal_senders', 
@@ -76,15 +76,59 @@ class DBChecker:
           );
         """
         unowned_seqs = self.source.execute_query(query_unowned_seq)
+        
+        # Unlogged tables (relpersistence = 'u')
+        query_unlogged = """
+        SELECT n.nspname AS schema_name, c.relname AS table_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r' AND c.relpersistence = 'u'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        unlogged_tables = self.source.execute_query(query_unlogged)
+
+        # Temporary tables (relpersistence = 't')
+        query_temp = """
+        SELECT n.nspname AS schema_name, c.relname AS table_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r' AND c.relpersistence = 't'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        temp_tables = self.source.execute_query(query_temp)
+
+        # Foreign tables (relkind = 'f')
+        query_foreign = """
+        SELECT n.nspname AS schema_name, c.relname AS table_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'f'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        foreign_tables = self.source.execute_query(query_foreign)
+
+        # Materialized views (relkind = 'm')
+        query_matviews = """
+        SELECT n.nspname AS schema_name, c.relname AS matview_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'm'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        matviews = self.source.execute_query(query_matviews)
 
         return {
             "no_pk": no_pk,
             "large_objects": lo_count,
             "identities": identities,
-            "unowned_seqs": unowned_seqs
+            "unowned_seqs": unowned_seqs,
+            "unlogged_tables": unlogged_tables,
+            "temp_tables": temp_tables,
+            "foreign_tables": foreign_tables,
+            "matviews": matviews
         }
 
-    def check_replication_params(self):
+    def check_replication_params(self, apply_source=False, apply_dest=False):
         """Step 3: Verify parameters on source and destination."""
         results = {"source": [], "dest": []}
         
@@ -92,6 +136,8 @@ class DBChecker:
             "source": ['server_version', 'wal_level', 'max_replication_slots', 'max_wal_senders', 'max_worker_processes'],
             "dest": ['server_version', 'wal_level', 'max_replication_slots', 'max_logical_replication_workers', 'max_sync_workers_per_subscription', 'max_worker_processes']
         }
+        
+        apply_flags = {"source": apply_source, "dest": apply_dest}
 
         for label, client in [("source", self.source), ("dest", self.dest)]:
             if client is None:
@@ -102,21 +148,43 @@ class DBChecker:
                 if name not in reqs[label]:
                     continue
                 val = p['setting']
-                status = "OK"
+                pending_restart = p.get('pending_restart', False)
+                status = "PENDING RESTART" if pending_restart else "OK"
                 expected = val
+                needs_apply = False
+                apply_val = None
                 
                 if name == 'wal_level':
                     expected = "logical"
                     if val != 'logical':
-                        status = "FAIL"
+                        if not pending_restart:
+                            status = "FAIL"
+                        needs_apply = True
+                        apply_val = "logical"
                 elif name in ('max_replication_slots', 'max_wal_senders', 'max_logical_replication_workers', 'max_sync_workers_per_subscription'):
-                    expected = ">= 1"
+                    min_val = 10 if name in ('max_replication_slots', 'max_wal_senders') else 4
+                    expected = f">= {min_val}"
                     try:
                         int_val = int(val)
-                        if int_val < 1:
-                            status = "FAIL"
+                        if int_val < min_val:
+                            if not pending_restart:
+                                status = "FAIL"
+                            needs_apply = True
+                            apply_val = str(min_val)
                     except ValueError:
-                        status = "FAIL"
+                        if not pending_restart:
+                            status = "FAIL"
+                        needs_apply = True
+                        apply_val = str(min_val)
+
+                # Apply parameter if specified and needed
+                if needs_apply and apply_flags[label] and apply_val is not None:
+                    try:
+                        client.execute_query(f"ALTER SYSTEM SET {name} = '{apply_val}';")
+                        status = "PENDING RESTART"
+                        logging.info(f"[{label.upper()}] Applied {name} = '{apply_val}' on {label}. Restart required.")
+                    except Exception as e:
+                        logging.error(f"[{label.upper()}] Failed to apply parameter {name} on {label}: {e}")
 
                 results[label].append({
                     "parameter": name,

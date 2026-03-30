@@ -194,6 +194,10 @@ def cmd_diagnose(args):
             ["Large Objects",     res["large_objects"]],
             ["Identity Columns",  len(res["identities"])],
             ["Unowned Sequences", len(res["unowned_seqs"])],
+            ["Unlogged Tables",   len(res.get("unlogged_tables", []))],
+            ["Temporary Tables",  len(res.get("temp_tables", []))],
+            ["Foreign Tables",    len(res.get("foreign_tables", []))],
+            ["Materialized Views", len(res.get("matviews", []))],
         ],
     )
     if res["no_pk"]:
@@ -204,6 +208,10 @@ def cmd_diagnose(args):
         print("  Unowned Sequences:")
         for s in res["unowned_seqs"]:
             print(f"    - {s['schema_name']}.{s['seq_name']}")
+    if res.get("matviews"):
+        print("  Materialized Views:")
+        for m in res["matviews"]:
+            print(f"    - {m['schema_name']}.{m['matview_name']}")
     print()
     return 0
 
@@ -233,9 +241,11 @@ def cmd_migrate_schema(args):
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would execute schema migration (pg_dump -s | psql)")
+        if args.drop_dest:
+            print("[DRY-RUN]  -> WITH --drop-dest (would drop destination DB first)")
         return 0
     print("\n=== Step 4 — Schema Migration ===")
-    success, msg, cmds, outs = migrator.step4_migrate_schema()
+    success, msg, cmds, outs = migrator.step4_migrate_schema(drop_dest=args.drop_dest)
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
@@ -276,18 +286,55 @@ def cmd_setup_sub(args):
 # -- Step 7 ------------------------------------------------------------------
 def cmd_repl_status(args):
     """Step 7: Show logical replication status."""
+    from rich.console import Console
+    from rich.table import Table
+
     cfg = Config(args.config)
     migrator = Migrator(cfg)
-    print("\n=== Step 7 — Replication Status ===")
-    rows = migrator.get_replication_status()
-    if not rows:
-        print("  No active subscription found.")
+    console = Console()
+    console.print("\n[bold blue]=== Step 7 — Replication Status ===[/bold blue]")
+    status = migrator.get_replication_status()
+    
+    pub_rows = status.get("publisher", [])
+    sub_rows = status.get("subscriber", [])
+    slot_rows = status.get("slots", [])
+    full_sub_rows = status.get("full_sub", [])
+    pub_info_rows = status.get("publications", [])
+    pub_tables_rows = status.get("pub_tables", [])
+
+    if not any([pub_rows, sub_rows, slot_rows, full_sub_rows, pub_info_rows, pub_tables_rows]):
+        console.print("[yellow]  No active publisher, subscriber, or replication slots found.[/yellow]")
         return 1
-    for r in rows:
-        print_table(
-            list(r.keys()),
-            [list(str(v) for v in r.values())],
-        )
+
+    def print_rich_table(title, rows):
+        if not rows:
+            return
+        table = Table(title=title, show_header=True, header_style="bold magenta")
+        keys = list(rows[0].keys())
+        for key in keys:
+            table.add_column(str(key), style="cyan", overflow="fold")
+        for r in rows:
+            table.add_row(*[str(v) for v in r.values()])
+        console.print(table)
+
+    if pub_rows:
+        print_rich_table("[SOURCE] PUBLISHER (pg_stat_replication)", pub_rows)
+
+    if sub_rows:
+        print_rich_table("[DEST] SUBSCRIBER (pg_stat_subscription snippet)", sub_rows)
+
+    if slot_rows:
+        print_rich_table("[SOURCE] SLOTS (pg_replication_slots)", slot_rows)
+
+    if full_sub_rows:
+        print_rich_table("[DEST] PG_STAT_SUBSCRIPTION", full_sub_rows)
+
+    if pub_info_rows:
+        print_rich_table("[SOURCE] PUBLICATIONS (pg_publication)", pub_info_rows)
+
+    if pub_tables_rows:
+        print_rich_table("[SOURCE] PUBLICATION TABLES (pg_publication_tables)", pub_tables_rows)
+
     return 0
 
 
@@ -401,9 +448,9 @@ def cmd_cleanup(args):
     return 0 if success else 1
 
 
-# -- Full automated pipeline -------------------------------------------------
-def cmd_auto(args):
-    """Run the full 14-step automated migration pipeline."""
+# -- Removed auto pipeline to favor init-replication & post-migration ---
+def cmd_init_replication(args):
+    """Initialize replication WITHOUT terminating it."""
     results_dir = setup_results_dir(args.results_dir)
     log_file = os.path.join(results_dir, "pg_migrator.log")
     setup_logging(args.loglevel, log_file)
@@ -437,12 +484,8 @@ def cmd_auto(args):
             ("5",  "Create Publication"),
             ("6",  "Create Subscription"),
             ("--", f"Wait {sync_delay}s for initial sync"),
-            ("8",  "Refresh Materialized Views"),
-            ("9",  "Sync Sequences"),
-            ("10", "Enable Triggers"),
             ("13", "Object Audit"),
             ("14", "Row Parity Check"),
-            ("12", "Cleanup Replication"),
         ]
         for num, desc in steps:
             print(f"  [DRY-RUN] Step {num:>2s} : {desc}")
@@ -471,6 +514,10 @@ def cmd_auto(args):
             f"{'Large Objects':<25} {diag['large_objects']:>15}",
             f"{'Identity Columns':<25} {len(diag['identities']):>15}",
             f"{'Unowned Sequences':<25} {len(diag['unowned_seqs']):>15}",
+            f"{'Unlogged Tables':<25} {len(diag.get('unlogged_tables', [])):>15}",
+            f"{'Temporary Tables':<25} {len(diag.get('temp_tables', [])):>15}",
+            f"{'Foreign Tables':<25} {len(diag.get('foreign_tables', [])):>15}",
+            f"{'Materialized Views':<25} {len(diag.get('matviews', [])):>15}",
         ]
         if diag["no_pk"]:
             diag_lines.append("\nTables without Primary Key:")
@@ -484,6 +531,10 @@ def cmd_auto(args):
             diag_lines.append("\nIdentity Columns:")
             for ic in diag["identities"]:
                 diag_lines.append(f"  - {ic['table_schema']}.{ic['table_name']}.{ic['column_name']}")
+        if diag.get("matviews"):
+            diag_lines.append("\nMaterialized Views:")
+            for m in diag["matviews"]:
+                diag_lines.append(f"  - {m['schema_name']}.{m['matview_name']}")
         diag_details = "\n".join(diag_lines)
         has_warnings = len(diag["no_pk"]) > 0 or diag["large_objects"] > 0
         reporter.add_step("2", "Pre-Migration Diagnostics",
@@ -521,7 +572,7 @@ def cmd_auto(args):
 
         # Step 4 — Schema
         print("[Step  4] Schema migration...")
-        s, m, c, o = migrator.step4_migrate_schema()
+        s, m, c, o = migrator.step4_migrate_schema(drop_dest=args.drop_dest)
         reporter.add_step("4", "Schema Migration", "OK" if s else "FAIL", m, commands=c, outputs=o)
         print_status(s, m)
 
@@ -540,25 +591,6 @@ def cmd_auto(args):
         # Sync Delay
         print(f"[  wait ] Sleeping {sync_delay}s for initial table sync...")
         time.sleep(sync_delay)
-
-        # Step 8/9/10/11 — Post-Sync
-        print("[Step  8] Refresh materialized views...")
-        s1, m1, c1, o1 = post_sync.refresh_materialized_views()
-        print_status(s1, m1)
-
-        print("[Step  9] Sync sequences...")
-        s2, m2, c2, o2 = post_sync.sync_sequences()
-        print_status(s2, m2)
-
-        print("[Step 10] Enable triggers...")
-        s3, m3, c3, o3 = post_sync.enable_triggers()
-        print_status(s3, m3)
-
-        all_cmds = (c1 or []) + (c2 or []) + (c3 or [])
-        all_outs = (o1 or []) + (o2 or []) + (o3 or [])
-        reporter.add_step("POST", "Post-Sync", "OK",
-                          "MatViews, Sequences, Triggers processed",
-                          commands=all_cmds, outputs=all_outs)
 
         # Step 13 — Object Audit
         print("[Step 13] Object audit...")
@@ -591,16 +623,135 @@ def cmd_auto(args):
                           details=parity_details, commands=c2, outputs=o2)
         print_status(s2, m2)
 
-        # Step 12 — Cleanup
-        print("[Step 12] Cleanup replication...")
-        s, m, c, o = migrator.step12_terminate_replication()
-        reporter.add_step("12", "Cleanup", "OK" if s else "FAIL", m, commands=c, outputs=o)
-        print_status(s, m)
 
         # Generate report
         report_path = os.path.join(results_dir, "migration_report.html")
         out = reporter.generate_html(report_path)
         print(f"\n  HTML report : {out}")
+
+    except Exception as e:
+        print(f"\n\033[31mFATAL ERROR: {e}\033[0m")
+        logging.critical(f"Fatal error: {e}", exc_info=True)
+        reporter.add_step("FATAL", "Exception", "ERROR", str(e))
+        report_path = os.path.join(results_dir, "migration_report_error.html")
+        reporter.generate_html(report_path)
+        exit_code = 2
+
+    print(f"\n  Log file    : {log_file}")
+    print(f"  Results dir : {results_dir}")
+    return exit_code
+
+
+
+# -- Full Post Migration pipeline --------------------------------------------
+def cmd_post_migration(args):
+    """Stop replication and finalize migration objects."""
+    results_dir = setup_results_dir(args.results_dir)
+    log_file = os.path.join(results_dir, "pg_migrator.log")
+    setup_logging(args.loglevel, log_file)
+
+    cfg = Config(args.config)
+    sc, dc = build_clients(cfg)
+    checker = DBChecker(sc, dc)
+    migrator = Migrator(cfg)
+    post_sync = PostSync(sc, dc)
+    validator = Validator(sc, dc)
+    reporter = ReportGenerator()
+
+    sync_delay = 0
+
+    print(f"\n{'='*60}")
+    print(f"  pg_logical_migrator — Automated Pipeline v{__version__}")
+    print(f"  Config      : {args.config}")
+    print(f"  Results dir : {results_dir}")
+    print(f"  Log level   : {args.loglevel}")
+    print(f"  Sync delay  : {sync_delay}s")
+    if args.dry_run:
+        print(f"  Mode        : DRY-RUN (no changes)")
+    print(f"{'='*60}\n")
+
+    if args.dry_run:
+        steps = [
+            ("1",  "Connectivity Check"),
+            ("12", "Cleanup Replication (Stop)"),
+            ("8",  "Refresh Materialized Views"),
+            ("9",  "Sync Sequences"),
+            ("10", "Enable Triggers"),
+            ("13", "Object Audit"),
+            ("14", "Row Parity Check"),
+        ]
+        for num, desc in steps:
+            print(f"  [DRY-RUN] Step {num:>2s} : {desc}")
+        print("\n  No changes were made.\n")
+        return 0
+
+    exit_code = 0
+    try:
+        # Step 1 — Connectivity
+        print("[Step  1] Connectivity check...")
+        res = checker.check_connectivity()
+        ok = res["source"] and res["dest"]
+        reporter.add_step("1", "Connectivity", "OK" if ok else "FAIL",
+                          f"Source: {res['source']}, Dest: {res['dest']}")
+        print_status(ok, f"Source={res['source']}  Dest={res['dest']}")
+        if not ok:
+            raise RuntimeError("Connectivity check failed — aborting pipeline.")
+
+        # Step 12 — Cleanup (Stop replication)
+        print("[Step 12] Cleanup replication...")
+        s, m, c, o = migrator.step12_terminate_replication()
+        reporter.add_step("12", "Cleanup", "OK" if s else "FAIL", m, commands=c, outputs=o)
+        print_status(s, m)
+
+        # Step 8/9/10/11 — Post-Sync
+        print("[Step  8] Refresh materialized views...")
+        s1, m1, c1, o1 = post_sync.refresh_materialized_views()
+        print_status(s1, m1)
+
+        print("[Step  9] Sync sequences...")
+        s2, m2, c2, o2 = post_sync.sync_sequences()
+        print_status(s2, m2)
+
+        print("[Step 10] Enable triggers...")
+        s3, m3, c3, o3 = post_sync.enable_triggers()
+        print_status(s3, m3)
+
+        all_cmds = (c1 or []) + (c2 or []) + (c3 or [])
+        all_outs = (o1 or []) + (o2 or []) + (o3 or [])
+        reporter.add_step("POST", "Post-Sync", "OK",
+                          "MatViews, Sequences, Triggers processed",
+                          commands=all_cmds, outputs=all_outs)
+
+        # Step 13 — Object Audit
+        print("[Step 13] Object audit...")
+        s1, m1, c1, o1, r1 = validator.audit_objects()
+        audit_detail_lines = [f"{'Object Type':<15} {'Source':>10} {'Dest':>10} {'Status':>8}"]
+        audit_detail_lines.append("-" * 47)
+        for row in r1:
+            audit_detail_lines.append(f"{row['type']:<15} {str(row['source']):>10} {str(row['dest']):>10} {row['status']:>8}")
+        audit_details = "\n".join(audit_detail_lines)
+        reporter.add_step("13", "Object Audit", "OK" if s1 else "FAIL", m1,
+                          details=audit_details, commands=c1, outputs=o1)
+        print_status(s1, m1)
+
+        # Step 14 — Row Parity
+        print("[Step 14] Row count parity...")
+        s2, m2, c2, o2, r2 = validator.compare_row_counts()
+        parity_detail_lines = [f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
+        parity_detail_lines.append("-" * 85)
+        for row in r2:
+            parity_detail_lines.append(f"{row['table']:<45} {str(row['source']):>10} {str(row['dest']):>10} {str(row['diff']):>8} {row['status']:>8}")
+        parity_details = "\n".join(parity_detail_lines)
+        reporter.add_step("14", "Row Parity", "OK" if s2 else "FAIL", m2,
+                          details=parity_details, commands=c2, outputs=o2)
+        print_status(s2, m2)
+
+        # Generate report
+        report_path = os.path.join(results_dir, "migration_report.html")
+        out = reporter.generate_html(report_path)
+        print(f"\n  HTML report : {out}")
+
+
 
     except Exception as e:
         print(f"\n\033[31mFATAL ERROR: {e}\033[0m")
@@ -654,8 +805,8 @@ def build_parser() -> argparse.ArgumentParser:
             Examples:
               %(prog)s check                          # Test connectivity
               %(prog)s diagnose                       # Pre-flight diagnostics
-              %(prog)s auto --sync-delay 15           # Full pipeline, 15s sync wait
-              %(prog)s auto --dry-run                 # Dry-run (no changes)
+              %(prog)s init-replication --drop-dest   # Initialize replication, drop existing DB
+              %(prog)s post-migration                 # Finalize replication
               %(prog)s tui                            # Interactive TUI mode
               %(prog)s validate-rows --config prod.ini
               %(prog)s generate-config --output my.ini
@@ -664,47 +815,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ---- Global options -----------------------------------------------------
+    global_parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "-V", "--version",
         action="version",
         version=f"%(prog)s {__version__}",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "-c", "--config",
         default="config_migrator.ini",
         metavar="FILE",
         help="Path to the .ini configuration file (default: config_migrator.ini)",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "--results-dir",
         metavar="DIR",
         help="Directory for storing results and reports (default: RESULTS/<timestamp>)",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "--loglevel",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Logging level (default: INFO)",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "--log-file",
         metavar="FILE",
         help="Path to the log file (default: pg_migrator.log or RESULTS/<ts>/pg_migrator.log)",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "--sync-delay",
         type=int,
         default=10,
         metavar="SECONDS",
         help="Seconds to wait after subscription creation for initial sync (default: 10)",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "-n", "--dry-run",
         action="store_true",
         default=False,
         help="Show what would be done without executing any changes",
     )
-    parser.add_argument(
+    global_parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         default=False,
@@ -722,6 +874,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 1 — check
     p_check = sub.add_parser(
         "check",
+        parents=[global_parser],
         help="Step 1  — Check connectivity to source and destination",
         description="Verify that both PostgreSQL instances are reachable.",
     )
@@ -730,6 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 2 — diagnose
     p_diag = sub.add_parser(
         "diagnose",
+        parents=[global_parser],
         help="Step 2  — Pre-migration diagnostics (PK, LOBs, sequences)",
         description="Scan the source database for objects that may block logical replication.",
     )
@@ -738,6 +892,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 3 — params
     p_params = sub.add_parser(
         "params",
+        parents=[global_parser],
         help="Step 3  — Verify replication parameters (wal_level, etc.)",
         description="Check that wal_level, max_replication_slots, max_wal_senders are correct.",
     )
@@ -746,14 +901,22 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 4 — migrate-schema
     p_schema = sub.add_parser(
         "migrate-schema",
+        parents=[global_parser],
         help="Step 4  — Copy schema from source to destination",
         description="Run pg_dump -s on source and pipe into psql on destination.",
     )
     p_schema.set_defaults(func=cmd_migrate_schema)
+    p_schema.add_argument(
+        "--drop-dest",
+        action="store_true",
+        default=False,
+        help="Drop and recreate destination database before migration",
+    )
 
     # Step 5 — setup-pub
     p_pub = sub.add_parser(
         "setup-pub",
+        parents=[global_parser],
         help="Step 5  — Create publication on source",
         description="DROP + CREATE PUBLICATION FOR ALL TABLES on the source.",
     )
@@ -762,6 +925,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 6 — setup-sub
     p_sub = sub.add_parser(
         "setup-sub",
+        parents=[global_parser],
         help="Step 6  — Create subscription on destination",
         description="DROP + CREATE SUBSCRIPTION on the destination pointing to the source publication.",
     )
@@ -770,6 +934,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 7 — repl-status
     p_repl = sub.add_parser(
         "repl-status",
+        parents=[global_parser],
         help="Step 7  — Show replication status",
         description="Query pg_stat_subscription to display current replication state.",
     )
@@ -778,6 +943,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 8/9 — sync-sequences
     p_seq = sub.add_parser(
         "sync-sequences",
+        parents=[global_parser],
         help="Steps 8/9 — Synchronize sequence values",
         description="Read current sequence values from source and apply them on destination.",
     )
@@ -786,6 +952,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 10 — enable-triggers
     p_trig = sub.add_parser(
         "enable-triggers",
+        parents=[global_parser],
         help="Step 10 — Enable all triggers on destination",
         description="ALTER TABLE … ENABLE TRIGGER ALL on every user table in the destination.",
     )
@@ -794,6 +961,7 @@ def build_parser() -> argparse.ArgumentParser:
     # (utility) — disable-triggers
     p_dtrig = sub.add_parser(
         "disable-triggers",
+        parents=[global_parser],
         help="Utility — Disable all triggers on destination",
         description="ALTER TABLE … DISABLE TRIGGER ALL on every user table in the destination.",
     )
@@ -802,6 +970,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 11 — refresh-matviews
     p_mv = sub.add_parser(
         "refresh-matviews",
+        parents=[global_parser],
         help="Step 11 — Refresh materialized views on destination",
         description="REFRESH MATERIALIZED VIEW for every materialized view on the destination.",
     )
@@ -810,6 +979,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 13 — audit-objects
     p_audit = sub.add_parser(
         "audit-objects",
+        parents=[global_parser],
         help="Step 13 — Compare object counts (tables, views, indexes, sequences, functions)",
         description="Count objects on both databases and show differences.",
     )
@@ -818,6 +988,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 14 — validate-rows
     p_rows = sub.add_parser(
         "validate-rows",
+        parents=[global_parser],
         help="Step 14 — Compare row counts per table",
         description="SELECT COUNT(*) on every table in both source and destination.",
     )
@@ -826,22 +997,37 @@ def build_parser() -> argparse.ArgumentParser:
     # Step 12 — cleanup
     p_clean = sub.add_parser(
         "cleanup",
+        parents=[global_parser],
         help="Step 12 — Drop subscription, publication, and replication slot",
         description="Destructive cleanup: removes all replication objects. Run AFTER validation.",
     )
     p_clean.set_defaults(func=cmd_cleanup)
 
-    # Full pipeline — auto
-    p_auto = sub.add_parser(
-        "auto",
-        help="Run the full automated 14-step migration pipeline",
-        description="Execute all steps sequentially with HTML report generation.",
+    # -- Removed auto command --
+
+    # init-replication
+    p_init = sub.add_parser(
+        "init-replication",
+        parents=[global_parser],
+        help="Initialize replication and update elements WITHOUT stopping replication",
+        description="Runs schema migration, setups pub/sub, syncs objects and validates. Leaves replication active.",
     )
-    p_auto.set_defaults(func=cmd_auto)
+    p_init.set_defaults(func=cmd_init_replication)
+    p_init.add_argument("--drop-dest", action="store_true", default=False, help="Drop and recreate destination database before migration")
+
+    # post-migration
+    p_post = sub.add_parser(
+        "post-migration",
+        parents=[global_parser],
+        help="Stop replication and update elements on destination",
+        description="Terminates replication, refreshes matviews, sequences, triggers, then validates.",
+    )
+    p_post.set_defaults(func=cmd_post_migration)
 
     # TUI — interactive mode
     p_tui = sub.add_parser(
         "tui",
+        parents=[global_parser],
         help="Launch the interactive Terminal UI (Textual)",
         description="Full-screen TUI dashboard for supervised step-by-step migration.",
     )
@@ -850,6 +1036,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Generate config file
     p_gen = sub.add_parser(
         "generate-config",
+        parents=[global_parser],
         help="Generate a sample configuration file",
         description="Write a sample config_migrator.ini to disk.",
     )
@@ -872,17 +1059,17 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    # Setup logging with global options
-    log_file = args.log_file if args.log_file else None
-    setup_logging(args.loglevel, log_file)
-
-    # Enable verbose diagnostic output
-    if args.verbose:
-        _db_module.VERBOSE = True
-
     if not args.command:
         parser.print_help()
         sys.exit(0)
+
+    # Setup logging with global options
+    log_file = getattr(args, "log_file", None)
+    setup_logging(getattr(args, "loglevel", "INFO"), log_file)
+
+    # Enable verbose diagnostic output
+    if getattr(args, "verbose", False):
+        _db_module.VERBOSE = True
 
     # Dispatch to the selected subcommand
     try:

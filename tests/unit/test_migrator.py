@@ -21,6 +21,7 @@ def test_step5_setup_source():
     
     with patch("src.migrator.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
+        mock_instance.execute_query.return_value = []
         success, msg, cmds, outs = m.step5_setup_source()
         
         assert success is True

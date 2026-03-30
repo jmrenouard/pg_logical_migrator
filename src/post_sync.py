@@ -7,7 +7,7 @@ class PostSync:
         self.dest = dest_client
 
     def refresh_materialized_views(self):
-        logging.info("Refreshing materialized views on destination...")
+        logging.info("[DEST] Refreshing materialized views on destination...")
         query = """
         SELECT n.nspname AS schema_name, c.relname AS matview_name
         FROM pg_class c
@@ -23,7 +23,7 @@ class PostSync:
                 schema = row['schema_name']
                 name = row['matview_name']
                 sql = f'REFRESH MATERIALIZED VIEW "{schema}"."{name}";'
-                cmds.append(sql)
+                cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
                     outs.append("SUCCESS")
@@ -34,7 +34,7 @@ class PostSync:
             return False, str(e), [query], [str(e)]
 
     def sync_sequences(self):
-        logging.info("Synchronizing sequences...")
+        logging.info("[BOTH] Synchronizing sequences...")
         query = """
         SELECT n.nspname AS schema_name, c.relname AS seq_name
         FROM pg_class c
@@ -55,7 +55,7 @@ class PostSync:
                         last_val = res[0]['last_value']
                         is_called = res[0]['is_called']
                         sql = f'SELECT setval(\'"{schema}"."{name}"\', {last_val}, {str(is_called).lower()});'
-                        cmds.append(sql)
+                        cmds.append(f"[DEST] {sql}")
                         self.dest.execute_script(sql)
                         outs.append(f"Synced to {last_val}")
                 except Exception as e:
@@ -68,7 +68,7 @@ class PostSync:
         return True, "No activation logic needed", [], []
 
     def enable_triggers(self):
-        logging.info("Enabling all triggers on destination...")
+        logging.info("[DEST] Enabling all triggers on destination...")
         query = """
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
@@ -84,7 +84,7 @@ class PostSync:
                 schema = row['schema_name']
                 name = row['table_name']
                 sql = f'ALTER TABLE "{schema}"."{name}" ENABLE TRIGGER ALL;'
-                cmds.append(sql)
+                cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
                     outs.append("SUCCESS")
@@ -95,7 +95,7 @@ class PostSync:
             return False, str(e), [query], [str(e)]
 
     def disable_triggers(self):
-        logging.info("Disabling all triggers on destination...")
+        logging.info("[DEST] Disabling all triggers on destination...")
         query = """
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
@@ -111,7 +111,7 @@ class PostSync:
                 schema = row['schema_name']
                 name = row['table_name']
                 sql = f'ALTER TABLE "{schema}"."{name}" DISABLE TRIGGER ALL;'
-                cmds.append(sql)
+                cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
                     outs.append("SUCCESS")

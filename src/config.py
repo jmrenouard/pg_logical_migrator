@@ -26,4 +26,21 @@ class Config:
         return self._get_conn_string('destination')
 
     def get_replication(self):
-        return self.config['replication']
+        import re
+        rep = dict(self.config['replication'])
+        
+        source_db = self.config['source']['database'].lower()
+        target_schema = rep.get('target_schema', 'public').lower()
+        
+        safe_db = re.sub(r'[^a-z0-9_]', '_', source_db)
+        safe_schema = re.sub(r'[^a-z0-9_]', '_', target_schema)
+        suffix = f"_{safe_db}_{safe_schema}"
+
+        for key, default in [('publication_name', 'migrator_pub'), ('subscription_name', 'migrator_sub'), ('slot_name', 'migrator_slot')]:
+            val = rep.get(key, default)
+            if suffix not in val:
+                rep[key] = f"{val}{suffix}"
+            else:
+                rep[key] = val
+
+        return rep

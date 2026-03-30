@@ -7,6 +7,7 @@ Welcome to the technical documentation for the `pg_logical_migrator` project. Th
 - **[Core Concepts](CONCEPTS.md)**: Introduction to the publish-subscribe architecture and replication objects.
 - **[Configuration Guide](CONFIGURATION.md)**: Prerequisites and required PostgreSQL parameters for source and destination.
 - **[Tools & Usage Guide](TOOLS.md)**: CLI flags, Makefile targets, TUI walkthrough, automated mode, and output artifacts.
+- **[Docker Guide](DOCKER.md)**: Building and running the application within an isolated Docker container.
 - **[Detailed Workflow](WORKFLOW.md)**: A deep dive into the 14-step automated sequence orchestrated by the tool.
 - **[Migration Lifecycle](LIFECYCLE.md)**: Summary of actions and phases from preparation to final cleanup.
 - **[Execution Validation](VALIDATION.md)**: Critical control points and a schema verification checklist.

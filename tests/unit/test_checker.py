@@ -25,7 +25,11 @@ def test_check_problematic_objects():
         [{"schema": "public", "table": "no_pk_table"}], # no_pk
         [{"count": 5}],                                 # large objects
         [],                                             # identities
-        []                                              # unowned seqs
+        [],                                             # unowned seqs
+        [],                                             # unlogged tables
+        [],                                             # temp tables
+        [],                                             # foreign tables
+        []                                              # matviews
     ]
     
     checker = DBChecker(source)

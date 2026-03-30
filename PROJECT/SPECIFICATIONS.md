@@ -2,7 +2,7 @@
 
 ## Overview
 
-`pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a Textual Terminal User Interface (TUI) for interactive step-by-step execution and an automated mode (`--auto`) for hands-off pipelines.
+`pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a Textual Terminal User Interface (TUI) for interactive step-by-step execution and incremental pipeline commands (`init-replication`, `post-migration`) for hands-off migrations.
 
 - **Language**: Python ≥ 3.10
 - **Key Libraries**: `textual`, `rich`, `psycopg` (v3), `psycopg-binary`
@@ -21,7 +21,7 @@
 | `src/post_sync.py` | `PostSync` | Steps 8–11: MatViews refresh, sequence sync, trigger activation |
 | `src/validation.py` | `Validator` | Steps 13–14: Object audit and row parity comparison |
 | `src/report_generator.py` | `ReportGenerator` | Generates self-contained HTML audit reports |
-| `src/main.py` | `MigratorApp` / `run_automated()` | TUI entry point and `--auto` orchestrator |
+| `src/main.py` | `MigratorApp` | TUI entry point |
 
 ---
 
@@ -49,42 +49,60 @@ The tool reads all runtime parameters from `config_migrator.ini` (copy from `con
 
 ## CLI Interface
 
-Entry point: `src/main.py`
+Entry point: `pg_migrator.py` (project root). The legacy `src/main.py` launches the TUI directly and remains functional.
 
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--config PATH` | string | `config_migrator.ini` | Path to the INI configuration file |
-| `--auto` | flag | `False` | Non-interactive automated mode |
+| `--config PATH` / `-c` | string | `config_migrator.ini` | Path to the INI configuration file |
 | `--results-dir PATH` | string | `RESULTS/<timestamp>` | Output directory for logs and HTML reports |
+| `--loglevel LEVEL` | choice | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `--log-file FILE` | string | `pg_migrator.log` | Path to the log file |
+| `--sync-delay SECONDS` | integer | `10` | Seconds to poll after subscription creation for initial sync |
+| `--dry-run` / `-n` | flag | `False` | Preview steps without executing any changes |
+| `--version` / `-V` | flag | — | Display version and exit |
 
 ---
 
 ## TUI (Terminal User Interface)
 
-Built with the [`textual`](https://textual.textualize.io/) framework. Launched when `--auto` is not specified.
+Built with the [`textual`](https://textual.textualize.io/) framework. Launched via `python pg_migrator.py tui` or directly from `src/main.py`.
 
-- **Sidebar**: 14 step-buttons, color-coded by phase (blue = checks, orange = replication setup, green = monitoring, purple = post-sync, yellow = validation, red = cleanup).
-- **Result Zone**: Displays step output as a `Panel` or `Table` (Rich components).
-- **Log Area**: Live scrolling log of all step executions.
+- **Sidebar**: 14 step-buttons + automation buttons, color-coded by phase (blue = checks, orange = replication setup, green = monitoring, purple = post-sync, yellow = validation, red = cleanup, green = automation, white = utility).
+- **Options**: `Drop Dest Schema` checkbox and `Verbose Mode` checkbox.
+- **Result Zone**: Displays step output as a `Panel` or `Table` (Rich components via `RichLog`).
+- **Log Area**: Live scrolling `RichLog` with Rich markup support.
+- **Async execution**: Step 6 (Setup Subscription), `init-replication`, and `post-migration` run in background threads to avoid blocking the UI.
 
 ---
 
-## Automated Mode (`--auto`)
+## Incremental Pipeline Mode
 
-Executes the full pipeline non-interactively in this order:
+Executes the pipeline non-interactively in an incremental sequence via two commands:
+
+### `init-replication`
 
 ```text
-Step 1 (Connectivity) →
-Step 4 (Schema Migration) →
-Step 5 (Source Pub/Slot) →
-Step 6 (Destination Sub) →
-[10-second wait for initial sync] →
-Step 8 (MatViews Refresh) →
-Steps 9/10 (Sequence Sync) →
-Step 11 (Trigger Activation) →
-Step 13 (Object Audit) →
-Step 14 (Row Parity) →
-Step 12 (Replication Cleanup)
+Step 1  (Connectivity Check)     → checker.check_connectivity()       [SOURCE + DEST]
+Step 2  (Diagnostics)            → checker.check_problematic_objects() [SOURCE]
+Step 3  (Parameter Verification) → checker.check_replication_params()  [SOURCE + DEST]
+Step 4  (Schema Migration)       → migrator.step4_migrate_schema()     [SOURCE → DEST]
+Step 5  (Setup Publication)      → migrator.step5_setup_source()       [SOURCE]
+Step 6  (Setup Subscription)     → migrator.step6_setup_destination()  [DEST]
+Sync    (Wait for Initial Sync)  → migrator.wait_for_sync()            [DEST — polls pg_subscription_rel]
+Step 13 (Object Audit)           → validator.audit_objects()           [SOURCE + DEST]
+Step 14 (Row Parity)             → validator.compare_row_counts()      [SOURCE + DEST]
+```
+
+### `post-migration`
+
+```text
+Step 1  (Connectivity Check)     → checker.check_connectivity()              [SOURCE + DEST]
+Step 12 (Replication Cleanup)    → migrator.step12_terminate_replication()   [DEST + SOURCE]
+Step 11 (MatViews Refresh)       → post_sync.refresh_materialized_views()    [DEST]
+Steps 8/9 (Sequence Sync)        → post_sync.sync_sequences()               [SOURCE → DEST]
+Step 10 (Enable Triggers)        → post_sync.enable_triggers()               [DEST]
+Step 13 (Object Audit)           → validator.audit_objects()                 [SOURCE + DEST]
+Step 14 (Row Parity)             → validator.compare_row_counts()            [SOURCE + DEST]
 ```
 
 All steps are wrapped in a `try/except` block. On any fatal exception, a partial error report is written to `RESULTS/<timestamp>/migration_report_error.html`.
@@ -131,7 +149,9 @@ Each HTML report step entry contains:
 
 | Target | Description |
 | :--- | :--- |
-| `make install` | Create `venv/` and install Python dependencies |
+| `make install` | Create `venv/` and install Python dependencies (includes PyInstaller) |
+| `make build` | Bundle the tool into a self-contained single-file binary (`dist/pg_migrator`) |
+| `make build-clean` | Remove PyInstaller artefacts (`build/`, `dist/`, `*.spec`) |
 | `make env-up` | Start Docker test containers and load the Pagila dataset |
 | `make env-down` | Stop and remove Docker test containers |
 | `make test-unit` | Run unit tests |
@@ -139,8 +159,20 @@ Each HTML report step entry contains:
 | `make test-e2e` | Run full end-to-end migration test |
 | `make test-all` | Run all tests (unit + integration + e2e) |
 | `make test-report` | Run unit tests + automated migration; generate HTML reports |
-| `make run-auto` | Run a full automated migration against `config_migrator.ini` |
-| `make clean` | Remove `RESULTS/`, logs, and `__pycache__` directories |
+| `make run-pipeline` | Run an automated migration via `init-replication` and `post-migration` |
+| `make clean` | Remove `RESULTS/`, logs, `__pycache__`, and build artefacts |
+
+---
+
+## Standalone Executable
+
+The tool can be packaged into a single self-contained binary using PyInstaller:
+
+```bash
+make build          # produces dist/pg_migrator
+```
+
+The binary embeds the Python interpreter, all dependencies, the `src/` modules, and `config_migrator.sample.ini`. It targets the **build platform** (Linux → Linux binary). A `config_migrator.ini` and PostgreSQL client tools (`pg_dump`, `psql`) must be present on the target host.
 
 ---
 

@@ -35,4 +35,14 @@ docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost <
 echo "Loading data into source..."
 docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost < "${DIR}/pagila-data.sql"
 
+echo "Injecting no_pk_table for testing..."
+docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost -c "
+CREATE TABLE public.no_pk_table (
+    id integer,
+    random_data text
+);
+INSERT INTO public.no_pk_table (id, random_data)
+SELECT generate_series(1, 10), md5(random()::text);
+"
+
 echo "Setup complete!"
