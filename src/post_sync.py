@@ -120,3 +120,206 @@ class PostSync:
             return True, f"Disabled triggers on {len(cmds)} tables", cmds, outs
         except Exception as e:
             return False, str(e), [query], [str(e)]
+
+    def reassign_ownership(self, target_owner):
+        """Reassign ownership of ALL database objects to target_owner on destination."""
+        logging.info(f"[DEST] Reassigning ownership of all objects to '{target_owner}'...")
+        cmds = []
+        outs = []
+        errors = 0
+
+        # --- 1. Database ---
+        try:
+            db_name_result = self.dest.execute_query("SELECT current_database() AS db;")
+            if db_name_result:
+                db_name = db_name_result[0]['db']
+                sql = f'ALTER DATABASE "{db_name}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER DATABASE ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 2. Schemas ---
+        schema_query = """
+        SELECT nspname AS schema_name
+        FROM pg_namespace
+        WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+          AND nspname NOT LIKE 'pg_temp_%'
+          AND nspname NOT LIKE 'pg_toast_temp_%';
+        """
+        try:
+            schemas = self.dest.execute_query(schema_query) or []
+            for row in schemas:
+                schema = row['schema_name']
+                sql = f'ALTER SCHEMA "{schema}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER SCHEMA ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 3. Tables (relkind = 'r') ---
+        table_query = """
+        SELECT n.nspname AS schema_name, c.relname AS obj_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            tables = self.dest.execute_query(table_query) or []
+            for row in tables:
+                sql = f'ALTER TABLE "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER TABLE ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 4. Views (relkind = 'v') ---
+        view_query = """
+        SELECT n.nspname AS schema_name, c.relname AS obj_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'v'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            views = self.dest.execute_query(view_query) or []
+            for row in views:
+                sql = f'ALTER VIEW "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER VIEW ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 5. Materialized Views (relkind = 'm') ---
+        matview_query = """
+        SELECT n.nspname AS schema_name, c.relname AS obj_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'm'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            matviews = self.dest.execute_query(matview_query) or []
+            for row in matviews:
+                sql = f'ALTER MATERIALIZED VIEW "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER MATERIALIZED VIEW ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 6. Sequences (relkind = 'S') ---
+        seq_query = """
+        SELECT n.nspname AS schema_name, c.relname AS obj_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'S'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            seqs = self.dest.execute_query(seq_query) or []
+            for row in seqs:
+                sql = f'ALTER SEQUENCE "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER SEQUENCE ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 7. Functions and Procedures ---
+        func_query = """
+        SELECT n.nspname AS schema_name,
+               p.proname AS func_name,
+               pg_catalog.pg_get_function_identity_arguments(p.oid) AS func_args,
+               CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS func_type
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            funcs = self.dest.execute_query(func_query) or []
+            for row in funcs:
+                ftype = row['func_type']
+                sql = f'ALTER {ftype} "{row["schema_name"]}"."{row["func_name"]}"({row["func_args"]}) OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER FUNCTION/PROCEDURE ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        # --- 8. Custom Types (enums, composites, domains) ---
+        type_query = """
+        SELECT n.nspname AS schema_name, t.typname AS type_name
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typtype IN ('e', 'c', 'd')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+        """
+        try:
+            types = self.dest.execute_query(type_query) or []
+            for row in types:
+                sql = f'ALTER TYPE "{row["schema_name"]}"."{row["type_name"]}" OWNER TO "{target_owner}";'
+                cmds.append(f"[DEST] {sql}")
+                try:
+                    self.dest.execute_script(sql)
+                    outs.append("SUCCESS")
+                except Exception as e:
+                    outs.append(f"FAILED: {e}")
+                    errors += 1
+        except Exception as e:
+            cmds.append("[DEST] ALTER TYPE ... OWNER TO ...")
+            outs.append(f"FAILED: {e}")
+            errors += 1
+
+        total = len(cmds)
+        success_count = total - errors
+        ok = errors == 0
+        msg = f"Reassigned {success_count}/{total} objects to '{target_owner}'" + (f" ({errors} errors)" if errors else "")
+        return ok, msg, cmds, outs
