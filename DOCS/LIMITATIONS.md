@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Limitations & Pitfalls
 
 PostgreSQL logical replication is a powerful tool but has several key limitations and constraints that must be understood to avoid migration failure or performance degradation.

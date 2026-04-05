@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Project Tasks
 
 ## Block 1: Foundation & Test Environment

@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Project Documentation Hub
 
 Welcome to the technical documentation for the `pg_logical_migrator` project. This documentation is split into thematic units to cover every aspect of PostgreSQL logical replication and the usage of this tool.

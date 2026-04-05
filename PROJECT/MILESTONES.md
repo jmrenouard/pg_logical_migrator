@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Project Milestones
 
 ## Milestone 1: Foundation & Testbed (M1) — ✅ COMPLETED

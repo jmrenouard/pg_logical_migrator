@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Project Progress Tracking
 
 ## Progress Summary

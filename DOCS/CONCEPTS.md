@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Core Concepts of Logical Replication
 
 Logical replication in PostgreSQL is a method of replicating data objects and their changes based on their replication identity (usually a primary key). It allows for cross-version migration, granular control, and minimal downtime.

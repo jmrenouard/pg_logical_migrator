@@ -1,3 +1,5 @@
+![pg_logical_migrator](pg_logical_migrator.jpg)
+
 # pg_logical_migrator
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v10+-blue.svg)](https://www.postgresql.org/)

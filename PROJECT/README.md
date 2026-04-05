@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Project Documentation Index
 
 Welcome to the `pg_logical_migrator` project documentation. These files define the technical standards, roadmap, and requirements for a mission-critical PostgreSQL migration tool.

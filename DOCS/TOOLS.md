@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Tools & Usage Guide
 
 This document covers all the ways to invoke and operate `pg_logical_migrator`, from single-step commands to the interactive Terminal UI and fully automated CI/CD pipelines.

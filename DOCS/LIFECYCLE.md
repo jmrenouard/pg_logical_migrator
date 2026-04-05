@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Migration Lifecycle Overview
 
 A successful migration follows a set of distinct phases. Each phase ensures data integrity and consistency between the source and target.

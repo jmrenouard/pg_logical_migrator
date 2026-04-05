@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Migration Workflow — 14 Steps
 
 The `pg_logical_migrator` operates through a predefined 14-step sequence to ensure data integrity and minimal downtime. Each step maps to a specific function in the Python source code.

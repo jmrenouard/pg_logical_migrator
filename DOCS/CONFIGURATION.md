@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Prerequisites & Database Parameters
 
 Before starting a migration, several parameters in the `postgresql.conf` file of both databases must be precisely configured. Most of these changes **require a restart** of the PostgreSQL instance.

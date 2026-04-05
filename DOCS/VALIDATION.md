@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Critical Schema Control Points (Verification Checklist)
 
 Check these points on the **Target** database before implementing logical replication.

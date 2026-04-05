@@ -1,3 +1,5 @@
+![pg_logical_migrator](../pg_logical_migrator.jpg)
+
 # Utiliser Docker avec pg_logical_migrator
 
 L'utilisation de Docker est le moyen le plus simple et le plus sûr d'exécuter `pg_logical_migrator` sans avoir à installer Python, Git, PostgreSQL client ou d'autres dépendances directement sur votre machine hôte.
