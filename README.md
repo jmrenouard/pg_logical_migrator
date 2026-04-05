@@ -5,6 +5,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v10+-blue.svg)](https://www.postgresql.org/)
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
+[![GitHub Container Registry](https://img.shields.io/badge/GHCR-jmrenouard%2Fpg__logical__migrator-blue?logo=github)](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator)
 
 **pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and an automated mode for pipeline integration.
 
@@ -39,17 +41,120 @@ src/
 
 ---
 
-## Quick Start
+## Installation
 
-### 1. Installation
+There are several ways to install and run `pg_logical_migrator`. Choose the method that best suits your environment.
+
+### Option A — Docker (recommended)
+
+The Docker image ships with all dependencies pre-installed (Python, `psycopg`, `pg_dump`, `psql`) and requires **zero local setup**.
+
+```bash
+# Pull the latest stable image from Docker Hub
+docker pull jmrenouard/pg_logical_migrator:latest
+
+# Or from GitHub Container Registry (GHCR)
+docker pull ghcr.io/jmrenouard/pg_logical_migrator:latest
+
+# Pull a specific version
+docker pull jmrenouard/pg_logical_migrator:1.0.0
+```
+
+Run a command directly via Docker:
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/config_migrator.ini:/app/config_migrator.ini \
+  -v $(pwd)/RESULTS:/app/RESULTS \
+  jmrenouard/pg_logical_migrator check
+```
+
+| Registry | Image | Link |
+| :--- | :--- | :--- |
+| **Docker Hub** | `jmrenouard/pg_logical_migrator` | [hub.docker.com/r/jmrenouard/pg_logical_migrator](https://hub.docker.com/r/jmrenouard/pg_logical_migrator) |
+| **GHCR** | `ghcr.io/jmrenouard/pg_logical_migrator` | [github.com/…/pkgs/container/pg_logical_migrator](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator) |
+
+> Full Docker usage guide: **[DOCS/DOCKER.md](DOCS/DOCKER.md)**
+
+### Option B — Standalone Binary (PyInstaller)
+
+A pre-built Linux `amd64` binary is attached to every [GitHub Release](https://github.com/jmrenouard/pg_logical_migrator/releases). It bundles the Python runtime and all dependencies into a single executable — **no Python installation required**.
+
+```bash
+# Download the binary from the latest release
+curl -Lo pg_migrator \
+  "https://github.com/jmrenouard/pg_logical_migrator/releases/latest/download/pg_migrator"
+
+chmod +x pg_migrator
+./pg_migrator --help
+```
+
+> **Note:** The host still needs `pg_dump` and `psql` binaries (from the `postgresql-client` package) to perform schema migration.
+
+### Option C — Install from Source (pip)
+
+This is the standard developer setup. It requires **Python 3.10+** and the PostgreSQL client tools.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/jmrenouard/pg_logical_migrator.git
+cd pg_logical_migrator
+
+# 2. Create a virtual environment and install dependencies
+make install
+
+# 3. Verify
+venv/bin/python pg_migrator.py --help
+```
+
+**Manual install (without Make):**
 
 ```bash
 git clone https://github.com/jmrenouard/pg_logical_migrator.git
 cd pg_logical_migrator
-make install
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Verify
+python pg_migrator.py --help
 ```
 
-### 2. Configuration
+### Option D — Build Your Own Binary Locally
+
+You can build the standalone executable yourself using PyInstaller:
+
+```bash
+make build        # produces dist/pg_migrator
+./dist/pg_migrator --help
+```
+
+Or build a local Docker image:
+
+```bash
+docker build -t pg_logical_migrator .
+docker run --rm pg_logical_migrator --help
+```
+
+### Prerequisites Summary
+
+| Method | Python | pg_dump / psql | Docker |
+| :--- | :---: | :---: | :---: |
+| Docker | — | — | ✅ |
+| Standalone binary | — | ✅ | — |
+| From source (pip) | ✅ 3.10+ | ✅ | — |
+| Local build | ✅ 3.10+ | ✅ | Optional |
+
+---
+
+## Quick Start
+
+### 1. Configuration
 
 Copy and edit the sample configuration file:
 
