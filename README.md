@@ -5,6 +5,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v10+-blue.svg)](https://www.postgresql.org/)
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
+[![GitHub Container Registry](https://img.shields.io/badge/GHCR-jmrenouard%2Fpg__logical__migrator-blue?logo=github)](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator)
 
 **pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and an automated mode for pipeline integration.
 
@@ -42,6 +44,21 @@ src/
 ## Quick Start
 
 ### 1. Installation
+
+**Option A — Docker (recommended)**
+
+```bash
+# Pull the latest image from Docker Hub
+docker pull jmrenouard/pg_logical_migrator:latest
+
+# Or from GitHub Container Registry
+docker pull ghcr.io/jmrenouard/pg_logical_migrator:latest
+```
+
+> Docker Hub: <https://hub.docker.com/r/jmrenouard/pg_logical_migrator>  
+> GHCR: <https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator>
+
+**Option B — From source**
 
 ```bash
 git clone https://github.com/jmrenouard/pg_logical_migrator.git

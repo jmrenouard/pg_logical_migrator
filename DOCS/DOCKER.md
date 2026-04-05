@@ -16,9 +16,31 @@ Ce document décrit comment construire l'image Docker de l'outil puis comment s'
 
 ---
 
-## 2. Construction de l'image (Build)
+## 2. Images pré-construites (Registries)
 
-Pour compiler l'image Docker, exécutez la commande suivante à la racine du dépôt (où se trouve le fichier `Dockerfile`) :
+Des images Docker prêtes à l'emploi sont publiées automatiquement à chaque release :
+
+| Registry | Image | Lien |
+| :--- | :--- | :--- |
+| **Docker Hub** | `jmrenouard/pg_logical_migrator` | [hub.docker.com/r/jmrenouard/pg_logical_migrator](https://hub.docker.com/r/jmrenouard/pg_logical_migrator) |
+| **GitHub Container Registry** | `ghcr.io/jmrenouard/pg_logical_migrator` | [github.com/…/pkgs/container/pg_logical_migrator](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator) |
+
+```bash
+# Dernière version stable
+docker pull jmrenouard/pg_logical_migrator:latest
+
+# Ou depuis GHCR
+docker pull ghcr.io/jmrenouard/pg_logical_migrator:latest
+
+# Version spécifique
+docker pull jmrenouard/pg_logical_migrator:1.0.0
+```
+
+---
+
+## 3. Construction locale de l'image (Build)
+
+Pour compiler l'image Docker localement, exécutez la commande suivante à la racine du dépôt (où se trouve le fichier `Dockerfile`) :
 
 ```bash
 docker build -t pg_logical_migrator .
@@ -28,7 +50,7 @@ Cela créera une image Docker nommée `pg_logical_migrator` prête à l'emploi.
 
 ---
 
-## 3. Configuration
+## 4. Configuration
 
 L'image est construite avec le fichier d'exemple `config_migrator.sample.ini` renommé en `config_migrator.ini` dans le répertoire de travail (`/app`).
 
@@ -45,7 +67,7 @@ Il est aussi recommandé de monter le répertoire `RESULTS` de l'hôte afin de p
 
 ---
 
-## 4. Exécuter le conteneur
+## 5. Exécuter le conteneur
 
 L'image exécute par défaut le script CLI complet (`pg_migrator.py`). Il faut donc passer le nom de la commande (comme `check`, `tui` ou `auto`) à la fin du `docker run`.
 
@@ -67,7 +89,7 @@ docker run -it --rm \
 
 ---
 
-## 5. Exemples de commandes
+## 6. Exemples de commandes
 
 Toutes les commandes documentées dans [TOOLS.md](TOOLS.md) peuvent être appelées après le nom de l'image.
 
@@ -76,7 +98,7 @@ Toutes les commandes documentées dans [TOOLS.md](TOOLS.md) peuvent être appel�
 ```bash
 docker run -it --rm \
   -v $(pwd)/config_migrator.ini:/app/config_migrator.ini \
-  pg_logical_migrator check
+  jmrenouard/pg_logical_migrator check
 ```
 
 **Lancer le diagnostic pré-migration (Step 2)** :
@@ -84,16 +106,16 @@ docker run -it --rm \
 ```bash
 docker run -it --rm \
   -v $(pwd)/config_migrator.ini:/app/config_migrator.ini \
-  pg_logical_migrator diagnose
+  jmrenouard/pg_logical_migrator diagnose
 ```
 
-**Lancer la migration automatisée** :
+**Lancer la migration complète** :
 
 ```bash
 docker run -it --rm \
   -v $(pwd)/config_migrator.ini:/app/config_migrator.ini \
   -v $(pwd)/RESULTS:/app/RESULTS \
-  pg_logical_migrator auto
+  jmrenouard/pg_logical_migrator init-replication --drop-dest
 ```
 
 *(Dans le cadre d'un système CI/CD automatisé, l'option `-it` n'est pas nécessaire).*
