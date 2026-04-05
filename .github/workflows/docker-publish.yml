@@ -49,13 +49,17 @@ jobs:
           fi
           echo "✔ Found release notes"
 
-          TAG=${GITHUB_REF#refs/tags/}
-          echo "Checking tag consistency (Tag: $TAG vs Version: v${{ env.VERSION }})..."
-          if [ "v${{ env.VERSION }}" != "$TAG" ]; then
-            echo "ERROR: Tag $TAG does not match version in pg_migrator.py (v${{ env.VERSION }})"
-            exit 1
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            echo "Checking tag consistency (Tag: $TAG vs Version: v${{ env.VERSION }})..."
+            if [ "v${{ env.VERSION }}" != "$TAG" ]; then
+              echo "ERROR: Tag $TAG does not match version in pg_migrator.py (v${{ env.VERSION }})"
+              exit 1
+            fi
+            echo "✔ Tag matches script version"
+          else
+            echo "ℹ Skipping tag consistency check (not a tag push)"
           fi
-          echo "✔ Tag matches script version"
 
       - name: Extract release notes
         id: release_notes
