@@ -459,8 +459,8 @@ class MigratorApp(App):
             self.call_from_thread(update_ui)
             
         except Exception as e:
-            def err_ui():
-                self.log_area.write(f"✘ ERROR in Step 6: {str(e)}")
+            def err_ui(err=e):
+                self.log_area.write(f"✘ ERROR in Step 6: {str(err)}")
             self.call_from_thread(err_ui)
             logging.error(f"[LOCAL] Error in TUI step 6: {e}", exc_info=True)
 
@@ -540,8 +540,8 @@ class MigratorApp(App):
             update_ui("Init Replication", "Initialization steps finished.", "green")
             
         except Exception as e:
-            def err_ui():
-                self.log_area.write(f"✘ ERROR in Init Pipeline: {str(e)}")
+            def err_ui(err=e):
+                self.log_area.write(f"✘ ERROR in Init Pipeline: {str(err)}")
             self.call_from_thread(err_ui)
             logging.error(f"[LOCAL] Error in TUI Init Pipeline: {e}", exc_info=True)
 
@@ -588,8 +588,8 @@ class MigratorApp(App):
             update_ui("Post Migration", "All post migration steps finished.", "green")
             
         except Exception as e:
-            def err_ui():
-                self.log_area.write(f"✘ ERROR in Post Pipeline: {str(e)}")
+            def err_ui(err=e):
+                self.log_area.write(f"✘ ERROR in Post Pipeline: {str(err)}")
             self.call_from_thread(err_ui)
             logging.error(f"[LOCAL] Error in TUI Post Pipeline: {e}", exc_info=True)
 
