@@ -27,10 +27,10 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-report-py${{ matrix.python-version }}
           path: test-report.html
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     # Build on every push/PR, but only push image on main or tag
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Docker metadata (tags & labels)
         id: meta
@@ -116,10 +116,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -143,7 +143,7 @@ jobs:
           ./dist/pg_migrator --help
 
       - name: Upload binary as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pg_migrator-linux-amd64
           path: dist/pg_migrator
@@ -158,12 +158,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0   # full history for changelog generation
 
       - name: Download PyInstaller binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: pg_migrator-linux-amd64
           path: release-assets/
