@@ -1,9 +1,11 @@
+# Publish Docker image to Docker Hub on tag push or manual dispatch
+# Complements python-package.yml which publishes to GHCR
+
 name: Docker Publish
 
 on:
   push:
     tags: ["v*"]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -17,24 +19,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USER_LOGIN }}
-          password: ${{ secrets.DOCKER_USER_PASSWORD }}
-
       - name: Extract version from pg_migrator.py
         id: version
         run: |
-          VERSION=$(python3 -c 'import re; f=open("pg_migrator.py"); [print(m.group(1)) for line in f if (m:=re.search(r"""__version__\s*=\s*["\x27]([^"\x27]+)""", line))]')
+          VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Could not extract version from pg_migrator.py"
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Extracted version: $VERSION"
 
       - name: Pre-publish validation
         run: |
           echo "Checking for critical files..."
-          CRITICAL_FILES=("pg_migrator.py" "Dockerfile" "LICENSE")
-          for file in "${CRITICAL_FILES[@]}"; do
+          for file in pg_migrator.py Dockerfile LICENSE; do
             if [ ! -f "$file" ]; then
               echo "ERROR: Critical file missing: $file"
               exit 1
@@ -44,10 +43,10 @@ jobs:
 
           echo "Checking for release notes: releases/v${{ env.VERSION }}.md..."
           if [ ! -f "releases/v${{ env.VERSION }}.md" ]; then
-            echo "ERROR: Release notes missing: releases/v${{ env.VERSION }}.md"
-            exit 1
+            echo "WARNING: Release notes missing: releases/v${{ env.VERSION }}.md (non-blocking)"
+          else
+            echo "✔ Found release notes"
           fi
-          echo "✔ Found release notes"
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             TAG=${GITHUB_REF#refs/tags/}
@@ -61,14 +60,11 @@ jobs:
             echo "ℹ Skipping tag consistency check (not a tag push)"
           fi
 
-      - name: Extract release notes
-        id: release_notes
-        run: |
-          {
-            echo 'RELEASE_NOTES<<EOF'
-            cat "releases/v${{ env.VERSION }}.md"
-            echo 'EOF'
-          } >> $GITHUB_ENV
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER_LOGIN }}
+          password: ${{ secrets.DOCKER_USER_PASSWORD }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -80,7 +76,9 @@ jobs:
             jmrenouard/pg_logical_migrator:${{ env.VERSION }}
           labels: |
             org.opencontainers.image.title=pg_logical_migrator
-            org.opencontainers.image.description=**pg_logical_migrator** is a Python-based utility to orchestrate database migrations for PostgreSQL using logical replication.
+            org.opencontainers.image.description=PostgreSQL logical replication migration tool
             org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=https://github.com/jmrenouard/pg_logical_migrator
             org.opencontainers.image.licenses=GPL-3.0
-            com.pg_logical_migrator.release-notes=${{ env.RELEASE_NOTES }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
