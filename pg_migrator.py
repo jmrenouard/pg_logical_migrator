@@ -400,6 +400,23 @@ def cmd_refresh_matviews(args):
     return 0 if success else 1
 
 
+# -- Reassign Ownership -------------------------------------------------------
+def cmd_reassign_owner(args):
+    """Reassign ownership of all database objects on destination."""
+    cfg = Config(args.config)
+    sc, dc = build_clients(cfg)
+    ps = PostSync(sc, dc)
+    target_owner = getattr(args, 'owner', None) or cfg.get_dest_dict()['user']
+    if args.dry_run:
+        print(f"[DRY-RUN] Would reassign all objects to '{target_owner}' on destination")
+        return 0
+    print(f"\n=== Reassign Ownership to '{target_owner}' ===")
+    success, msg, cmds, outs = ps.reassign_ownership(target_owner)
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
 # -- Step 13 ------------------------------------------------------------------
 def cmd_audit_objects(args):
     """Step 13: Compare object counts between source and destination."""
@@ -716,10 +733,16 @@ def cmd_post_migration(args):
         s3, m3, c3, o3 = post_sync.enable_triggers()
         print_status(s3, m3)
 
-        all_cmds = (c1 or []) + (c2 or []) + (c3 or [])
-        all_outs = (o1 or []) + (o2 or []) + (o3 or [])
+        # Reassign Ownership
+        target_owner = cfg.get_dest_dict()['user']
+        print(f"[  owner] Reassign ownership to '{target_owner}'...")
+        s4, m4, c4, o4 = post_sync.reassign_ownership(target_owner)
+        print_status(s4, m4)
+
+        all_cmds = (c1 or []) + (c2 or []) + (c3 or []) + (c4 or [])
+        all_outs = (o1 or []) + (o2 or []) + (o3 or []) + (o4 or [])
         reporter.add_step("POST", "Post-Sync", "OK",
-                          "MatViews, Sequences, Triggers processed",
+                          "MatViews, Sequences, Triggers, Ownership processed",
                           commands=all_cmds, outputs=all_outs)
 
         # Step 13 — Object Audit
@@ -975,6 +998,21 @@ def build_parser() -> argparse.ArgumentParser:
         description="REFRESH MATERIALIZED VIEW for every materialized view on the destination.",
     )
     p_mv.set_defaults(func=cmd_refresh_matviews)
+
+    # Reassign ownership
+    p_owner = sub.add_parser(
+        "reassign-owner",
+        parents=[global_parser],
+        help="Reassign ownership of all objects on destination",
+        description="ALTER … OWNER TO for every object (database, schemas, tables, views, matviews, sequences, functions, types) on the destination.",
+    )
+    p_owner.add_argument(
+        "--owner",
+        metavar="ROLE",
+        default=None,
+        help="Target owner role (default: destination user from config)",
+    )
+    p_owner.set_defaults(func=cmd_reassign_owner)
 
     # Step 13 — audit-objects
     p_audit = sub.add_parser(
