@@ -25,7 +25,10 @@ jobs:
 
       - name: Extract version from pg_migrator.py
         id: version
-        run: echo "VERSION=$(grep '__version__ *=' pg_migrator.py | cut -d '\"' -f 2)" >> $GITHUB_ENV
+        run: |
+          VERSION=$(grep '__version__' pg_migrator.py | sed "s/.*\"\(.*\)\".*/\1/")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Extracted version: $VERSION"
 
       - name: Pre-publish validation
         run: |
