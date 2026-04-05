@@ -26,7 +26,7 @@ jobs:
       - name: Extract version from pg_migrator.py
         id: version
         run: |
-          VERSION=$(grep '__version__' pg_migrator.py | sed "s/.*\"\(.*\)\".*/\1/")
+          VERSION=$(python3 -c 'import re; f=open("pg_migrator.py"); [print(m.group(1)) for line in f if (m:=re.search(r"""__version__\s*=\s*["\x27]([^"\x27]+)""", line))]')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Extracted version: $VERSION"
 
