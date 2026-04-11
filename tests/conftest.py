@@ -5,7 +5,7 @@ from src.checker import DBChecker
 from src.migrator import Migrator
 from src.post_sync import PostSync
 from src.validation import Validator
-from src.main import Config
+from src.config import Config
 
 @pytest.fixture
 def config():

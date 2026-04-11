@@ -60,6 +60,16 @@ class PostgresClient:
             _verbose_print(f"{self.label}:ERROR", str(e))
             raise
 
+def pretty_size(bytes_size):
+    """Convert bytes to human readable format."""
+    if bytes_size is None:
+        return "0 B"
+    for unit in ['B', 'kB', 'MB', 'GB', 'TB']:
+        if bytes_size < 1024.0:
+            return f"{bytes_size:3.1f} {unit}".replace(".0 ", " ")
+        bytes_size /= 1024.0
+    return f"{bytes_size:3.1f} PB"
+
 def execute_shell_command(command, log_cmd=None):
     import subprocess
     import logging

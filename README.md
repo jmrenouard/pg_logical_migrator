@@ -8,19 +8,19 @@
 [![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
 [![GitHub Container Registry](https://img.shields.io/badge/GHCR-jmrenouard%2Fpg__logical__migrator-blue?logo=github)](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator)
 
-**pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and an automated mode for pipeline integration.
+**pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and a two-phase automated pipeline for integration.
 
 ---
 
 ## Key Features
 
 - **Guided TUI Interface**: A step-by-step terminal dashboard (built with [Textual](https://textual.textualize.io/)) to supervise the migration process interactively.
-- **Automated Mode**: One-command migration via `--auto` for non-interactive pipelines.
+- **Two-Phase Pipeline**: Automated migration via `init-replication` and `post-migration` commands for non-interactive environments.
 - **Deep Diagnostics**: Pre-flight checks for Primary Key coverage, Large Objects, Identity columns, and unowned sequences.
 - **Replication Parameter Audit**: Verifies `wal_level`, `max_replication_slots`, `max_wal_senders`, etc. before starting.
 - **Post-Sync Automation**: Automatic refresh of materialized views, sequence synchronization, and trigger activation after initial sync.
 - **Data Validation Suite**: Row count comparison (Step 14) and schema object parity audit (Step 13) for full verification.
-- **Audit-Ready HTML Reports**: Self-contained HTML report containing every executed command, its raw output, and a status badge.
+- **Audit-Ready HTML Reports**: Self-contained HTML reports (`report_init.html` and `report_post.html`) containing every executed command, its raw output, and a status badge.
 
 ---
 
