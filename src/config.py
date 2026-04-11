@@ -44,3 +44,11 @@ class Config:
                 rep[key] = val
 
         return rep
+
+    def get_target_schemas(self):
+        """Return a list of target schemas or ['all']."""
+        target = self.config['replication'].get('target_schema', 'public').strip().lower()
+        if target == 'all':
+            return ['all']
+        # Handle comma-separated list
+        return [s.strip() for s in target.split(',') if s.strip()]

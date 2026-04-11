@@ -6,6 +6,7 @@ Welcome to the technical documentation for the `pg_logical_migrator` project. Th
 
 ## Technical Documentation Index
 
+- **[Codebase Architecture](CODEBASE.md)**: High-level architecture, module responsibilities, and classes.
 - **[Core Concepts](CONCEPTS.md)**: Introduction to the publish-subscribe architecture and replication objects.
 - **[Configuration Guide](CONFIGURATION.md)**: Prerequisites and required PostgreSQL parameters for source and destination.
 - **[Tools & Usage Guide](TOOLS.md)**: CLI flags, Makefile targets, TUI walkthrough, automated mode, and output artifacts.
