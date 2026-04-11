@@ -9,7 +9,7 @@
 - [x] Implement `test_env/setup_pagila.sh` for dataset loading.
 - [x] Design and create `config_migrator.sample.ini`.
 - [x] Implement `src/config.py` for config loading.
-- [x] Setup `src/main.py` with Argument Parser (CLI vs TUI, `--auto`).
+- [x] Setup `src/main.py` with Argument Parser (CLI vs TUI).
 - [x] Implement TUI shell using `textual` or `rich`.
 
 ## Block 2: 14-Step Migration Workflow Implementation
@@ -33,7 +33,7 @@
 
 - [x] Implement TUI "Result Zone" for summary reports.
 - [x] Implement TUI "Command Output Zone" for real-time logs.
-- [x] Implement `--auto` mode logic to chain all 14 steps.
+- [x] Implement two-phase pipeline (`init-replication` and `post-migration`) to chain all 14 steps.
 - [x] Ensure all operations log to `pg_migrator.log`.
 
 ## Block 4: Reporting & Observability

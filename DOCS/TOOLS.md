@@ -194,13 +194,15 @@ python pg_migrator.py apply-params     # SOURCE + DEST
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
-| `migrate-schema` | 4 | **SOURCE → DEST** | `pg_dump -s` on **SOURCE** piped into `psql` on **DEST**. With `--drop-dest`: `DROP DATABASE` + `CREATE DATABASE` on **DEST** |
+| `migrate-schema-pre-data` | 4a | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on **SOURCE** piped into `psql` on **DEST**. With `--drop-dest`: `DROP DATABASE` + `CREATE DATABASE` on **DEST** |
+| `migrate-schema-post-data`| 4b | **SOURCE → DEST** | `pg_dump -s --section=post-data` on **SOURCE** piped into `psql` on **DEST** |
 | `setup-pub` | 5 | **SOURCE** | `DROP PUBLICATION IF EXISTS` + `CREATE PUBLICATION … FOR ALL TABLES` on **SOURCE** |
 | `setup-sub` | 6 | **DEST** | `DROP SUBSCRIPTION IF EXISTS` + `CREATE SUBSCRIPTION … CONNECTION '…' PUBLICATION …` on **DEST** |
 | `repl-status` | 7 | **SOURCE + DEST** | Query `pg_stat_subscription` on **DEST** and `pg_stat_replication`, `pg_replication_slots` on **SOURCE** |
 
 ```bash
-python pg_migrator.py migrate-schema   # SOURCE → DEST
+python pg_migrator.py migrate-schema-pre-data   # SOURCE → DEST
+python pg_migrator.py migrate-schema-post-data  # SOURCE → DEST
 python pg_migrator.py setup-pub        # SOURCE
 python pg_migrator.py setup-sub        # DEST
 python pg_migrator.py repl-status      # SOURCE + DEST
@@ -288,7 +290,8 @@ Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashbo
 │  [2. Run Diagnostics]       🔵  │  ┌── Live Log ─────────────────────┐ │
 │  [3. Verify Parameters]     🔵  │  │ > TUI Initialized. Ready...    │ │
 │  [➤ Apply Parameters]       🔵  │  │ > Running Step 1...            │ │
-│  [4. Copy Schema]           🟠  │  │ > ✔ Step 1 completed.          │ │
+│  [4a. Schema Pre-data]      🟠  │  │ > ✔ Step 1 completed.          │ │
+│  [4b. Schema Post-data]     🟠  │  └──────────────────────────────────┘ │
 │  [5. Setup Publication]     🟠  │  └──────────────────────────────────┘ │
 │  [6. Setup Subscription]    🟠  │                                       │
 │  [7. Replication Status]    🟢  │                                       │
@@ -324,7 +327,8 @@ Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashbo
 | 2. Run Diagnostics | `diagnose` | **SOURCE** | Pre-migration diagnostics (PK, LOBs, sequences, unlogged/temp/foreign tables, materialized views) |
 | 3. Verify Parameters | `params` | **SOURCE + DEST** | Verify replication parameters (`wal_level`, etc.) |
 | ➤ Apply Parameters | `apply-params` | **SOURCE + DEST** | Apply missing replication parameters via `ALTER SYSTEM` |
-| 4. Copy Schema | `migrate-schema` | **SOURCE → DEST** | `pg_dump -s` on SOURCE piped to `psql` on DEST. Honors `Drop Dest Schema` checkbox |
+| 4a. Schema Pre-data | `migrate-schema-pre-data` | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on SOURCE piped to `psql` on DEST. Honors `Drop Dest Schema` checkbox |
+| 4b. Schema Post-data | `migrate-schema-post-data` | **SOURCE → DEST** | `pg_dump -s --section=post-data` on SOURCE piped to `psql` on DEST |
 | 5. Setup Publication | `setup-pub` | **SOURCE** | Create publication on SOURCE |
 | 6. Setup Subscription | `setup-sub` | **DEST** | Create subscription on DEST (runs asynchronously) |
 | 7. Replication Status | `repl-status` | **SOURCE + DEST** | Query `pg_stat_subscription` on **DEST** and `pg_stat_replication`, `pg_replication_slots` on **SOURCE** |
@@ -369,7 +373,7 @@ Runs the migration pipeline non-interactively in an incremental sequence via two
 1. **Connectivity Check** (`checker.check_connectivity()` on **SOURCE + DEST**)
 2. **Pre-Migration Diagnostics** (`checker.check_problematic_objects()` on **SOURCE**)
 3. **Replication Parameters Check** (`checker.check_replication_params()` on **SOURCE + DEST**)
-4. **Schema Migration** (`migrator.step4_migrate_schema()` on **SOURCE → DEST**)
+4. **Schema Pre-Data Migration** (`migrator.step4a_migrate_schema_pre_data()` on **SOURCE → DEST**)
 5. **Setup Publication** (`migrator.step5_setup_source()` on **SOURCE**)
 6. **Setup Subscription** (`migrator.step6_setup_destination()` on **DEST**)
 7. **Initial Data Sync Wait** (`migrator.wait_for_sync()` polling **DEST**)
@@ -380,11 +384,12 @@ Runs the migration pipeline non-interactively in an incremental sequence via two
 
 1. **Connectivity Check** (`checker.check_connectivity()` on **SOURCE + DEST**)
 2. **Cleanup Replication** (`migrator.step12_terminate_replication()` on **DEST + SOURCE**)
-3. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()` on **DEST**)
-4. **Sync Sequences** (`post_sync.sync_sequences()` on **SOURCE → DEST**)
-5. **Enable Triggers** (`post_sync.enable_triggers()` on **DEST**)
-6. **Object Audit** (`validator.audit_objects()` on **SOURCE + DEST**)
-7. **Row Parity Check** (`validator.compare_row_counts()` on **SOURCE + DEST**)
+3. **Schema Post-Data Migration** (`migrator.step4b_migrate_schema_post_data()` on **SOURCE → DEST**)
+4. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()` on **DEST**)
+5. **Sync Sequences** (`post_sync.sync_sequences()` on **SOURCE → DEST**)
+6. **Enable Triggers** (`post_sync.enable_triggers()` on **DEST**)
+7. **Object Audit** (`validator.audit_objects()` on **SOURCE + DEST**)
+8. **Row Parity Check** (`validator.compare_row_counts()` on **SOURCE + DEST**)
 
 A timestamped HTML report is generated at the completion of *both* commands. If any step raises a fatal exception, a partial error report is written instead.
 

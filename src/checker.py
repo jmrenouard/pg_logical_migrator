@@ -3,9 +3,19 @@ import psycopg
 from src.db import PostgresClient
 
 class DBChecker:
-    def __init__(self, source_client, dest_client=None):
+    def __init__(self, source_client, dest_client=None, config=None):
         self.source = source_client
         self.dest = dest_client
+        self.config = config
+
+    def _get_schema_filter(self, nspname_col="n.nspname"):
+        if not self.config:
+            return ""
+        schemas = self.config.get_target_schemas()
+        if schemas == ['all']:
+            return ""
+        schema_list = ", ".join([f"'{s}'" for s in schemas])
+        return f"AND {nspname_col} IN ({schema_list})"
 
     def check_connectivity(self):
         results = {"source": False, "dest": False}
@@ -24,7 +34,7 @@ class DBChecker:
         return results
 
     def get_pg_parameters(self, client):
-        query = """
+        query = f"""
         SELECT name, setting, unit, category, pending_restart
         FROM pg_settings
         WHERE name IN (
@@ -37,12 +47,13 @@ class DBChecker:
 
     def check_problematic_objects(self):
         # Tables without Primary Keys
-        query_no_pk = """
+        query_no_pk = f"""
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'r'
           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()}
           AND NOT EXISTS (
             SELECT 1 FROM pg_index i
             WHERE i.indrelid = c.oid AND i.indisprimary
@@ -55,21 +66,29 @@ class DBChecker:
         lo_count = self.source.execute_query(query_lo)[0]['count']
 
         # Tables with Identity Columns
-        query_identity = """
+        schema_filter_identity = ""
+        if self.config:
+            schemas = self.config.get_target_schemas()
+            if schemas != ['all']:
+                schema_list = ", ".join([f"'{s}'" for s in schemas])
+                schema_filter_identity = f"AND table_schema IN ({schema_list})"
+
+        query_identity = f"""
         SELECT table_schema, table_name, column_name
         FROM information_schema.columns
         WHERE is_identity = 'YES'
-          AND table_schema NOT IN ('pg_catalog', 'information_schema');
+          AND table_schema NOT IN ('pg_catalog', 'information_schema')
+          {schema_filter_identity};
         """
         identities = self.source.execute_query(query_identity)
 
-        # Sequences WITHOUT parent table
-        query_unowned_seq = """
+        query_unowned_seq = f"""
         SELECT n.nspname as schema_name, c.relname as seq_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'S'
           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()}
           AND NOT EXISTS (
               SELECT 1 FROM pg_depend d 
               WHERE d.objid = c.oid AND d.deptype = 'a'
@@ -77,43 +96,46 @@ class DBChecker:
         """
         unowned_seqs = self.source.execute_query(query_unowned_seq)
         
-        # Unlogged tables (relpersistence = 'u')
-        query_unlogged = """
+        query_unlogged = f"""
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'r' AND c.relpersistence = 'u'
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()};
         """
         unlogged_tables = self.source.execute_query(query_unlogged)
 
         # Temporary tables (relpersistence = 't')
-        query_temp = """
+        query_temp = f"""
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'r' AND c.relpersistence = 't'
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()};
         """
         temp_tables = self.source.execute_query(query_temp)
 
         # Foreign tables (relkind = 'f')
-        query_foreign = """
+        query_foreign = f"""
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'f'
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()};
         """
         foreign_tables = self.source.execute_query(query_foreign)
 
         # Materialized views (relkind = 'm')
-        query_matviews = """
+        query_matviews = f"""
         SELECT n.nspname AS schema_name, c.relname AS matview_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'm'
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema');
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()};
         """
         matviews = self.source.execute_query(query_matviews)
 
@@ -195,13 +217,56 @@ class DBChecker:
         return results
 
     def get_object_counts(self, client):
-        query = """
+        sf = self._get_schema_filter()
+        sf_ns = self._get_schema_filter(nspname_col="nspname")
+        query = f"""
         SELECT
-            (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema') as schemas,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')) as tables,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN ('pg_catalog', 'information_schema')) as views,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema')) as matviews,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'S' AND n.nspname NOT IN ('pg_catalog', 'information_schema')) as sequences,
+            (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema' {sf_ns}) as schemas,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as tables,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as views,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as matviews,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'S' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as sequences,
             (SELECT count(*) FROM pg_trigger) as triggers;
         """
         return client.execute_query(query)
+
+    def get_database_size_analysis(self, client):
+        """Fetch total database size and top tables breakdown."""
+        sf = self._get_schema_filter()
+        
+        # 1. Total Database Size
+        db_size_query = "SELECT pg_database_size(current_database()) AS total_bytes, pg_size_pretty(pg_database_size(current_database())) AS total_pretty;"
+        
+        try:
+            db_size_rows = client.execute_query(db_size_query)
+            db_size = db_size_rows[0] if db_size_rows else None
+            total_db_bytes = db_size['total_bytes'] if db_size and db_size['total_bytes'] > 0 else 1
+
+            # 2. Table Breakdown (Data, Index, Total)
+            table_size_query = f"""
+            SELECT 
+                n.nspname AS schema_name,
+                c.relname AS table_name,
+                pg_table_size(c.oid) AS data_bytes,
+                pg_size_pretty(pg_table_size(c.oid)) AS data_pretty,
+                pg_indexes_size(c.oid) AS index_bytes,
+                pg_size_pretty(pg_indexes_size(c.oid)) AS index_pretty,
+                pg_total_relation_size(c.oid) AS total_bytes,
+                pg_size_pretty(pg_total_relation_size(c.oid)) AS total_pretty,
+                round(100.0 * pg_total_relation_size(c.oid) / {total_db_bytes}, 2) AS percent
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r'
+              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              {sf}
+            ORDER BY pg_total_relation_size(c.oid) DESC;
+            """
+            
+            table_sizes = client.execute_query(table_size_query) or []
+            return {
+                "database": db_size,
+                "tables": table_sizes
+            }
+        except Exception as e:
+            logging.error(f"Failed to fetch size analysis: {e}")
+            return None
