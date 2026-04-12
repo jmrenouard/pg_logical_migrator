@@ -245,11 +245,11 @@ class MigratorApp(App):
                 
                 if table:
                     # If we have a table, wrap everything in a Panel containing the table and use diag as title
-                    self.result_area.update(Panel(table, title=f"Diagnostics: {diag.replace('\n', ' | ')}", border_style="yellow"))
+                    diag_title = f"Diagnostics: {diag.replace('\n', ' | ')}"
+                    self.result_area.update(Panel(table, title=diag_title, border_style="yellow"))
                 else:
                     self.result_area.update(Panel(diag, title="[Step 2] Diagnostics", border_style="yellow"))
 
-                self.log_area.write(f"  Tables without PK: {len(res['no_pk'])}")
                 self.log_area.write(f"  Tables without PK: {len(res['no_pk'])}")
                 for t in res['no_pk']:
                     self.log_area.write(f"    - {t['schema_name']}.{t['table_name']}")
