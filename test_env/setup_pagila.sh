@@ -3,14 +3,17 @@ set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 CONTAINER_SOURCE="pg_source"
+CONTAINER_TARGET="pg_target"
 DB_NAME="test_migration"
 
 echo "Waiting for PostgreSQL containers to be healthy..."
-until [ "$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER_SOURCE}")" = "healthy" ]; do
-    sleep 2;
-    echo -n "."
+for CONTAINER in "${CONTAINER_SOURCE}" "${CONTAINER_TARGET}"; do
+    until [ "$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER}")" = "healthy" ]; do
+        sleep 2;
+        echo -n "."
+    done
+    echo " ${CONTAINER} is ready."
 done
-echo " Source DB is ready."
 
 # Download Pagila if not exists
 if [ ! -f "${DIR}/pagila-schema.sql" ]; then
@@ -44,5 +47,12 @@ CREATE TABLE public.no_pk_table (
 INSERT INTO public.no_pk_table (id, random_data)
 SELECT generate_series(1, 10), md5(random()::text);
 "
+
+echo "Injecting extra test data (multi-schema, no-PK, unlogged, LOBs)..."
+docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost < "${DIR}/extra_test_data.sql"
+
+echo "Injecting VERY LARGE DATASET (100 million rows in schema_large)..."
+echo "  -> This step is slow by design. Please wait..."
+docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost < "${DIR}/large_data.sql"
 
 echo "Setup complete!"

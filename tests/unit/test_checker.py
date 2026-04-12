@@ -53,3 +53,30 @@ def test_check_replication_params():
     wal_param = next(p for p in res['source'] if p['parameter'] == 'wal_level')
     assert wal_param['status'] == 'FAIL'
     assert wal_param['expected'] == 'logical'
+
+def test_get_database_size_analysis():
+    source = MagicMock()
+    source.execute_query.side_effect = [
+        [{"total_bytes": 1024, "total_pretty": "1 kB"}], # db size
+        [{"schema_name": "public", "table_name": "t1", "total_pretty": "512 B", "percent": 50.0}] # table size
+    ]
+    
+    checker = DBChecker(source)
+    res = checker.get_database_size_analysis(source)
+    
+    assert res["database"]["total_pretty"] == "1 kB"
+    assert res["tables"][0]["table_name"] == "t1"
+    assert res["tables"][0]["percent"] == 50.0
+
+def test_db_checker_schema_filter():
+    source = MagicMock()
+    mock_config = MagicMock()
+    mock_config.get_target_schemas.return_value = ["s1", "s2"]
+    
+    checker = DBChecker(source, config=mock_config)
+    sf = checker._get_schema_filter("col")
+    assert "col IN ('s1', 's2')" in sf
+    
+    mock_config.get_target_schemas.return_value = ["all"]
+    sf = checker._get_schema_filter("col")
+    assert sf == ""

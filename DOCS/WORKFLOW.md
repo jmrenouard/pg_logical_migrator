@@ -39,11 +39,11 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 
 ## Phase 2 — Replication Setup
 
-### Step 4: Schema Migration
+### Step 4a: Schema Pre-Data Migration
 
-- **Module**: `src/migrator.py` → `Migrator.step4_migrate_schema()`
-- **Purpose**: Replicate the entire database structure to the destination.
-- **Action**: Runs `pg_dump -s --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
+- **Module**: `src/migrator.py` → `Migrator.step4a_migrate_schema_pre_data()`
+- **Purpose**: Replicate the pre-data schema structure (tables, schemas) to the destination.
+- **Action**: Runs `pg_dump -s --section=pre-data --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
 - **Returns**: `(success, message, commands_run, outputs)`
 
 ### Step 5: Source Replication Setup
@@ -72,6 +72,13 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 ## Phase 3 — Post-Synchronization
 
 > These steps are executed as part of the `post-migration` pipeline command after the initial data transfer is complete. They ensure consistency of non-replicated objects (sequences, materialized views, triggers).
+
+### Step 4b: Schema Post-Data Migration
+
+- **Module**: `src/migrator.py` → `Migrator.step4b_migrate_schema_post_data()`
+- **Purpose**: Apply post-data schema objects (indexes, constraints) after data copy is complete.
+- **Action**: Runs `pg_dump -s --section=post-data --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
+- **Returns**: `(success, message, commands_run, outputs)`
 
 ### Step 8: Materialized Views Refresh
 
@@ -136,14 +143,14 @@ The `pg_logical_migrator` operates through a predefined 14-step sequence to ensu
 
 ## Incremental Pipeline Execution Order
 
-The monolithic `--auto` mode has been replaced by an incremental two-phase pipeline for better safety and control.
+The two-phase pipeline provides better safety and control than a single-shot automation.
 
 ### A. Initialization (`init-replication`)
 
 Leaves replication active for continuous syncing.
 
 ```text
-1 (Connectivity) → 2 (Diagnose) → 3 (Params) → 4 (Schema) → 5 (Pub) → 6 (Sub) → 7 (Polling Wait) → 13 (Audit) → 14 (Row Parity)
+1 (Connectivity) → 2 (Diagnose) → 3 (Params) → 4a (Schema Pre-Data) → 5 (Pub) → 6 (Sub) → 7 (Polling Wait) → 13 (Audit) → 14 (Row Parity)
 ```
 
 ### B. Post Migration (`post-migration`)
@@ -151,7 +158,7 @@ Leaves replication active for continuous syncing.
 Performs cleanup and finalizes destination objects.
 
 ```text
-1 (Connectivity) → 12 (Stop Replication) → 8 (Refresh MatViews) → 9/10 (Sync Sequences) → 11 (Enable Triggers) → 13 (Audit) → 14 (Row Parity)
+1 (Connectivity) → 12 (Stop Replication) → 4b (Schema Post-Data) → 8 (Refresh MatViews) → 9/10 (Sync Sequences) → 11 (Enable Triggers) → 13 (Audit) → 14 (Row Parity)
 ```
 
 See [TOOLS.md](TOOLS.md) for full pipeline documentation.

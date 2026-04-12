@@ -39,7 +39,7 @@
 
 - [x] Execution report in HTML with premium styling.
 - [x] Detailed Execution Logs (commands + outputs) in reports.
-- [x] Automated mode implementation (`--auto`) chaining all 14 steps.
+- [x] Automated mode implementation (two-phase pipeline) chaining all 14 steps.
 - [x] CLI polish and documentation.
 - [x] Makefile orchestration (`make test-report`, `make env-up`, etc.).
 - [x] Unit tests for all core modules.

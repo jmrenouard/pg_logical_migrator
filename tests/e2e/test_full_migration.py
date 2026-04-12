@@ -46,7 +46,8 @@ def test_full_migration_e2e(tmp_path):
     
     # 2. Check if log and report exist
     assert os.path.exists(os.path.join(results_dir, "pg_migrator.log"))
-    assert os.path.exists(os.path.join(results_dir, "migration_report.html"))
+    assert os.path.exists(os.path.join(results_dir, "report_init.html"))
+    assert os.path.exists(os.path.join(results_dir, "report_post.html"))
     
     # 3. Verify data parity on a sample table (e.g., actor in pagila)
     from src.config import Config
