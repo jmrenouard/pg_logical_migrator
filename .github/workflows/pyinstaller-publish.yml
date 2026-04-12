@@ -13,13 +13,12 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        # Future: add macos-latest, windows-latest for cross-platform binaries
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout repository
@@ -32,8 +31,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set environment variables (Bash)
+        if: runner.os != 'Windows'
+        run: |
+          echo "EXE_EXT=" >> $GITHUB_ENV
+          echo "PLATFORM=linux-amd64" >> $GITHUB_ENV
+
+      - name: Set environment variables (PowerShell)
+        if: runner.os == 'Windows'
+        run: |
+          echo "EXE_EXT=.exe" >> $env:GITHUB_ENV
+          echo "PLATFORM=win-amd64" >> $env:GITHUB_ENV
+
       - name: Extract version from pg_migrator.py
         id: version
+        shell: bash
         run: |
           VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
           if [ -z "$VERSION" ]; then
@@ -44,6 +56,7 @@ jobs:
           echo "Extracted version: $VERSION"
 
       - name: Pre-publish validation
+        shell: bash
         run: |
           echo "Checking for critical files..."
           for file in pg_migrator.py requirements.txt LICENSE; do
@@ -80,6 +93,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build standalone binary
+        shell: bash
         run: |
           pyinstaller \
             --onefile \
@@ -89,24 +103,32 @@ jobs:
             pg_migrator.py
 
       - name: Verify binary runs
+        shell: bash
         run: |
-          chmod +x ./dist/pg_migrator
-          ./dist/pg_migrator --version
-          ./dist/pg_migrator --help
+          ./dist/pg_migrator${{ env.EXE_EXT }} --version
+          ./dist/pg_migrator${{ env.EXE_EXT }} --help
 
       - name: Rename binary with version and platform
+        shell: bash
         run: |
-          PLATFORM="linux-amd64"
-          BINARY_NAME="pg_migrator-${PLATFORM}-v${{ env.VERSION }}"
-          mv dist/pg_migrator "dist/${BINARY_NAME}"
+          BINARY_NAME="pg_migrator-${{ env.PLATFORM }}-v${{ env.VERSION }}${{ env.EXE_EXT }}"
+          mv dist/pg_migrator${{ env.EXE_EXT }} "dist/${BINARY_NAME}"
           echo "BINARY_NAME=${BINARY_NAME}" >> $GITHUB_ENV
           echo "Binary: dist/${BINARY_NAME}"
 
-      - name: Generate SHA256 checksum
+      - name: Generate SHA256 checksum (Linux)
+        if: runner.os != 'Windows'
         run: |
           cd dist
           sha256sum "${{ env.BINARY_NAME }}" > "${{ env.BINARY_NAME }}.sha256"
           cat "${{ env.BINARY_NAME }}.sha256"
+
+      - name: Generate SHA256 checksum (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          CertUtil -hashfile "${{ env.BINARY_NAME }}" SHA256 > "${{ env.BINARY_NAME }}.sha256"
+          type "${{ env.BINARY_NAME }}.sha256"
 
       - name: Upload binary as artifact
         uses: actions/upload-artifact@v6
@@ -128,10 +150,9 @@ jobs:
 
             ### Downloads
 
-            | Asset | Description |
-            |---|---|
-            | `${{ env.BINARY_NAME }}` | Standalone Linux amd64 binary (PyInstaller) |
-            | `${{ env.BINARY_NAME }}.sha256` | SHA256 checksum |
+            Standalone binaries for multiple platforms:
+            - **Linux (amd64)**: `pg_migrator-linux-amd64-v${{ env.VERSION }}`
+            - **Windows (amd64)**: `pg_migrator-win-amd64-v${{ env.VERSION }}.exe`
 
             ### Docker Images
 
@@ -146,5 +167,4 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            dist/${{ env.BINARY_NAME }}
-            dist/${{ env.BINARY_NAME }}.sha256
+            dist/*.v${{ env.VERSION }}*
