@@ -245,7 +245,8 @@ class MigratorApp(App):
                 
                 if table:
                     # If we have a table, wrap everything in a Panel containing the table and use diag as title
-                    diag_title = f"Diagnostics: {diag.replace('\n', ' | ')}"
+                    diag_flat = diag.replace('\n', ' | ')
+                    diag_title = f"Diagnostics: {diag_flat}"
                     self.result_area.update(Panel(table, title=diag_title, border_style="yellow"))
                 else:
                     self.result_area.update(Panel(diag, title="[Step 2] Diagnostics", border_style="yellow"))
