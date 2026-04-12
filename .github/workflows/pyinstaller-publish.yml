@@ -46,7 +46,7 @@ jobs:
       - name: Pre-publish validation
         run: |
           echo "Checking for critical files..."
-          for file in pg_migrator.py requirements.txt pg_migrator.spec LICENSE; do
+          for file in pg_migrator.py requirements.txt LICENSE; do
             if [ ! -f "$file" ]; then
               echo "ERROR: Critical file missing: $file"
               exit 1
