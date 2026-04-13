@@ -1,168 +1,158 @@
 ![pg_logical_migrator](../pg_logical_migrator.jpg)
 
-# Migration Workflow — 14 Steps
+# Migration Workflow — 16 Steps
 
-The `pg_logical_migrator` operates through a predefined 14-step sequence to ensure data integrity and minimal downtime. Each step maps to a specific function in the Python source code.
+The `pg_logical_migrator` operates through a predefined **16-step sequence** to ensure data integrity and minimal downtime.
 
 ---
 
-## Phase 1 — Pre-Flight Checks
+## High-Level Pipeline
 
-### Step 1: Connectivity Check
+```mermaid
+graph TD
+    subgraph "Phase 1: Pre-Flight"
+        S1[1. Connectivity] --> S2[2. Diagnostics & Size]
+        S2 --> S3[3. Verify Params]
+    end
 
-- **Module**: `src/checker.py` → `DBChecker.check_connectivity()`
-- **Purpose**: Verify network connectivity and authentication for both source and destination servers.
-- **Action**: Attempt a connection using parameters from `config_migrator.ini`.
-- **Outcome**: OK if both connections succeed; FAIL if either one fails.
+    subgraph "Phase 2: Replication Setup"
+        S3 --> S4a[4a. Schema Pre-Data]
+        S4a --> S5[5. Setup Publication]
+        S5 --> S6[6. Setup Subscription]
+        S6 --> S7[7. Monitor Status]
+        S7 --> WAIT[Wait for Initial Sync]
+    end
 
-### Step 2: Problematic Objects Analysis
+    subgraph "Phase 3: Finalization"
+        WAIT --> S8[8. Refresh MatViews]
+        S8 --> S9[9/10. Sync Sequences]
+        S9 --> S11[11. Enable Triggers]
+        S11 --> S12[12. Schema Post-Data]
+        S12 --> S13[13. Reassign Owner]
+    end
 
-- **Module**: `src/checker.py` → `DBChecker.check_problematic_objects()`
-- **Purpose**: Identify potential migration blockers before starting replication.
-- **Checks on Source**:
-  - Tables without a Primary Key (`pg_class` + `pg_index`)
-  - Count of Large Objects (`pg_largeobject_metadata`)
-  - Tables with Identity Columns (`information_schema.columns`)
-  - Sequences without an owning table (`pg_depend`)
-  - Unlogged, Temporary, and Foreign tables
-  - Materialized views
-- **Outcome**: A diagnostic summary in the Result Zone.
+    subgraph "Phase 4: Validation & Cleanup"
+        S13 --> S14[14. Object Audit]
+        S14 --> S15[15. Row Parity]
+        S15 --> S16[16. STOP & Cleanup]
+        S16 -.-> S17[17. Setup Reverse Repl]
+    end
+```
 
-### Step 3: Parameter Verification
+---
 
-- **Module**: `src/checker.py` → `DBChecker.check_replication_params()`
-- **Purpose**: Ensure the source PostgreSQL server is configured for logical replication.
-- **Checks**: `wal_level`, `max_replication_slots`, `max_wal_senders`, `max_worker_processes`, `server_version`.
-- **Details**: See [Configuration Guide](CONFIGURATION.md).
+## Detailed Step Reference
+
+### Phase 1 — Pre-Flight Checks
+
+#### 1. Connectivity Check
+- **Purpose**: Verify network and auth for both servers.
+- **CLI**: `pg_migrator.py check`
+
+#### 2. Diagnostics & Size Analysis
+- **Purpose**: Scan for blockers (missing PK, LOBs) and audit database/table sizes.
+- **CLI**: `pg_migrator.py diagnose`
+
+#### 3. Parameter Verification
+- **Purpose**: Ensure `wal_level = logical` and enough slots/workers.
+- **CLI**: `pg_migrator.py params`
 
 ---
 
 ## Phase 2 — Replication Setup
 
-### Step 4a: Schema Pre-Data Migration
+#### 4a. Schema Pre-Data Migration
+- **Purpose**: Create tables and structures on destination.
+- **CLI**: `pg_migrator.py migrate-schema-pre-data`
 
-- **Module**: `src/migrator.py` → `Migrator.step4a_migrate_schema_pre_data()`
-- **Purpose**: Replicate the pre-data schema structure (tables, schemas) to the destination.
-- **Action**: Runs `pg_dump -s --section=pre-data --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
-- **Returns**: `(success, message, commands_run, outputs)`
+#### 5. Source Replication Setup
+- **Purpose**: Create Publication. Handles `REPLICA IDENTITY FULL` for no-PK tables.
+- **CLI**: `pg_migrator.py setup-pub`
 
-### Step 5: Source Replication Setup
+#### 6. Destination Replication Setup
+- **Purpose**: Create Subscription and start background data copy.
+- **CLI**: `pg_migrator.py setup-sub`
 
-- **Module**: `src/migrator.py` → `Migrator.step5_setup_source()`
-- **Purpose**: Prepare the source instance for data streaming.
-- **Action**: Creates the logical Publication (for `ALL TABLES`) and the Replication Slot on the source.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-### Step 6: Destination Replication Setup
-
-- **Module**: `src/migrator.py` → `Migrator.step6_setup_destination()`
-- **Purpose**: Start data ingestion from the source.
-- **Action**: Creates the logical Subscription on the destination server, linking it to the source publication.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-### Step 7: Replication Monitoring (Watch)
-
-- **Module**: `src/migrator.py` → `Migrator.get_replication_status()`
-- **Purpose**: Track the progress of initial data synchronization and ongoing replication.
-- **Action**: Queries `pg_stat_subscription`, `pg_subscription_rel` on the destination, and `pg_stat_replication`, `pg_replication_slots`, `pg_publication_tables` on the source to display the current synchronization state of tables.
-- **TUI/CLI**: Real-time monitoring in the TUI Result Zone or via the `repl-status` CLI command.
+#### 7. Replication Monitoring
+- **Purpose**: Watch real-time sync status and byte-level progress.
+- **CLI**: `pg_migrator.py repl-status` or `repl-progress`
 
 ---
 
-## Phase 3 — Post-Synchronization
+## Phase 3 — Finalization
 
-> These steps are executed as part of the `post-migration` pipeline command after the initial data transfer is complete. They ensure consistency of non-replicated objects (sequences, materialized views, triggers).
+#### 8. Materialized Views Refresh
+- **Purpose**: Sync non-replicated views.
+- **CLI**: `pg_migrator.py refresh-matviews`
 
-### Step 4b: Schema Post-Data Migration
+#### 9/10. Sequence Synchronization
+- **Purpose**: Apply current sequence values to avoid ID collisions.
+- **CLI**: `pg_migrator.py sync-sequences`
 
-- **Module**: `src/migrator.py` → `Migrator.step4b_migrate_schema_post_data()`
-- **Purpose**: Apply post-data schema objects (indexes, constraints) after data copy is complete.
-- **Action**: Runs `pg_dump -s --section=post-data --no-acl --no-owner` on the source and pipes the output to `psql` on the destination.
-- **Returns**: `(success, message, commands_run, outputs)`
+#### 11. Trigger Activation
+- **Purpose**: Re-enable triggers on destination.
+- **CLI**: `pg_migrator.py enable-triggers`
 
-### Step 8: Materialized Views Refresh
+#### 12. Schema Post-Data Migration
+- **Purpose**: Create indexes and foreign keys after data is synced.
+- **CLI**: `pg_migrator.py migrate-schema-post-data`
 
-- **Module**: `src/post_sync.py` → `PostSync.refresh_materialized_views()`
-- **Purpose**: Synchronize non-table objects that are not replicated by logical subscription.
-- **Action**: Queries all materialized views on the destination and executes `REFRESH MATERIALIZED VIEW CONCURRENTLY` for each.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-### Step 9: Sequence Synchronization (Fetch)
-
-- **Module**: `src/post_sync.py` → `PostSync.sync_sequences()` (fetch phase)
-- **Purpose**: Capture the current sequence values from the source to prevent ID collisions on the destination.
-- **Action**: Fetches `last_value` for all sequences using `pg_sequences` on the source.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-### Step 10: Sequence Activation (Apply)
-
-- **Module**: `src/post_sync.py` → `PostSync.sync_sequences()` (apply phase)
-- **Purpose**: Update sequences on the destination to match the source's current state.
-- **Action**: Executes `SELECT setval(...)` for each sequence using the values fetched in Step 9.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-### Step 11: Trigger Activation
-
-- **Module**: `src/post_sync.py` → `PostSync.enable_triggers()`
-- **Purpose**: Re-enable business logic triggers that may have been disabled during the initial sync.
-- **Action**: Executes `ALTER TABLE ... ENABLE TRIGGER ALL` for each user table on the destination.
-- **Returns**: `(success, message, commands_run, outputs)`
+#### 13. Reassign Ownership
+- **Purpose**: Set correct owner for all migrated objects.
+- **CLI**: `pg_migrator.py reassign-owner`
 
 ---
 
-## Phase 4 — Validation & Cutover
+## Phase 4 — Validation & Cleanup
 
-### Step 13: Object Audit
+#### 14. Object Audit
+- **Purpose**: Verify structural parity (counts of tables, views, etc.).
+- **CLI**: `pg_migrator.py audit-objects`
 
-- **Module**: `src/validation.py` → `Validator.audit_objects()`
-- **Purpose**: Verify 100% schema parity between source and destination.
-- **Action**: Counts all objects (TABLE, VIEW, INDEX, SEQUENCE, FUNCTION) on both servers using `pg_class` and compares the totals.
-- **Returns**: `(success, message, commands_run, outputs, report_list)`
+#### 15. Data Validation (Row Parity)
+- **Purpose**: Confirm 100% data consistency.
+- **CLI**: `pg_migrator.py validate-rows [--use-stats]`
 
-### Step 14: Data Validation (Row Parity)
+#### 16. STOP / CLEANUP
+- **Purpose**: Finalize and free resources (Drop Sub/Pub).
+- **CLI**: `pg_migrator.py cleanup`
 
-- **Module**: `src/validation.py` → `Validator.compare_row_counts()`
-- **Purpose**: Confirm data consistency after synchronization.
-- **Action**: Executes `SELECT count(*)` for every user table on both servers and compares the results. Reports OK or DIFF per table.
-- **Returns**: `(success, message, commands_run, outputs, report_list)`
-
----
-
-## Phase 5 — Cleanup
-
-### Step 12: Replication Termination
-
-- **Module**: `src/migrator.py` → `Migrator.step12_terminate_replication()`
-- **Purpose**: Finalise the migration and free all replication resources.
-- **Action**: Drops the Subscription on the destination, then drops the Publication and the Replication Slot on the source.
-- **Returns**: `(success, message, commands_run, outputs)`
-
-> **Note**: Step 12 is displayed last in the TUI sidebar because it is a destructive, one-way action. It should only be triggered after Steps 13 and 14 confirm full data parity.
+#### 17. Setup Reverse Replication (Optional)
+- **Purpose**: Create a reverse logical replication stream (Destination -> Source) to allow immediate rollback after cutover.
+- **CLI**: `pg_migrator.py setup-reverse`
 
 ---
 
-## Incremental Pipeline Execution Order
-
-The two-phase pipeline provides better safety and control than a single-shot automation.
+## Automated Pipelines
 
 ### A. Initialization (`init-replication`)
+Executes steps 1 to 6, waits for sync, then runs validation (14, 15).
 
-Leaves replication active for continuous syncing.
-
-```text
-1 (Connectivity) → 2 (Diagnose) → 3 (Params) → 4a (Schema Pre-Data) → 5 (Pub) → 6 (Sub) → 7 (Polling Wait) → 13 (Audit) → 14 (Row Parity)
+```mermaid
+listStream
+    Step 1 --> Step 2
+    Step 2 --> Step 3
+    Step 3 --> Step 4a
+    Step 4a --> Step 5
+    Step 5 --> Step 6
+    Step 6 --> Wait_Sync
+    Wait_Sync --> Step 14
+    Wait_Sync --> Step 15
 ```
 
 ### B. Post Migration (`post-migration`)
+Waits for final sync, then executes steps 16, 12, 8, 9/10, 11, 13 and final validation.
 
-Performs cleanup and finalizes destination objects.
-
-```text
-1 (Connectivity) → 12 (Stop Replication) → 4b (Schema Post-Data) → 8 (Refresh MatViews) → 9/10 (Sync Sequences) → 11 (Enable Triggers) → 13 (Audit) → 14 (Row Parity)
+```mermaid
+listStream
+    Wait_Sync --> Step 16
+    Step 16 --> Step 12
+    Step 12 --> Step 8
+    Step 8 --> Step 9/10
+    Step 9/10 --> Step 11
+    Step 11 --> Step 13
+    Step 13 --> Step 14
+    Step 13 --> Step 15
 ```
-
-See [TOOLS.md](TOOLS.md) for full pipeline documentation.
-
----
 
 [Return to Documentation Index](README.md)

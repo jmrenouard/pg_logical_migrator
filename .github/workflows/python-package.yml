@@ -1,60 +1,47 @@
-# CI pipeline: lint, test, build Docker image, and produce PyInstaller binary
+# CI pipeline: lint, test, build Docker image, and produce Python assets
 # https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
 name: Python package
 
 on:
   push:
-    branches: ["main"]
+    branches: ["*"]
     tags: ["v*"]
   pull_request:
     branches: ["main"]
 
 # Required to push Docker images to GitHub Container Registry (ghcr.io)
 permissions:
-  contents: write        # needed for release asset upload
-  packages: write        # needed for GHCR push
+  contents: write
+  packages: write
 
 jobs:
-  # ─────────────────────────────────────────────
-  # 1. Lint & Test (matrix across Python versions)
-  # ─────────────────────────────────────────────
+  # 1. Lint & Test
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
-
     steps:
       - uses: actions/checkout@v6
-
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install flake8 pytest pytest-html
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       - name: Prepare test config
-        run: |
-          cp config_migrator.sample.ini config_migrator.ini
-
+        run: cp config_migrator.sample.ini config_migrator.ini
       - name: Lint with flake8
         run: |
-          # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
       - name: Run unit tests
-        run: |
-          PYTHONPATH=. pytest tests/unit -v --tb=short --html=test-report.html --self-contained-html
-
+        run: PYTHONPATH=. pytest tests/unit -v --tb=short --html=test-report.html --self-contained-html
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v6
@@ -63,33 +50,23 @@ jobs:
           path: test-report.html
           retention-days: 14
 
-  # ─────────────────────────────────────────────
   # 2. Build & Push Docker Image (ghcr.io)
-  # ─────────────────────────────────────────────
   docker:
     needs: test
     runs-on: ubuntu-latest
-    # Build on every push/PR, but only push image on main or tag
     steps:
       - uses: actions/checkout@v6
-
-      - name: Docker metadata (tags & labels)
+      - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            # branch name
             type=ref,event=branch
-            # semver tag (v1.2.3 → 1.2.3)
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            # short sha
             type=sha,prefix=
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Login to GitHub Container Registry
         if: github.event_name == 'push'
         uses: docker/login-action@v3
@@ -97,7 +74,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -108,114 +84,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─────────────────────────────────────────────
-  # 3. Build PyInstaller Binary
-  # ─────────────────────────────────────────────
-  pyinstaller:
+  # 3. Build Python Wheel and Source Distribution
+  build-python-assets:
     needs: test
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build standalone binary
-        run: |
-          pyinstaller \
-            --onefile \
-            --name pg_migrator \
-            --add-data "src:src" \
-            --add-data "config_migrator.sample.ini:." \
-            pg_migrator.py
-
-      - name: Verify binary runs
-        run: |
-          ./dist/pg_migrator --help
-
-      - name: Upload binary as artifact
+          pip install build
+      - name: Build Python Assets
+        run: python -m build
+      - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: pg_migrator-linux-amd64
-          path: dist/pg_migrator
+          name: python-assets
+          path: dist/*
           retention-days: 30
-
-  # ─────────────────────────────────────────────
-  # 4. Create GitHub Release (on v* tags only)
-  # ─────────────────────────────────────────────
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [docker, pyinstaller]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0   # full history for changelog generation
-
-      - name: Download PyInstaller binary
-        uses: actions/download-artifact@v6
-        with:
-          name: pg_migrator-linux-amd64
-          path: release-assets/
-
-      - name: Generate changelog from commit log
-        id: changelog
-        run: |
-          # Get the previous tag (if any) to scope the changelog
-          PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p' || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..HEAD"
-          else
-            RANGE="HEAD"
-          fi
-          echo "Previous tag: ${PREV_TAG:-'(none — first release)'}"
-
-          # Build changelog body
-          {
-            echo "## What's Changed"
-            echo ""
-            git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges
-            echo ""
-            echo ""
-            echo "## Deliverables"
-            echo ""
-            echo "| Asset | Description |"
-            echo "|---|---|"
-            echo "| \`pg_migrator\` (attached) | Standalone Linux amd64 binary (PyInstaller) |"
-            echo "| Docker GHCR | \`ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME}\` |"
-            echo "| Docker Hub | \`jmrenouard/pg_logical_migrator:${GITHUB_REF_NAME#v}\` |"
-            echo ""
-            echo "### Docker usage"
-            echo "\`\`\`bash"
-            echo "# From GitHub Container Registry"
-            echo "docker pull ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME}"
-            echo "# From Docker Hub"
-            echo "docker pull jmrenouard/pg_logical_migrator:${GITHUB_REF_NAME#v}"
-            echo "# Run"
-            echo "docker run --rm jmrenouard/pg_logical_migrator:latest --help"
-            echo "\`\`\`"
-            echo ""
-            if [ -n "$PREV_TAG" ]; then
-              echo "**Full diff**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${GITHUB_REF_NAME}"
-            fi
-          } > release-notes.md
-
-          cat release-notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release-notes.md
-          generate_release_notes: false   # we provide our own notes above
-          files: |
-            release-assets/pg_migrator

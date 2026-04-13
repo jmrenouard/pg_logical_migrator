@@ -391,60 +391,48 @@ class Migrator:
             return None
 
     def get_replication_status(self):
-        """Step 7: Check replication status for both publisher and subscriber."""
+        """Step 7: Check replication status for both publisher and subscriber on BOTH instances."""
         sub_name = self.config.get_replication()['subscription_name']
+        rev_sub_name = sub_name + "_rev"
         
-        # Subscriber status (Destination)
-        sub_query = f"SELECT subname, remote_host, last_msg_send_time, last_msg_receipt_time, latest_end_lsn FROM pg_stat_subscription WHERE subname = '{sub_name}';"
+        # 1. Subscriber status (Both sides)
         dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
-        try:
-            sub_status = dest_client.execute_query(sub_query)
-        except Exception:
-            sub_status = []
-
-        # Publisher status (Source)
-        pub_query = "SELECT * FROM pg_stat_replication;"
         source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+        
+        sub_status = []
         try:
-            pub_status = source_client.execute_query(pub_query)
-        except Exception:
-            pub_status = []
+            # Check standard sub on DEST
+            sub_status += dest_client.execute_query(f"SELECT 'DEST' as side, * FROM pg_stat_subscription WHERE subname = '{sub_name}';")
+            # Check reverse sub on SOURCE
+            sub_status += source_client.execute_query(f"SELECT 'SOURCE' as side, * FROM pg_stat_subscription WHERE subname = '{rev_sub_name}';")
+        except Exception: pass
 
-        # Slots information (Source)
-        slots_query = "SELECT *, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS lag_size FROM pg_replication_slots;"
+        # 2. Publisher status (Both sides)
+        pub_status = []
         try:
-            slots_status = source_client.execute_query(slots_query)
-        except Exception:
-            slots_status = []
+            pub_status += source_client.execute_query("SELECT 'SOURCE' as side, * FROM pg_stat_replication;")
+            pub_status += dest_client.execute_query("SELECT 'DEST' as side, * FROM pg_stat_replication;")
+        except Exception: pass
 
-        # Full subscription stat (Destination)
-        full_sub_query = "SELECT * FROM pg_stat_subscription;"
+        # 3. Slots information (Both sides)
+        slots_status = []
         try:
-            full_sub_status = dest_client.execute_query(full_sub_query)
-        except Exception:
-            full_sub_status = []
+            slots_status += source_client.execute_query("SELECT 'SOURCE' as side, *, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS lag_size FROM pg_replication_slots;")
+            slots_status += dest_client.execute_query("SELECT 'DEST' as side, *, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS lag_size FROM pg_replication_slots;")
+        except Exception: pass
 
-        # Publications info (Source)
-        pub_info_query = "SELECT * FROM pg_publication;"
+        # 4. Publications info (Both sides)
+        pub_info_status = []
         try:
-            pub_info_status = source_client.execute_query(pub_info_query)
-        except Exception:
-            pub_info_status = []
-
-        # Publication tables info (Source)
-        pub_tables_query = "SELECT * FROM pg_publication_tables;"
-        try:
-            pub_tables_status = source_client.execute_query(pub_tables_query)
-        except Exception:
-            pub_tables_status = []
+            pub_info_status += source_client.execute_query("SELECT 'SOURCE' as side, * FROM pg_publication;")
+            pub_info_status += dest_client.execute_query("SELECT 'DEST' as side, * FROM pg_publication;")
+        except Exception: pass
 
         return {
             "publisher": pub_status,
             "subscriber": sub_status,
             "slots": slots_status,
-            "full_sub": full_sub_status,
-            "publications": pub_info_status,
-            "pub_tables": pub_tables_status
+            "publications": pub_info_status
         }
 
     def step12_terminate_replication(self):
@@ -461,3 +449,71 @@ class Migrator:
             return True, "Replication cleaned up.", [f"[DEST] {sql1}", f"[SOURCE] {sql2}"], ["OK", "OK"]
         except Exception as e:
             return False, f"Cleanup failed: {str(e)}", [f"[DEST] {sql1}", f"[SOURCE] {sql2}"], [str(e)]
+
+    def setup_reverse_replication(self):
+        """
+        Reverse the replication flow: Destination becomes Publisher, Source becomes Subscriber.
+        Used for rapid rollback after a successful migration.
+        """
+        logging.info("[BOTH] Setting up REVERSE replication (Rollback capability)...")
+        
+        pub_name = self.replication_cfg['publication_name'] + "_rev"
+        sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        
+        src_conn = self.source_conn
+        dst_conn = self.dest_conn
+        
+        # 1. Create Publication on DESTINATION
+        sql_pub1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        sql_pub2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
+        
+        # 2. Create Subscription on SOURCE
+        # We need destination host/port as seen from the source
+        rep_config = self.config.get_replication()
+        dst_host_for_src = rep_config.get('dest_host_for_src', dst_conn['host'])
+        dst_port_for_src = rep_config.get('dest_port_for_src', dst_conn['port'])
+        
+        conn_str = f"host={dst_host_for_src} port={dst_port_for_src} user={dst_conn['user']} password={dst_conn['password']} dbname={dst_conn['database']}"
+        
+        # Pre-cleanup source: drop sub and then drop slot manually on dest (the publisher in reverse)
+        sql_sub1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
+        sql_sub2 = f"CREATE SUBSCRIPTION {sub_name} CONNECTION '{conn_str}' PUBLICATION {pub_name} WITH (copy_data = false, create_slot = true);"
+        
+        executed_sqls = []
+        out_results = []
+        
+        try:
+            dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+            source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+            
+            # Exec on SOURCE: drop sub (this might fail if slot is missing, so we wrap it)
+            try:
+                source_client.execute_script(sql_sub1, autocommit=True)
+            except Exception: pass
+            
+            # Exec on DEST: ensure slot is gone
+            drop_slot_sql = f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');"
+            dest_client.execute_script(drop_slot_sql, autocommit=True)
+
+            # Exec on DEST: Pub
+            executed_sqls.append(f"[DEST] {sql_pub1}")
+            dest_client.execute_script(sql_pub1, autocommit=True)
+            out_results.append("OK")
+            
+            executed_sqls.append(f"[DEST] {sql_pub2}")
+            dest_client.execute_script(sql_pub2, autocommit=True)
+            out_results.append("OK")
+            
+            # Exec on SOURCE: Sub
+            executed_sqls.append(f"[SOURCE] {sql_sub1}")
+            out_results.append("OK")
+            
+            executed_sqls.append(f"[SOURCE] {sql_sub2}")
+            source_client.execute_script(sql_sub2, autocommit=True)
+            out_results.append("OK")
+            
+            return True, "Reverse replication setup successfully.", executed_sqls, out_results
+            
+        except Exception as e:
+            logging.error(f"Reverse replication setup failed: {e}")
+            return False, f"Reverse setup failed: {str(e)}", executed_sqls, [str(e)] * (len(executed_sqls) or 1)

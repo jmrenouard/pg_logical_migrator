@@ -169,30 +169,27 @@ def cmd_setup_sub(args):
 
 # -- Step 7 ------------------------------------------------------------------
 def cmd_repl_status(args):
-    """Step 7: Show logical replication status."""
+    """Step 7: Check replication status for both publisher and subscriber on both instances."""
     from rich.console import Console
     from rich.table import Table
 
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     console = Console()
-    console.print("\n[bold blue]=== Step 7 — Replication Status ===[/bold blue]")
+    console.print("\n[bold blue]=== Step 7 — Replication Status (Multi-Side) ===[/bold blue]")
     status = migrator.get_replication_status()
-    
+
     pub_rows = status.get("publisher", [])
     sub_rows = status.get("subscriber", [])
     slot_rows = status.get("slots", [])
-    full_sub_rows = status.get("full_sub", [])
     pub_info_rows = status.get("publications", [])
-    pub_tables_rows = status.get("pub_tables", [])
 
-    if not any([pub_rows, sub_rows, slot_rows, full_sub_rows, pub_info_rows, pub_tables_rows]):
+    if not any([pub_rows, sub_rows, slot_rows, pub_info_rows]):
         console.print("[yellow]  No active publisher, subscriber, or replication slots found.[/yellow]")
         return 1
 
     def print_rich_table(title, rows):
-        if not rows:
-            return
+        if not rows: return
         table = Table(title=title, show_header=True, header_style="bold magenta")
         keys = list(rows[0].keys())
         for key in keys:
@@ -201,23 +198,19 @@ def cmd_repl_status(args):
             table.add_row(*[str(v) for v in r.values()])
         console.print(table)
 
-    if pub_rows:
-        print_rich_table("[SOURCE] PUBLISHER (pg_stat_replication)", pub_rows)
-
-    if sub_rows:
-        print_rich_table("[DEST] SUBSCRIBER (pg_stat_subscription snippet)", sub_rows)
-
-    if slot_rows:
-        print_rich_table("[SOURCE] SLOTS (pg_replication_slots)", slot_rows)
-
-    if full_sub_rows:
-        print_rich_table("[DEST] PG_STAT_SUBSCRIPTION", full_sub_rows)
-
-    if pub_info_rows:
-        print_rich_table("[SOURCE] PUBLICATIONS (pg_publication)", pub_info_rows)
-
-    if pub_tables_rows:
-        print_rich_table("[SOURCE] PUBLICATION TABLES (pg_publication_tables)", pub_tables_rows)
+    for side in ["SOURCE", "DEST"]:
+        # Filter rows by side
+        s_pub = [r for r in pub_rows if r.get('side') == side]
+        s_slots = [r for r in slot_rows if r.get('side') == side]
+        s_sub = [r for r in sub_rows if r.get('side') == side]
+        s_pubs = [r for r in pub_info_rows if r.get('side') == side]
+        
+        if any([s_pub, s_slots, s_sub, s_pubs]):
+            console.print(f"\n[bold green]--- Current Role: {side} ---[/bold green]")
+            if s_pub: print_rich_table(f"[{side}] PUBLISHER (pg_stat_replication)", s_pub)
+            if s_slots: print_rich_table(f"[{side}] SLOTS (pg_replication_slots)", s_slots)
+            if s_sub: print_rich_table(f"[{side}] SUBSCRIBER (pg_stat_subscription)", s_sub)
+            if s_pubs: print_rich_table(f"[{side}] PUBLICATIONS (pg_publication)", s_pubs)
 
     return 0
 
@@ -419,3 +412,14 @@ def cmd_generate_config(args):
     output = args.output if hasattr(args, "output") and args.output else "config_migrator.sample.ini"
     generate_sample_config(output)
     return 0
+
+
+def cmd_setup_reverse(args):
+    """Setup reverse replication for rollback capability."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    print("\n=== Setup REVERSE Replication (Rollback) ===")
+    success, msg, cmds, outs = migrator.setup_reverse_replication()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
