@@ -61,4 +61,15 @@ def test_full_migration_e2e(tmp_path):
     assert s_count > 0
     assert s_count == d_count
     
-    print(f"E2E Success: {s_count} actors migrated.")
+    # 4. Verify Reverse Replication setup
+    print("Testing Reverse Replication setup...")
+    cmd_rev = [python_bin, "pg_migrator.py", "setup-reverse", "-c", config_path]
+    res_rev = subprocess.run(cmd_rev, capture_output=True, text=True)
+    assert res_rev.returncode == 0
+    
+    # Check if sub_rev exists on SOURCE
+    sub_rev_name = cfg.get_replication()["subscription_name"] + "_rev"
+    res_src_sub = sc.execute_query(f"SELECT count(*) FROM pg_subscription WHERE subname = '{sub_rev_name}';")
+    assert res_src_sub[0]['count'] == 1
+    
+    print(f"E2E Success: {s_count} actors migrated and Rollback configured.")

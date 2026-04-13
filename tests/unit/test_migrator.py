@@ -106,3 +106,46 @@ def test_get_initial_copy_progress():
         
         assert res["summary"]["percent_bytes"] == 50.0
         assert res["tables"][0]["table_name"] == "public.t1"
+
+def test_migrator_wait_for_sync():
+    mock_config = MagicMock()
+    mock_config.get_dest_conn.return_value = {"database": "dst", "user":"u", "password":"p", "host":"h", "port":5433}
+    m = Migrator(mock_config)
+    
+    with patch("src.migrator.PostgresClient") as mock_client:
+        mock_instance = mock_client.return_value
+        # Simulate 1 pending table, then 0 pending
+        mock_instance.execute_query.side_effect = [
+            [{"pending": 1}],
+            [{"pending": 0}]
+        ]
+        # Skip progress report fetch during wait
+        m.get_initial_copy_progress = MagicMock(return_value=None)
+        
+        success, msg, cmds, outs = m.wait_for_sync(timeout=5, poll_interval=0.1, show_progress=False)
+        assert success is True
+        assert "completed" in msg
+
+def test_migrator_setup_reverse_replication():
+    mock_config = MagicMock()
+    mock_config.get_source_conn.return_value = {"database": "src", "user":"u1", "password":"p1", "host":"h1", "port":5432}
+    mock_config.get_dest_conn.return_value = {"database": "dst", "user":"u2", "password":"p2", "host":"h2", "port":5433}
+    mock_config.get_replication.return_value = {
+        "publication_name": "pub", 
+        "subscription_name": "sub",
+        "dest_host_for_src": "172.17.0.1",
+        "dest_port_for_src": 5433
+    }
+    
+    m = Migrator(mock_config)
+    
+    with patch("src.migrator.PostgresClient") as mock_client:
+        mock_instance = mock_client.return_value
+        success, msg, cmds, outs = m.setup_reverse_replication()
+        
+        assert success is True
+        # Verify DEST (Publisher) commands
+        assert any("CREATE PUBLICATION pub_rev" in str(c) for c in cmds)
+        # Verify SOURCE (Subscriber) commands
+        assert any("CREATE SUBSCRIPTION sub_rev" in str(c) for c in cmds)
+        assert any("host=172.17.0.1" in str(c) for c in cmds)

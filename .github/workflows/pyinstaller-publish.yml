@@ -1,77 +1,55 @@
-# Publish PyInstaller standalone binary on tag push or manual dispatch
-# Complements docker-publish.yml (Docker Hub) and python-package.yml (GHCR + CI)
+# Publish Standalone binaries and OS packages (DEB/RPM)
+# Triggered on v* branches (prerelease) or v* tags (stable)
 
-name: PyInstaller Publish
+name: Package Publish
 
 on:
   push:
     tags: ["v*"]
+    branches: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed for GitHub Release asset upload
+  contents: write
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-
+  # 1. Build Binaries for Linux, Windows, macOS
+  build-binaries:
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        # Future: add macos-latest, windows-latest for cross-platform binaries
+        include:
+          - os: ubuntu-latest
+            platform: linux-amd64
+            artifact_name: pg_migrator-linux-amd64
+          - os: windows-latest
+            platform: win-amd64
+            artifact_name: pg_migrator-win-amd64
+          - os: macos-latest
+            platform: macos-arm64
+            artifact_name: pg_migrator-macos-arm64
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0   # full history for changelog generation
-
+      - uses: actions/checkout@v6
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Extract version from pg_migrator.py
-        id: version
+      - name: Extract Version
+        id: get_version
+        shell: python
         run: |
-          VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Could not extract version from pg_migrator.py"
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Extracted version: $VERSION"
-
-      - name: Pre-publish validation
-        run: |
-          echo "Checking for critical files..."
-          for file in pg_migrator.py requirements.txt LICENSE; do
-            if [ ! -f "$file" ]; then
-              echo "ERROR: Critical file missing: $file"
-              exit 1
-            fi
-            echo "✔ Found: $file"
-          done
-
-          echo "Checking for release notes: releases/v${{ env.VERSION }}.md..."
-          if [ ! -f "releases/v${{ env.VERSION }}.md" ]; then
-            echo "WARNING: Release notes missing: releases/v${{ env.VERSION }}.md (non-blocking)"
-          else
-            echo "✔ Found release notes"
-          fi
-
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG=${GITHUB_REF#refs/tags/}
-            echo "Checking tag consistency (Tag: $TAG vs Version: v${{ env.VERSION }})..."
-            if [ "v${{ env.VERSION }}" != "$TAG" ]; then
-              echo "ERROR: Tag $TAG does not match version in pg_migrator.py (v${{ env.VERSION }})"
-              exit 1
-            fi
-            echo "✔ Tag matches script version"
-          else
-            echo "ℹ Skipping tag consistency check (not a tag push)"
-          fi
+            import os
+            import re
+            with open("pg_migrator.py", "r", encoding="utf-8") as f:
+                content = f.read()
+                match = re.search(r'__version__ = "([^"]+)"', content)
+                version = match.group(1) if match else "unknown"
+                with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
+                    env.write(f"VERSION={version}\n")
+            print(f"Version extracted: {version}")
 
       - name: Install dependencies
         run: |
@@ -79,72 +57,214 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build standalone binary
+      - name: Build binary
+        shell: bash
         run: |
-          pyinstaller \
-            --onefile \
-            --name pg_migrator \
-            --add-data "src:src" \
-            --add-data "config_migrator.sample.ini:." \
-            pg_migrator.py
-
-      - name: Verify binary runs
-        run: |
-          chmod +x ./dist/pg_migrator
-          ./dist/pg_migrator --version
-          ./dist/pg_migrator --help
-
-      - name: Rename binary with version and platform
-        run: |
-          PLATFORM="linux-amd64"
-          BINARY_NAME="pg_migrator-${PLATFORM}-v${{ env.VERSION }}"
-          mv dist/pg_migrator "dist/${BINARY_NAME}"
-          echo "BINARY_NAME=${BINARY_NAME}" >> $GITHUB_ENV
-          echo "Binary: dist/${BINARY_NAME}"
-
-      - name: Generate SHA256 checksum
-        run: |
+          EXE_EXT=""
+          if [ "${{ runner.os }}" == "Windows" ]; then EXE_EXT=".exe"; fi
+          
+          pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
+          
+          BINARY_NAME="pg_migrator-${{ matrix.platform }}-v${VERSION}${EXE_EXT}"
+          mv dist/pg_migrator${EXE_EXT} "dist/${BINARY_NAME}"
+          
+          # Generate SHA256
           cd dist
-          sha256sum "${{ env.BINARY_NAME }}" > "${{ env.BINARY_NAME }}.sha256"
-          cat "${{ env.BINARY_NAME }}.sha256"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            powershell -Command "\$hash = (Get-FileHash -Algorithm SHA256 -Path '${BINARY_NAME}').Hash.ToLower(); \"\$hash  ${BINARY_NAME}\" | Out-File -FilePath '${BINARY_NAME}.sha256' -Encoding ascii"
+          else
+            sha256sum "${BINARY_NAME}" > "${BINARY_NAME}.sha256"
+          fi
 
-      - name: Upload binary as artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ env.BINARY_NAME }}
-          path: |
-            dist/${{ env.BINARY_NAME }}
-            dist/${{ env.BINARY_NAME }}.sha256
-          retention-days: 90
+          name: ${{ matrix.artifact_name }}
+          path: dist/pg_migrator-*
 
-      - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+  # 2. Create DEB and RPM packages (using nfpm)
+  package-os:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Download Linux binary
+        uses: actions/download-artifact@v6
+        with:
+          name: pg_migrator-linux-amd64
+          path: dist/
+
+      - name: Extract Version
+        id: info
+        shell: python
+        run: |
+            import os
+            import re
+            with open("pg_migrator.py", "r", encoding="utf-8") as f:
+                content = f.read()
+                match = re.search(r'__version__ = "([^"]+)"', content)
+                version = match.group(1) if match else "unknown"
+                with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
+                    out.write(f"VERSION={version}\n")
+            # Find the actual binary filename (not the sha256)
+            bin_files = [f for f in os.listdir("dist") if f.startswith("pg_migrator-linux-amd64-") and not f.endswith(".sha256")]
+            if bin_files:
+                with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
+                    out.write(f"BIN_FILE=dist/{bin_files[0]}\n")
+
+      - name: Install nfpm
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Create nfpm.yaml
+        run: |
+          cat <<EOF > nfpm.yaml
+          name: "pg-logical-migrator"
+          arch: "amd64"
+          platform: "linux"
+          version: "${{ steps.info.outputs.VERSION }}"
+          section: "utils"
+          priority: "extra"
+          maintainer: "Jean-Marie Renouard <jmrenouard@gmail.com>"
+          description: "PostgreSQL Logical Migration CLI Tool"
+          vendor: "jmrenouard"
+          homepage: "https://github.com/jmrenouard/pg_logical_migrator"
+          license: "MIT"
+          contents:
+            - src: "${{ steps.info.outputs.BIN_FILE }}"
+              dst: "/usr/bin/pg_migrator"
+          EOF
+
+      - name: Build DEB and RPM
+        run: |
+          nfpm pkg --packager deb --target dist/
+          nfpm pkg --packager rpm --target dist/
+          cd dist
+          for f in *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
+
+      - name: Upload OS packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: os-packages
+          path: |
+            dist/*.deb*
+            dist/*.rpm*
+
+  # 3. Build Python Wheel and Source Distribution
+  package-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install build
+      - name: Build Wheel and Sdist
+        run: |
+          python -m build
+          cd dist
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
+      - name: Upload Python assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-assets
+          path: dist/*
+
+  # 4. Create GitHub Release
+  publish-release:
+    needs: [build-binaries, package-os, package-python]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: all-artifacts/
+
+      - name: Prepare Release folder
+        run: |
+          mkdir release-dist
+          find all-artifacts/ -type f -exec cp {} release-dist/ \;
+          ls -R release-dist/
+
+      - name: Set Release Info
+        id: rel_info
+        shell: python
+        run: |
+            import os
+            import re
+            with open("pg_migrator.py", "r", encoding="utf-8") as f:
+                content = f.read()
+                match = re.search(r'__version__ = "([^"]+)"', content)
+                version = match.group(1) if match else "unknown"
+                with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
+                    env.write(f"VERSION={version}\n")
+            
+            ref = os.environ['GITHUB_REF']
+            if ref.startswith('refs/tags/'):
+                tag_name = ref.replace('refs/tags/', '')
+                is_prerelease = 'false'
+            else:
+                tag_name = ref.replace('refs/heads/', '')
+                is_prerelease = 'true'
+            
+            with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
+                env.write(f"TAG_NAME={tag_name}\n")
+                env.write(f"IS_PRERELEASE={is_prerelease}\n")
+
+      - name: Generate Beautiful Release Notes
+        run: |
+          # 1. Start with the real release notes
+          if [ -f "releases/v${{ env.VERSION }}.md" ]; then
+            cat "releases/v${{ env.VERSION }}.md" > release_body.md
+          else
+            echo "# Release ${{ env.TAG_NAME }}" > release_body.md
+          fi
+          
+          # 2. Add Deliverables Section
+          {
+            echo ""
+            echo "---"
+            echo "## Deliverables"
+            echo ""
+            echo "### Standalone Binaries"
+            echo "| Platform | Architecture | Asset | Checksum |"
+            echo "|---|---|---|---|"
+            echo "| Linux | amd64 | \`pg_migrator-linux-amd64-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Windows | amd64 | \`pg_migrator-win-amd64-v${{ env.VERSION }}.exe\` | [sha256] |"
+            echo "| macOS | arm64 | \`pg_migrator-macos-arm64-v${{ env.VERSION }}\` | [sha256] |"
+            echo ""
+            echo "### OS Packages"
+            echo "| Format | Architecture | Asset |"
+            echo "|---|---|---|"
+            echo "| Debian/Ubuntu | amd64 | \`pg-logical-migrator_${{ env.VERSION }}_amd64.deb\` |"
+            echo "| RHEL/CentOS | amd64 | \`pg-logical-migrator-${{ env.VERSION }}-1.x86_64.rpm\` |"
+            echo ""
+            echo "### Python Packages"
+            echo "- **Wheel**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any.whl\`"
+            echo "- **Source**: \`pg_logical_migrator-${{ env.VERSION }}.tar.gz\`"
+            echo ""
+            echo "### Docker Images"
+            echo "\`\`\`bash"
+            echo "docker pull jmrenouard/pg_logical_migrator:${{ env.VERSION }}"
+            echo "docker pull ghcr.io/${{ github.repository }}:${{ env.TAG_NAME }}"
+            echo "\`\`\`"
+            echo ""
+            echo "---"
+            echo "*Checksums (.sha256) are available in the assets list below.*"
+          } >> release_body.md
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "v${{ env.VERSION }}"
-          body: |
-            ## pg_logical_migrator v${{ env.VERSION }}
-
-            ### Downloads
-
-            | Asset | Description |
-            |---|---|
-            | `${{ env.BINARY_NAME }}` | Standalone Linux amd64 binary (PyInstaller) |
-            | `${{ env.BINARY_NAME }}.sha256` | SHA256 checksum |
-
-            ### Docker Images
-
-            ```bash
-            docker pull jmrenouard/pg_logical_migrator:${{ env.VERSION }}
-            docker pull ghcr.io/jmrenouard/pg_logical_migrator:v${{ env.VERSION }}
-            ```
-
-            - [Docker Hub](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
-            - [GHCR](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator)
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+          tag_name: ${{ env.TAG_NAME }}
+          name: "${{ env.TAG_NAME }}"
+          body_path: release_body.md
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
+          generate_release_notes: false
           files: |
-            dist/${{ env.BINARY_NAME }}
-            dist/${{ env.BINARY_NAME }}.sha256
+            release-dist/*

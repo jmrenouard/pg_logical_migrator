@@ -12,7 +12,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 from src.cli.commands import (
@@ -21,7 +21,7 @@ from src.cli.commands import (
     cmd_setup_pub, cmd_setup_sub, cmd_repl_status, cmd_repl_progress,
     cmd_sync_sequences, cmd_enable_triggers, cmd_disable_triggers,
     cmd_refresh_matviews, cmd_reassign_owner,
-    cmd_audit_objects, cmd_validate_rows, cmd_cleanup,
+    cmd_audit_objects, cmd_validate_rows, cmd_cleanup, cmd_setup_reverse,
     cmd_tui, cmd_generate_config
 )
 from src.cli.helpers import setup_logging
@@ -159,21 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Drop and recreate destination database before migration",
     )
 
-    # Step 4b — migrate-schema-post-data
-    p_schema_post = sub.add_parser(
-        "migrate-schema-post-data",
-        parents=[global_parser],
-        help="Step 4b — Copy schema post-data from source to destination",
-        description="Run pg_dump -s --section=post-data on source and pipe into psql on destination.",
-    )
-    p_schema_post.set_defaults(func=cmd_migrate_schema_post_data)
-
     # Step 5 — setup-pub
     p_pub = sub.add_parser(
         "setup-pub",
         parents=[global_parser],
         help="Step 5  — Create publication on source",
-        description="DROP + CREATE PUBLICATION FOR ALL TABLES on the source.",
+        description="DROP + CREATE PUBLICATION on the source.",
     )
     p_pub.set_defaults(func=cmd_setup_pub)
 
@@ -204,47 +195,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_prog.set_defaults(func=cmd_repl_progress)
 
-    # Step 8/9 — sync-sequences
-    p_seq = sub.add_parser(
-        "sync-sequences",
-        parents=[global_parser],
-        help="Steps 8/9 — Synchronize sequence values",
-        description="Read current sequence values from source and apply them on destination.",
-    )
-    p_seq.set_defaults(func=cmd_sync_sequences)
-
-    # Step 10 — enable-triggers
-    p_trig = sub.add_parser(
-        "enable-triggers",
-        parents=[global_parser],
-        help="Step 10 — Enable all triggers on destination",
-        description="ALTER TABLE … ENABLE TRIGGER ALL on every user table in the destination.",
-    )
-    p_trig.set_defaults(func=cmd_enable_triggers)
-
-    # (utility) — disable-triggers
-    p_dtrig = sub.add_parser(
-        "disable-triggers",
-        parents=[global_parser],
-        help="Utility — Disable all triggers on destination",
-        description="ALTER TABLE … DISABLE TRIGGER ALL on every user table in the destination.",
-    )
-    p_dtrig.set_defaults(func=cmd_disable_triggers)
-
-    # Step 11 — refresh-matviews
+    # Step 8 — refresh-matviews
     p_mv = sub.add_parser(
         "refresh-matviews",
         parents=[global_parser],
-        help="Step 11 — Refresh materialized views on destination",
+        help="Step 8  — Refresh materialized views on destination",
         description="REFRESH MATERIALIZED VIEW for every materialized view on the destination.",
     )
     p_mv.set_defaults(func=cmd_refresh_matviews)
 
-    # Reassign ownership
+    # Step 9/10 — sync-sequences
+    p_seq = sub.add_parser(
+        "sync-sequences",
+        parents=[global_parser],
+        help="Steps 9/10 — Synchronize sequence values",
+        description="Read current sequence values from source and apply them on destination.",
+    )
+    p_seq.set_defaults(func=cmd_sync_sequences)
+
+    # Step 11 — enable-triggers
+    p_trig = sub.add_parser(
+        "enable-triggers",
+        parents=[global_parser],
+        help="Step 11 — Enable all triggers on destination",
+        description="ALTER TABLE … ENABLE TRIGGER ALL on every user table in the destination.",
+    )
+    p_trig.set_defaults(func=cmd_enable_triggers)
+
+    # Step 12 — migrate-schema-post-data
+    p_schema_post = sub.add_parser(
+        "migrate-schema-post-data",
+        parents=[global_parser],
+        help="Step 12 — Copy schema post-data from source to destination",
+        description="Run pg_dump -s --section=post-data on source and pipe into psql on destination.",
+    )
+    p_schema_post.set_defaults(func=cmd_migrate_schema_post_data)
+
+    # Step 13 — reassign-owner
     p_owner = sub.add_parser(
         "reassign-owner",
         parents=[global_parser],
-        help="Reassign ownership of all objects on destination",
+        help="Step 13 — Reassign ownership of all objects on destination",
         description="ALTER … OWNER TO for every object (database, schemas, tables, views, matviews, sequences, functions, types) on the destination.",
     )
     p_owner.add_argument(
@@ -255,32 +246,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_owner.set_defaults(func=cmd_reassign_owner)
 
-    # Step 13 — audit-objects
+    # Step 14 — audit-objects
     p_audit = sub.add_parser(
         "audit-objects",
         parents=[global_parser],
-        help="Step 13 — Compare object counts (tables, views, indexes, sequences, functions)",
+        help="Step 14 — Compare object counts (tables, views, indexes, sequences, functions)",
         description="Count objects on both databases and show differences.",
     )
     p_audit.set_defaults(func=cmd_audit_objects)
 
-    # Step 14 — validate-rows
+    # Step 15 — validate-rows
     p_rows = sub.add_parser(
         "validate-rows",
         parents=[global_parser],
-        help="Step 14 — Compare row counts per table",
+        help="Step 15 — Compare row counts per table",
         description="SELECT COUNT(*) on every table in both source and destination.",
     )
     p_rows.set_defaults(func=cmd_validate_rows)
 
-    # Step 12 — cleanup
+    # Step 16 — cleanup
     p_clean = sub.add_parser(
         "cleanup",
         parents=[global_parser],
-        help="Step 12 — Drop subscription, publication, and replication slot",
+        help="Step 16 — Drop subscription, publication, and replication slot",
         description="Destructive cleanup: removes all replication objects. Run AFTER validation.",
     )
     p_clean.set_defaults(func=cmd_cleanup)
+
+    # Step 17 — setup-reverse
+    p_rev = sub.add_parser(
+        "setup-reverse",
+        parents=[global_parser],
+        help="Step 17 — Setup reverse replication for rollback",
+        description="Creates publication on destination and subscription on source to sync changes back.",
+    )
+    p_rev.set_defaults(func=cmd_setup_reverse)
 
     # init-replication
     p_init = sub.add_parser(
