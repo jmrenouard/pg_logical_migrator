@@ -141,6 +141,7 @@ def test_migrator_setup_reverse_replication():
     
     with patch("src.migrator.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
+        mock_instance.execute_query.return_value = [{'count': 0}]
         success, msg, cmds, outs = m.setup_reverse_replication()
         
         assert success is True
