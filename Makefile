@@ -47,14 +47,14 @@ build-clean:
 	rm -rf build dist $(BIN_NAME).spec
 
 env-up:
-	cd test_env && docker-compose down -v --remove-orphans 2>/dev/null || true
-	cd test_env && docker-compose up -d
+	cd test_env && docker compose down -v --remove-orphans 2>/dev/null || true
+	cd test_env && docker compose up -d
 	@echo "Waiting for databases to be ready..."
 	sleep 10
 	./test_env/setup_pagila.sh
 
 env-down:
-	cd test_env && docker-compose down -v --remove-orphans
+	cd test_env && docker compose down -v --remove-orphans
 
 test-unit:
 	PYTHONPATH=. $(PYTEST) tests/unit

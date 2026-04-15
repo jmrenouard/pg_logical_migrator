@@ -52,3 +52,10 @@ def test_get_target_schemas(tmp_path):
 def test_config_not_found():
     with pytest.raises(FileNotFoundError):
         Config("/path/to/nonexistent/file.ini")
+
+def test_config_path(tmp_path):
+    config_file = tmp_path / "test.ini"
+    config_file.write_text("[source]\ndatabase=d\n[destination]\n[replication]\n")
+    path_str = str(config_file)
+    cfg = Config(path_str)
+    assert cfg.config_path == path_str

@@ -13,4 +13,4 @@ CREATE TABLE schema_large.heavy_table (
 -- You can adjust the 100000000 value below if needed.
 INSERT INTO schema_large.heavy_table (payload)
 SELECT 'payload_data_chunk_' || (s.i % 1000)
-FROM generate_series(1, 100000000) s(i);
+FROM generate_series(1, 1000000) s(i);

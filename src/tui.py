@@ -279,7 +279,7 @@ class MigratorApp(App):
                 lines = []
                 for side in ["SOURCE", "DEST"]:
                     sub_active = len([s for s in status.get('subscriber', []) if s.get('side') == side])
-                    pub_active = len([p for s in status.get('publisher', []) if s.get('side') == side])
+                    pub_active = len([p for p in status.get('publisher', []) if p.get('side') == side])
                     lines.append(f"[bold]{side}:[/bold] {sub_active} Subscriptions, {pub_active} Replication slots")
                 self.result_area.update(Panel("\n".join(lines), title="[Step 7] Replication Status", border_style="green"))
 
@@ -352,7 +352,9 @@ class MigratorApp(App):
                 self.result_area.update(Panel("Config generation not available from TUI. Use CLI: generate-config", title="Config", border_style="yellow"))
 
             elif event.button.id == "cmd_init":
-                self._do_init_async(str(event.button.label))
+                drop_dest = self.query_one("#opt_drop_dest", Checkbox).value
+                use_stats = self.query_one("#opt_use_stats", Checkbox).value
+                self._do_init_async(str(event.button.label), drop_dest, use_stats)
                 return
 
             elif event.button.id == "cmd_post":
@@ -366,6 +368,7 @@ class MigratorApp(App):
             logging.error(f"[LOCAL] Error in TUI: {e}", exc_info=True)
             self.result_area.update(Panel(f"An error occurred: {e}", title="Error", border_style="red"))
 
+    @work(exclusive=True, thread=True)
     def _do_step_6_async(self, label: str):
         try:
             success, msg, cmds, outs = self.migrator.step6_setup_destination()
@@ -378,18 +381,18 @@ class MigratorApp(App):
             self.call_from_thread(self.log_area.write, f"✘ ERROR: {e}")
 
     @work(exclusive=True, thread=True)
-    def _do_init_async(self, label: str):
+    def _do_init_async(self, label: str, drop_dest: bool, use_stats: bool):
         def log_msg(msg): self.call_from_thread(self.log_area.write, msg)
         try:
             log_msg("--- Starting Init Pipeline ---")
             self.checker.check_connectivity()
-            self.migrator.step4a_migrate_schema_pre_data(drop_dest=self.query_one("#opt_drop_dest", Checkbox).value)
+            self.migrator.step4a_migrate_schema_pre_data(drop_dest=drop_dest)
             self.migrator.step5_setup_source()
             self.migrator.step6_setup_destination()
             log_msg("▶ Waiting for initial sync...")
             self.migrator.wait_for_sync(timeout=3600, show_progress=False)
             self.validator.audit_objects()
-            self.validator.compare_row_counts(use_stats=self.query_one("#opt_use_stats", Checkbox).value)
+            self.validator.compare_row_counts(use_stats=use_stats)
             log_msg("[bold green]✔ Init Pipeline completed.[/bold green]")
         except Exception as e:
             log_msg(f"✘ ERROR: {e}")

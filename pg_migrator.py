@@ -12,7 +12,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 from src.cli.commands import (
