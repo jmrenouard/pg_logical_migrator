@@ -22,7 +22,7 @@ from src.cli.commands import (
     cmd_sync_sequences, cmd_enable_triggers, cmd_disable_triggers,
     cmd_refresh_matviews, cmd_reassign_owner,
     cmd_audit_objects, cmd_validate_rows, cmd_cleanup, cmd_setup_reverse,
-    cmd_tui, cmd_generate_config
+    cmd_cleanup_reverse, cmd_tui, cmd_generate_config
 )
 from src.cli.helpers import setup_logging
 import src.db as _db_module
@@ -281,6 +281,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Creates publication on destination and subscription on source to sync changes back.",
     )
     p_rev.set_defaults(func=cmd_setup_reverse)
+
+    # cleanup-reverse
+    p_cln_rev = sub.add_parser(
+        "cleanup-reverse",
+        parents=[global_parser],
+        help="Cleanup reverse replication objects",
+        description="Removes reverse publication (on DEST) and reverse subscription (on SOURCE).",
+    )
+    p_cln_rev.set_defaults(func=cmd_cleanup_reverse)
 
     # init-replication
     p_init = sub.add_parser(

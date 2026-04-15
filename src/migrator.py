@@ -522,3 +522,22 @@ class Migrator:
         except Exception as e:
             logging.error(f"Reverse replication setup failed: {e}")
             return False, f"Reverse setup failed: {str(e)}", executed_sqls, [str(e)] * (len(executed_sqls) or 1)
+
+    def cleanup_reverse_replication(self):
+        """Cleanup reverse publication (on DEST) and reverse subscription (on SOURCE)."""
+        pub_name = self.replication_cfg['publication_name'] + "_rev"
+        sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        sql_sub = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
+        sql_pub = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        try:
+            dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+            source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+            
+            # Sub is on SOURCE for reverse
+            source_client.execute_script(sql_sub, autocommit=True)
+            # Pub is on DEST for reverse
+            dest_client.execute_script(sql_pub, autocommit=True)
+            
+            return True, "Reverse replication cleaned up.", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], ["OK", "OK"]
+        except Exception as e:
+            return False, f"Reverse cleanup failed: {str(e)}", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], [str(e)]
