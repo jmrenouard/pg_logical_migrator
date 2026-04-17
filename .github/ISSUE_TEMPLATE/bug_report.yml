@@ -1,0 +1,36 @@
+name: Bug Report
+description: Create a report to help us improve
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+      placeholder: Tell us what you did!
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of pg_logical_migrator are you using?
+      placeholder: e.g., v1.3.1
+    validations:
+      required: true
+  - type: input
+    id: pg-version
+    attributes:
+      label: PostgreSQL Version
+      description: What version of PostgreSQL are you using (Source/Dest)?
+      placeholder: e.g., Source v12, Dest v16
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      render: shell
