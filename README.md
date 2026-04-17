@@ -41,31 +41,45 @@ Découvrez comment **pg_logical_migrator** orchestre une migration de base de do
 ## Architecture at a Glance
 
 ```mermaid
-graph TD
-    CLI[CLI pg_migrator.py] --> TUI[TUI src/tui.py]
-    CLI --> CMD[Commands src/cli/commands.py]
-    CMD --> CFG[Config src/config.py]
-    CMD --> DB[DB src/db.py]
-    CMD --> CHK[Checker src/checker.py]
-    CMD --> MIG[Migrator src/migrator.py]
-    CMD --> PSY[Post-Sync src/post_sync.py]
-    CMD --> VAL[Validation src/validation.py]
-    CMD --> RPT[Report src/report_generator.py]
-
-    subgraph "Core Logic"
-    CHK
-    MIG
-    PSY
-    VAL
+graph LR
+    subgraph UI [User Interfaces]
+        CLI([fa:fa-terminal CLI]):::ui
+        TUI([fa:fa-desktop TUI]):::ui
     end
 
-    subgraph "External"
-    SRC[(Source DB)]
-    DST[(Dest DB)]
+    subgraph Engine [Migration Engine]
+        direction TB
+        CMD{fa:fa-cog Orchestrator}:::core
+        
+        subgraph Logic [Migration Steps]
+            direction LR
+            CHK(fa:fa-clipboard-check Checker)
+            MIG(fa:fa-exchange-alt Migrator)
+            PSY(fa:fa-sync Post-Sync)
+            VAL(fa:fa-shield-alt Validation)
+        end
+        
+        RPT(fa:fa-file-alt HTML Report):::util
     end
 
-    MIG --> SRC
-    MIG --> DST
+    subgraph Data [Infrastructure]
+        SRC[(fa:fa-database Source DB)]:::db
+        DST[(fa:fa-database Target DB)]:::db
+    end
+
+    %% Flow
+    CLI & TUI --> CMD
+    CMD --> Logic
+    Logic --> SRC
+    Logic --> DST
+    Logic -.-> RPT
+
+    %% Styling
+    classDef ui fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#01579b
+    classDef core fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100
+    classDef logic fill:#f1f8e9,stroke:#33691e,stroke-width:1px,color:#33691e
+    classDef db fill:#eceff1,stroke:#455a64,stroke-width:2px,color:#455a64
+    classDef util fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px,color:#7b1fa2
 ```
 
 ---
