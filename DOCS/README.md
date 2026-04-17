@@ -1,28 +1,27 @@
-![pg_logical_migrator](../pg_logical_migrator.jpg)
+# Documentation Hub
 
-# Project Documentation Hub
+Welcome to the **pg_logical_migrator** documentation suite. This repository is organized to provide deep technical insights into our 16-step migration architecture and operational best practices.
 
-Welcome to the technical documentation for the `pg_logical_migrator` project. This documentation is split into thematic units to cover every aspect of PostgreSQL logical replication and the usage of this tool.
+### 🏗️ Architecture & Concepts
+- **[CONCEPTS.md](CONCEPTS.md)**: Core principles of logical replication and our design philosophy.
+- **[CODEBASE.md](CODEBASE.md)**: Technical overview of the module structure, class responsibilities, and internal APIs.
+- **[WORKFLOW.md](WORKFLOW.md)**: Detailed breakdown of the standardized 16-step sequence with failure recovery strategies.
 
-## Technical Documentation Index
+### ⚙️ Configuration & Setup
+- **[CONFIGURATION.md](CONFIGURATION.md)**: Exhaustive reference for `config_migrator.ini` and required PostgreSQL parameters.
+- **[DOCKER.md](DOCKER.md)**: Guide for containerized deployment, network optimization, and environment parity.
 
-- **[Codebase Architecture](CODEBASE.md)**: High-level architecture, module responsibilities, and classes.
-- **[Core Concepts](CONCEPTS.md)**: Introduction to the publish-subscribe architecture and replication objects.
-- **[Configuration Guide](CONFIGURATION.md)**: Prerequisites and required PostgreSQL parameters for source and destination.
-- **[Tools & Usage Guide](TOOLS.md)**: CLI flags, Makefile targets, TUI walkthrough, automated mode, and output artifacts.
-- **[Docker Guide](DOCKER.md)**: Building and running the application within an isolated Docker container.
-- **[Detailed Workflow](WORKFLOW.md)**: A deep dive into the 14-step automated sequence orchestrated by the tool.
-- **[Migration Lifecycle](LIFECYCLE.md)**: Summary of actions and phases from preparation to final cleanup.
-- **[Execution Validation](VALIDATION.md)**: Critical control points and a schema verification checklist.
-- **[Limitations & Pitfalls](LIMITATIONS.md)**: Detailed constraints, unsupported objects, and the row identification problem.
+### 🛡️ Operations & Safety
+- **[VALIDATION.md](VALIDATION.md)**: Checklists and methodologies for structural and data parity verification.
+- **[LIMITATIONS.md](LIMITATIONS.md)**: Critical known constraints (PK requirements, LOB handling, DDL restrictions).
+- **[LIFECYCLE.md](LIFECYCLE.md)**: Maintenance, upgrades, and rollback procedures.
+
+### 🛠️ Developer Resources
+- **[TOOLS.md](TOOLS.md)**: Guide for extending the tool, internal utilities, and local development setup.
 
 ---
 
-## Project Specifications & Management
-
-For internal project specs, roadmaps, and progress tracking, please refer to the **[PROJECT/](../PROJECT/)** directory.
-
-- [Specifications](../PROJECT/SPECIFICATIONS.md)
-- [Milestones](../PROJECT/MILESTONES.md)
-- [Constitution](../PROJECT/CONSTITUTION.md)
-- [Progress Tracking](../PROJECT/PROGRESS.md)
+### 🚀 Quick Links
+- **[Root README](../README.md)**: Project overview, Demo, and Quickstart.
+- **[HOWTO.md](../HOWTO.md)**: Step-by-step tutorial for your first migration.
+- **[CONTRIBUTING.md](../CONTRIBUTING.md)**: Workflow for community contributions.

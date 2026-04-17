@@ -61,7 +61,26 @@ def test_full_migration_e2e(tmp_path):
     assert s_count > 0
     assert s_count == d_count
     
-    # 4. Verify Reverse Replication setup
+    # 4. Verify Large Object (LOB) synchronization
+    print("Testing LOB synchronization...")
+    # First check if the OID exists on DEST but is broken (native logical repl behavior)
+    # The 'init-replication' already copied the table but OIDs refer to non-existent objects on DEST.
+    # We call 'sync-lobs' explicitly (though it is included in post-migration pipeline in TUI, 
+    # CLI commands are independent unless run via a pipeline).
+    cmd_lob = [python_bin, "pg_migrator.py", "sync-lobs", "-c", config_path]
+    res_lob = subprocess.run(cmd_lob, capture_output=True, text=True, env=env)
+    assert res_lob.returncode == 0, f"sync-lobs failed: {res_lob.stderr}"
+    
+    # Verify that the new OID exists in pg_largeobject_metadata on DESTINATION
+    lob_row = dc.execute_query("SELECT picture_oid FROM schema_lobs.table_with_lobs WHERE id = 1;")[0]
+    new_oid = lob_row['picture_oid']
+    assert new_oid is not None
+    assert new_oid != 0
+    
+    res_dest_lo = dc.execute_query(f"SELECT count(*) FROM pg_largeobject_metadata WHERE oid = {new_oid};")
+    assert res_dest_lo[0]['count'] == 1, f"LOB OID {new_oid} not found on destination"
+
+    # 5. Verify Reverse Replication setup
     print("Testing Reverse Replication setup...")
     cmd_rev = [python_bin, "pg_migrator.py", "setup-reverse", "-c", config_path]
     res_rev = subprocess.run(cmd_rev, capture_output=True, text=True)

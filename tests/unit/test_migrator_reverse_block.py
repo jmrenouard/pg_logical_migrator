@@ -108,3 +108,56 @@ def test_cleanup_reverse_replication():
         # Verify it attempted to drop reverse publication on dest
         calls_dest = [c[0][0] for c in mock_dest_instance.execute_script.call_args_list]
         assert any("DROP PUBLICATION IF EXISTS pub_rev" in call for call in calls_dest)
+
+def test_cleanup_reverse_replication_failure():
+    mock_config = MagicMock()
+    mock_config.get_source_dict.return_value = {"user": "u", "password": "p", "host": "h", "port": 5432, "database": "d"}
+    mock_config.get_dest_dict.return_value = {"user": "u2", "password": "p2", "host": "h2", "port": 5433, "database": "d2"}
+    mock_config.get_replication.return_value = {"publication_name": "pub", "subscription_name": "sub"}
+    mock_config.get_source_conn.return_value = {}
+    mock_config.get_dest_conn.return_value = {}
+
+    m = Migrator(mock_config)
+    
+    with patch("src.migrator.PostgresClient") as mock_client:
+        mock_dest_instance = MagicMock()
+        mock_source_instance = MagicMock()
+        
+        # Simulate a failure on either source or dest
+        mock_source_instance.execute_script.side_effect = Exception("Source failure")
+        
+        def client_side_effect(conn, label=None):
+            if label == "DESTINATION":
+                return mock_dest_instance
+            return mock_source_instance
+            
+        mock_client.side_effect = client_side_effect
+        
+        success, msg, cmds, outs = m.cleanup_reverse_replication()
+        
+        assert success is False
+        assert "Reverse replication cleanup partially failed" in msg
+        assert "Source failure" in outs[0]
+        # In the best-effort case, it should still try to execute the second command
+        assert len(cmds) == 2
+        assert len(outs) == 2
+
+def test_cleanup_reverse_replication_init_failure():
+    mock_config = MagicMock()
+    mock_config.get_source_dict.return_value = {"user": "u", "password": "p", "host": "h", "port": 5432, "database": "d"}
+    mock_config.get_dest_dict.return_value = {"user": "u2", "password": "p2", "host": "h2", "port": 5433, "database": "d2"}
+    mock_config.get_replication.return_value = {"publication_name": "pub", "subscription_name": "sub"}
+    mock_config.get_source_conn.return_value = {}
+    mock_config.get_dest_conn.return_value = {}
+
+    m = Migrator(mock_config)
+    
+    with patch("src.migrator.PostgresClient") as mock_client:
+        mock_client.side_effect = Exception("Connection error")
+        
+        success, msg, cmds, outs = m.cleanup_reverse_replication()
+        
+        assert success is False
+        assert "Reverse cleanup failed" in msg
+        assert "Connection error" in outs[0]
+        assert cmds[0] == "INITIALIZATION"

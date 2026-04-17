@@ -434,3 +434,17 @@ def cmd_cleanup_reverse(args):
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
+
+
+def cmd_sync_lobs(args):
+    """Synchronize Large Objects (LOBs/BLOBs) and update OID references."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    if args.dry_run:
+        print("[DRY-RUN] Would synchronize Large Objects (LOBs) and update OID references")
+        return 0
+    print("\n=== Synchronize Large Objects (LOBs) ===")
+    success, msg, cmds, outs = migrator.sync_large_objects()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1

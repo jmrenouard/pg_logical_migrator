@@ -1,38 +1,33 @@
-![pg_logical_migrator](../pg_logical_migrator.jpg)
+# Technical Limitations & Constraints
 
-# Limitations & Pitfalls
+While **pg_logical_migrator** provides a highly automated workflow, logical replication has inherent technical constraints that must be understood before initiating a production migration.
 
-PostgreSQL logical replication is a powerful tool but has several key limitations and constraints that must be understood to avoid migration failure or performance degradation.
+### 🛡️ Mandatory Primary Keys
+Logical replication **requires** a Primary Key or a unique, non-null index to replicate `UPDATE` and `DELETE` operations.
+- **Problem**: Tables without a PK will block replication if any data changes occur during the migration.
+- **Workaround**: We automatically attempt to set `REPLICA IDENTITY FULL` for tables without a PK (Step 5). This allows replication to proceed but **severely impacts performance** on the subscriber as it must perform a sequential scan for every update/delete.
 
-## 1. Common Restrictions
+### 🐘 Large Objects (LOBs / BLOBs)
+Standard logical replication **does not** support PostgreSQL "Large Objects" (stored in `pg_largeobject`).
+- **Detection**: Our `diagnose` command identifies if LOBs are present.
+- **Solution**: We provide a specialized **`sync-lobs`** command (Step 15b). This command manually exports LOBs from the source, imports them into the destination (generating new OIDs), and updates the referencing `OID` columns in your tables using Primary Key matching.
+- **Requirement**: Target tables must have a Primary Key for the update to succeed.
 
-- **No DDL Replication**: `CREATE`, `ALTER`, or `DROP` commands are not replicated. Structural changes (like adding a column) must be manually applied on both instances.
-- **No Automatic Additions**: New tables created after the publication is established aren't added automatically unless `FOR ALL TABLES` is used.
-- **Large Objects (LO)**: Binary blobs in `pg_largeobjects` are NOT replicated.
-- **Views & MatViews**: Only base tables are replicated. Views and Materialized Views must be manually refreshed or recreated.
-- **No Multi-master per Table**: Built-in multi-directional replication for the same table isn't supported natively.
+### 🏗️ DDL (Data Definition Language)
+Schema changes (e.g., `ALTER TABLE`, `CREATE INDEX`) are **not** replicated.
+- **Constraint**: The schema must remain static during the migration process.
+- **Risk**: Any DDL executed on the source after Step 4a will result in replication errors or data loss.
 
-## 2. Row Identification (UPDATE/DELETE)
+### 🔄 Sequences
+Sequences are not automatically synchronized in real-time.
+- **Behavior**: Sequences remain at their initial values on the destination throughout the replication.
+- **Step 9/10**: We provide a explicit synchronization step to read current sequence values from the source and apply them to the destination just before cutover.
 
-PostgreSQL must be able to identify unique rows for updates or deletes using a Unique Constraint (usually the Primary Key).
+### 📉 Unlogged Tables
+Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be replicated.
+- **Behavior**: These tables will be created on the destination, but will remain empty.
 
-- If no Primary Key exists, you can use `REPLICA IDENTITY FULL`, which records the entire row contents in the WAL.
-- **Extreme Caution**: `REPLICA IDENTITY FULL` can carry **severe performance impacts** for large tables.
-- Certain data types (e.g., `point`, `box`) without default B-tree/Hash operator classes will fail `UPDATE`/`DELETE` even with `REPLICA IDENTITY FULL`.
-
-## 3. Performance & Hardware Impact
-
-- **Severe Degradation**: Using `REPLICA IDENTITY FULL` on tables with millions of rows can drastically slow down the source database, potentially causing resource exhaustion.
-- **Hardware Costs**: Logical replication involves significant CPU and I/O overhead on both nodes. Closely monitor system resources on smaller server configurations.
-
----
-
-## 4. Deep Dive: REPLICA IDENTITY FULL
-
-While it provides a solution for tables without primary keys, the overhead is substantial:
-1.  **Performance**: For tables with millions of rows, it is highly detrimental.
-2.  **Implementation**: Requires direct modification of the source database schema.
-3.  **Incompatibility**: Many third-party replication tools (like `pglogical`) do not support this mode.
-
----
-[Return to Documentation Index](README.md)
+### 🛡️ Triggers and Foreign Keys
+- **Triggers**: By default, triggers (like those for auditing or denormalization) are **not** executed on the subscriber to avoid duplicate actions.
+- **Foreign Keys**: These are checked only when data is initially copied, or when the `REPLICA IDENTITY` is set.
+- **Strategy**: We recommend disabling triggers and foreign key checks during the initial copy (handled in Step 4a/12) and re-enabling them after the data is fully synchronized (Step 11).

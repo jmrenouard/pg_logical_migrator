@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import psycopg
 from src.db import PostgresClient
 import src.db as _db_module
 
@@ -27,7 +28,6 @@ class Migrator:
 
         if drop_dest:
             logging.info(f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
-            import psycopg
             
             # Pre-cleanup target DB: terminate active logical replication slots and subscriptions
             try:
@@ -484,12 +484,12 @@ class Migrator:
             source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
 
             # BLOCK: Check if forward subscription still exists on DESTINATION
-            check_sql = f"SELECT count(*) FROM pg_subscription WHERE subname = '{fwd_sub_name}';"
-            res = dest_client.execute_query(check_sql)
+            check_sql = "SELECT count(*) FROM pg_subscription WHERE subname = %s;"
+            res = dest_client.execute_query(check_sql, (fwd_sub_name,))
             if res and res[0]['count'] > 0:
                 msg = f"Forward replication subscription '{fwd_sub_name}' still exists on destination. Please run 'cleanup' first to terminate forward replication before setting up reverse replication."
                 logging.error(msg)
-                return False, msg, [f"[DEST] {check_sql}"], ["Exists"]
+                return False, msg, [f"[DEST] {check_sql % fwd_sub_name}"], ["Exists"]
 
             # Exec on SOURCE: drop sub (this might fail if slot is missing, so we wrap it)
             try:
@@ -527,17 +527,178 @@ class Migrator:
         """Cleanup reverse publication (on DEST) and reverse subscription (on SOURCE)."""
         pub_name = self.replication_cfg['publication_name'] + "_rev"
         sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        
         sql_sub = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
         sql_pub = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        
+        executed_sqls = []
+        out_results = []
+        
         try:
             dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
             source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
             
             # Sub is on SOURCE for reverse
-            source_client.execute_script(sql_sub, autocommit=True)
+            executed_sqls.append(f"[SOURCE] {sql_sub}")
+            try:
+                source_client.execute_script(sql_sub, autocommit=True)
+                out_results.append("OK")
+            except Exception as e:
+                logging.warning(f"Failed to drop reverse subscription on source: {e}")
+                out_results.append(str(e))
+                
             # Pub is on DEST for reverse
-            dest_client.execute_script(sql_pub, autocommit=True)
+            executed_sqls.append(f"[DEST] {sql_pub}")
+            try:
+                dest_client.execute_script(sql_pub, autocommit=True)
+                out_results.append("OK")
+            except Exception as e:
+                logging.warning(f"Failed to drop reverse publication on destination: {e}")
+                out_results.append(str(e))
             
-            return True, "Reverse replication cleaned up.", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], ["OK", "OK"]
+            success = all(res == "OK" for res in out_results)
+            return success, "Reverse replication cleaned up." if success else "Reverse replication cleanup partially failed.", executed_sqls, out_results
+            
         except Exception as e:
-            return False, f"Reverse cleanup failed: {str(e)}", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], [str(e)]
+            logging.error(f"Reverse cleanup failed: {e}", exc_info=True)
+            # Ensure out_results has same length as executed_sqls for consistency
+            while len(out_results) < len(executed_sqls):
+                out_results.append(str(e))
+            if not executed_sqls:
+                executed_sqls.append("INITIALIZATION")
+                out_results.append(str(e))
+            return False, f"Reverse cleanup failed: {str(e)}", executed_sqls, out_results
+
+    def sync_large_objects(self):
+        """
+        Identify tables with OID columns referring to Large Objects and synchronize them.
+        logical replication doesn't support BLOBs/LOBs, so we must manually migrate them
+        and update the OID references on the destination.
+        """
+        logging.info("[BOTH] Starting Large Objects (LOBs) synchronization...")
+        
+        executed_sqls = []
+        out_results = []
+        
+        try:
+            source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+            dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+            
+            schemas = self.config.get_target_schemas()
+            schema_filter = ""
+            if schemas != ['all']:
+                schema_list = ", ".join([f"'{s}'" for s in schemas])
+                schema_filter = f"AND n.nspname IN ({schema_list})"
+
+            # 1. Identify tables with OID columns that are actually Large Objects
+            # Actually, most OID columns in user tables are intended for LOBs if they aren't system columns.
+            query_lob_cols = f"""
+            SELECT 
+                n.nspname AS schema_name, 
+                c.relname AS table_name, 
+                a.attname AS column_name
+            FROM pg_attribute a
+            JOIN pg_class c ON a.attrelid = c.oid
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            WHERE a.atttypid = 'oid'::regtype
+              AND c.relkind = 'r'
+              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              {schema_filter}
+              AND a.attnum > 0;
+            """
+            
+            lob_columns = source_client.execute_query(query_lob_cols)
+            if not lob_columns:
+                logging.info("[BOTH] No tables with OID columns found.")
+                return True, "No Large Objects to synchronize.", [], []
+
+            total_synced = 0
+            for col_info in lob_columns:
+                schema = col_info['schema_name']
+                table = col_info['table_name']
+                column = col_info['column_name']
+                
+                # Get PK for this table
+                pk_query = f"""
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                WHERE i.indrelid = '"{schema}"."{table}"'::regclass
+                AND i.indisprimary;
+                """
+                pk_res = source_client.execute_query(pk_query)
+                if not pk_res:
+                    logging.warning(f"[SOURCE] Skipping LOB sync for {schema}.{table}: No Primary Key found.")
+                    continue
+                
+                pk_col = pk_res[0]['attname']
+                
+                logging.info(f"[BOTH] Syncing LOBs for table {schema}.{table} (column: {column}, PK: {pk_col})...")
+                
+                # Fetch all rows with non-null OIDs from source
+                data_query = f'SELECT "{pk_col}", "{column}" FROM "{schema}"."{table}" WHERE "{column}" IS NOT NULL AND "{column}" != 0;'
+                rows = source_client.execute_query(data_query)
+                
+                if not rows:
+                    continue
+
+                # Open connections for streaming
+                src_conn_str = f"host={self.source_conn['host']} port={self.source_conn['port']} user={self.source_conn['user']} password={self.source_conn['password']} dbname={self.source_conn['database']}"
+                dst_conn_str = f"host={self.dest_conn['host']} port={self.dest_conn['port']} user={self.dest_conn['user']} password={self.dest_conn['password']} dbname={self.dest_conn['database']}"
+                
+                with psycopg.connect(src_conn_str) as s_conn, psycopg.connect(dst_conn_str) as d_conn:
+                    # LOB operations must be in a transaction
+                    s_conn.autocommit = False
+                    d_conn.autocommit = False
+                    
+                    for row in rows:
+                        pk_val = row[pk_col]
+                        old_oid = row[column]
+                        
+                        try:
+                            # 1. Read from source using server-side functions
+                            with s_conn.cursor() as s_cur:
+                                # INV_READ = 0x40000
+                                s_cur.execute("SELECT lo_open(%s, %s)", (old_oid, 0x40000))
+                                fd_src = s_cur.fetchone()[0]
+                                
+                                # Read all content (for very large objects, we should chunk this)
+                                # Defaulting to reading up to 1GB for simplicity in this version
+                                s_cur.execute("SELECT loread(%s, 1000000000)", (fd_src,))
+                                content = s_cur.fetchone()[0]
+                                
+                                s_cur.execute("SELECT lo_close(%s)", (fd_src,))
+
+                            # 2. Write to destination using server-side functions
+                            with d_conn.cursor() as d_cur:
+                                d_cur.execute("SELECT lo_create(0)")
+                                new_oid = d_cur.fetchone()[0]
+                                
+                                # INV_WRITE = 0x20000
+                                d_cur.execute("SELECT lo_open(%s, %s)", (new_oid, 0x20000))
+                                fd_dst = d_cur.fetchone()[0]
+                                
+                                d_cur.execute("SELECT lowrite(%s, %s)", (fd_dst, content))
+                                d_cur.execute("SELECT lo_close(%s)", (fd_dst,))
+                                
+                                # 3. Update reference in destination table
+                                update_sql = f'UPDATE "{schema}"."{table}" SET "{column}" = %s WHERE "{pk_col}" = %s'
+                                d_cur.execute(update_sql, (new_oid, pk_val))
+                            
+                            s_conn.commit()
+                            d_conn.commit()
+                            total_synced += 1
+                        except Exception as e:
+                            s_conn.rollback()
+                            d_conn.rollback()
+                            logging.error(f"[BOTH] Failed to sync LOB for {schema}.{table} PK={pk_val}: {e}")
+                            out_results.append(f"Error PK={pk_val}: {e}")
+
+            executed_sqls.append(f"LOB SYNC: {total_synced} objects processed.")
+            out_results.append(f"OK: {total_synced} synced")
+            
+            return True, f"Large Objects synchronization complete. Processed {total_synced} objects.", executed_sqls, out_results
+
+        except Exception as e:
+            logging.error(f"Large Objects sync failed: {e}", exc_info=True)
+            return False, f"LOB sync failed: {str(e)}", executed_sqls, out_results
