@@ -150,7 +150,7 @@ You can easily test **pg_logical_migrator** using the provided `test_env`:
 
 ## 👨‍💻 À propos de l'auteur
 
-Architecte Web et Expert en Bases de Données (Cassandra, MongoDB, MySQL, PostgreSQL, Redis) basé à **Rennes**, je suis passionné par l'univers **DevDataOps**. Auteur de plusieurs ouvrages techniques (éditions ENI, Eyrolles), je m'efforce de partager mon expertise pour simplifier la gestion et la migration des données à grande échelle.
+Architecte Web et Expert en Bases de Données (Cassandra, MongoDB, MySQL, PostgreSQL, Redis) basé à Rennes, je suis passionné par l'univers DevDataOps. Auteur de plusieurs ouvrages techniques (éditions ENI, Eyrolles), je m'efforce de partager mon expertise pour simplifier la gestion et la migration des données à grande échelle.
 
 | Canal | URL | Détails |
 | :--- | :--- | :--- |
