@@ -154,6 +154,12 @@ Contributions are welcome! Whether it's reporting a bug, suggesting a feature, o
 
 ---
 
+## 🔒 Security
+
+Security is a top priority for this project. If you discover any security-related issues, please follow the guidelines in our [SECURITY.md](SECURITY.md) to report them responsibly.
+
+---
+
 ## 📬 Contact Me
 
 | Channel | Link |
