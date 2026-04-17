@@ -148,16 +148,14 @@ You can easily test **pg_logical_migrator** using the provided `test_env`:
 
 ---
 
-## 👨‍💻 À propos de l'auteur
+## 📬 Contact Me
 
-Architecte Web et Expert en Bases de Données (Cassandra, MongoDB, MySQL, PostgreSQL, Redis) basé à Rennes, je suis passionné par l'univers DevDataOps. Auteur de plusieurs ouvrages techniques (éditions ENI, Eyrolles), je m'efforce de partager mon expertise pour simplifier la gestion et la migration des données à grande échelle.
-
-| Canal | URL | Détails |
-| :--- | :--- | :--- |
-| 🌐 Site / Blog | [www.jmrenouard.fr](https://www.jmrenouard.fr) | Présentation, bio, contact pro |
-| 💼 LinkedIn | [jmrenouard](https://www.linkedin.com/in/jmrenouard) | Profil DBA, DevDataOps |
-| 🐦 X (Twitter) | [@jmrenouard](https://x.com/jmrenouard) | Tech OSS, BDD, Langages |
-| 🐙 GitHub | [jmrenouard](https://github.com/jmrenouard) | Projets open source |
+| Channel | Link |
+| :--- | :--- |
+| 🌐 Website | [www.jmrenouard.fr](https://www.jmrenouard.fr) |
+| 💼 LinkedIn | [jmrenouard](https://www.linkedin.com/in/jmrenouard) |
+| 🐦 X (Twitter) | [@jmrenouard](https://x.com/jmrenouard) |
+| 🐙 GitHub | [jmrenouard](https://github.com/jmrenouard) |
 
 ---
 
