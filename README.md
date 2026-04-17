@@ -148,6 +148,12 @@ You can easily test **pg_logical_migrator** using the provided `test_env`:
 
 ---
 
+## 🤝 Contributing
+
+Contributions are welcome! Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your help is appreciated. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
+
+---
+
 ## 📬 Contact Me
 
 | Channel | Link |
