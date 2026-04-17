@@ -423,3 +423,14 @@ def cmd_setup_reverse(args):
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
+
+
+def cmd_cleanup_reverse(args):
+    """Cleanup reverse replication objects."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    print("\n=== Cleanup REVERSE Replication (Rollback) ===")
+    success, msg, cmds, outs = migrator.cleanup_reverse_replication()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1

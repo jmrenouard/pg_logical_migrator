@@ -3,6 +3,7 @@ import os
 
 class Config:
     def __init__(self, config_path):
+        self.config_path = config_path
         self.config = configparser.ConfigParser()
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Config file not found: {config_path}")

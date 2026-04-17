@@ -76,7 +76,7 @@ Install the wheel directly or from source:
 
 ```bash
 # From local wheel
-pip install pg_logical_migrator-1.3.0-py3-none-any.whl
+pip install pg_logical_migrator-1.3.1-py3-none-any.whl
 
 # From source
 git clone https://github.com/jmrenouard/pg_logical_migrator.git

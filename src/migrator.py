@@ -456,41 +456,46 @@ class Migrator:
         Used for rapid rollback after a successful migration.
         """
         logging.info("[BOTH] Setting up REVERSE replication (Rollback capability)...")
-        
+
+        fwd_sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name'] + "_rev"
         sub_name = self.replication_cfg['subscription_name'] + "_rev"
-        
+
         src_conn = self.source_conn
         dst_conn = self.dest_conn
-        
-        # 1. Create Publication on DESTINATION
+
+        # Preparation of SQLs
         sql_pub1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
         sql_pub2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
-        
-        # 2. Create Subscription on SOURCE
-        # We need destination host/port as seen from the source
+
         rep_config = self.config.get_replication()
         dst_host_for_src = rep_config.get('dest_host_for_src', dst_conn['host'])
         dst_port_for_src = rep_config.get('dest_port_for_src', dst_conn['port'])
-        
         conn_str = f"host={dst_host_for_src} port={dst_port_for_src} user={dst_conn['user']} password={dst_conn['password']} dbname={dst_conn['database']}"
-        
-        # Pre-cleanup source: drop sub and then drop slot manually on dest (the publisher in reverse)
+
         sql_sub1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
         sql_sub2 = f"CREATE SUBSCRIPTION {sub_name} CONNECTION '{conn_str}' PUBLICATION {pub_name} WITH (copy_data = false, create_slot = true);"
-        
+
         executed_sqls = []
         out_results = []
-        
+
         try:
             dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
             source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
-            
+
+            # BLOCK: Check if forward subscription still exists on DESTINATION
+            check_sql = f"SELECT count(*) FROM pg_subscription WHERE subname = '{fwd_sub_name}';"
+            res = dest_client.execute_query(check_sql)
+            if res and res[0]['count'] > 0:
+                msg = f"Forward replication subscription '{fwd_sub_name}' still exists on destination. Please run 'cleanup' first to terminate forward replication before setting up reverse replication."
+                logging.error(msg)
+                return False, msg, [f"[DEST] {check_sql}"], ["Exists"]
+
             # Exec on SOURCE: drop sub (this might fail if slot is missing, so we wrap it)
             try:
                 source_client.execute_script(sql_sub1, autocommit=True)
             except Exception: pass
-            
+
             # Exec on DEST: ensure slot is gone
             drop_slot_sql = f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');"
             dest_client.execute_script(drop_slot_sql, autocommit=True)
@@ -499,21 +504,40 @@ class Migrator:
             executed_sqls.append(f"[DEST] {sql_pub1}")
             dest_client.execute_script(sql_pub1, autocommit=True)
             out_results.append("OK")
-            
+
             executed_sqls.append(f"[DEST] {sql_pub2}")
             dest_client.execute_script(sql_pub2, autocommit=True)
             out_results.append("OK")
-            
+
             # Exec on SOURCE: Sub
             executed_sqls.append(f"[SOURCE] {sql_sub1}")
             out_results.append("OK")
-            
+
             executed_sqls.append(f"[SOURCE] {sql_sub2}")
             source_client.execute_script(sql_sub2, autocommit=True)
             out_results.append("OK")
-            
+
             return True, "Reverse replication setup successfully.", executed_sqls, out_results
-            
+
         except Exception as e:
             logging.error(f"Reverse replication setup failed: {e}")
             return False, f"Reverse setup failed: {str(e)}", executed_sqls, [str(e)] * (len(executed_sqls) or 1)
+
+    def cleanup_reverse_replication(self):
+        """Cleanup reverse publication (on DEST) and reverse subscription (on SOURCE)."""
+        pub_name = self.replication_cfg['publication_name'] + "_rev"
+        sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        sql_sub = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
+        sql_pub = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        try:
+            dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+            source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+            
+            # Sub is on SOURCE for reverse
+            source_client.execute_script(sql_sub, autocommit=True)
+            # Pub is on DEST for reverse
+            dest_client.execute_script(sql_pub, autocommit=True)
+            
+            return True, "Reverse replication cleaned up.", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], ["OK", "OK"]
+        except Exception as e:
+            return False, f"Reverse cleanup failed: {str(e)}", [f"[SOURCE] {sql_sub}", f"[DEST] {sql_pub}"], [str(e)]
