@@ -13,13 +13,13 @@
 
 ---
 
-## 🎥 Démonstration
+## 🎥 Demo
 
-Découvrez comment **pg_logical_migrator** orchestre une migration de base de données complexe sans aucune interruption de service (zero-downtime), automatisée via nos tests de bout en bout (e2e).
+Experience how **pg_logical_migrator** orchestrates a complex database migration with zero downtime, automated through our end-to-end (e2e) tests.
 
 [![asciicast](https://asciinema.org/a/ID.svg)](https://asciinema.org/a/ID)
 
-*Alternativement, visualisez le processus via ce GIF de démonstration :*
+*Alternatively, view the process via this demonstration GIF:*
 ![Migration Demo Placeholder](https://via.placeholder.com/800x400.png?text=Migration+Demo+GIF+Placeholder)
 
 ---
