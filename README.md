@@ -16,7 +16,15 @@
 
 Watch how **pg_logical_migrator** orchestrates an end-to-end database migration, including **Large Object (LOB) synchronization** and real-time parity audits.
 
-[![asciicast](https://asciinema.org/a/2XCuo1WYnRZZfo5o.svg)](https://asciinema.org/a/2XCuo1WYnRZZfo5o)
+<div align="center">
+  <script src="https://asciinema.org/a/2XCuo1WYnRZZfo5o.js" id="asciicast-2XCuo1WYnRZZfo5o" async></script>
+  
+  <noscript>
+    <a href="https://asciinema.org/a/2XCuo1WYnRZZfo5o" target="_blank">
+      <img src="https://asciinema.org/a/2XCuo1WYnRZZfo5o.svg" width="800" />
+    </a>
+  </noscript>
+</div>
 
 ---
 
