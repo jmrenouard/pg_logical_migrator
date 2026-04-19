@@ -63,6 +63,10 @@ jobs:
           EXE_EXT=""
           if [ "${{ runner.os }}" == "Windows" ]; then EXE_EXT=".exe"; fi
           
+          # Ensure clean dist directory
+          rm -rf dist
+          mkdir -p dist
+
           pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
           
           BINARY_NAME="pg_migrator-${{ matrix.platform }}-v${VERSION}${EXE_EXT}"
@@ -79,8 +83,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact_name }}
+          name: binary-${{ matrix.platform }}-v${{ env.VERSION }}
           path: dist/pg_migrator-*
+          if-no-files-found: error
 
   # 2. Create DEB and RPM packages (using nfpm)
   package-os:
@@ -89,12 +94,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
-      - name: Download Linux binary
-        uses: actions/download-artifact@v6
-        with:
-          name: pg_migrator-linux-amd64
-          path: dist/
-
       - name: Extract Version
         id: info
         shell: python
@@ -107,11 +106,21 @@ jobs:
                 version = match.group(1) if match else "unknown"
                 with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
                     out.write(f"VERSION={version}\n")
+            print(f"Version: {version}")
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v6
+        with:
+          name: binary-linux-amd64-v${{ steps.info.outputs.VERSION }}
+          path: dist/
+
+      - name: Locate binary
+        id: locate
+        run: |
             # Find the actual binary filename (not the sha256)
-            bin_files = [f for f in os.listdir("dist") if f.startswith("pg_migrator-linux-amd64-") and not f.endswith(".sha256")]
-            if bin_files:
-                with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
-                    out.write(f"BIN_FILE=dist/{bin_files[0]}\n")
+            bin_file=$(find dist/ -name "pg_migrator-linux-amd64-v*" ! -name "*.sha256" | head -n 1)
+            echo "BIN_FILE=$bin_file" >> $GITHUB_OUTPUT
+            echo "Found binary: $bin_file"
 
       - name: Install nfpm
         run: |
@@ -147,7 +156,7 @@ jobs:
       - name: Upload OS packages
         uses: actions/upload-artifact@v6
         with:
-          name: os-packages
+          name: os-packages-v${{ steps.info.outputs.VERSION }}
           path: |
             dist/*.deb*
             dist/*.rpm*
@@ -161,17 +170,27 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      
+      - name: Extract Version
+        id: info
+        run: |
+          VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Install dependencies
         run: pip install build
+      
       - name: Build Wheel and Sdist
         run: |
+          rm -rf dist
           python -m build
           cd dist
           for f in *; do sha256sum "$f" > "$f.sha256"; done
+      
       - name: Upload Python assets
         uses: actions/upload-artifact@v6
         with:
-          name: python-assets
+          name: python-assets-v${{ steps.info.outputs.VERSION }}
           path: dist/*
 
   # 4. Create GitHub Release
@@ -180,17 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Download all artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: all-artifacts/
-
-      - name: Prepare Release folder
-        run: |
-          mkdir release-dist
-          find all-artifacts/ -type f -exec cp {} release-dist/ \;
-          ls -R release-dist/
-
+      
       - name: Set Release Info
         id: rel_info
         shell: python
@@ -201,8 +210,6 @@ jobs:
                 content = f.read()
                 match = re.search(r'__version__ = "([^"]+)"', content)
                 version = match.group(1) if match else "unknown"
-                with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
-                    env.write(f"VERSION={version}\n")
             
             ref = os.environ['GITHUB_REF']
             if ref.startswith('refs/tags/'):
@@ -212,9 +219,27 @@ jobs:
                 tag_name = ref.replace('refs/heads/', '')
                 is_prerelease = 'true'
             
+            # Verify version matches tag if tag push
+            if ref.startswith('refs/tags/') and tag_name != f"v{version}":
+                print(f"::error::Tag {tag_name} does not match script version v{version}")
+                exit(1)
+
             with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
+                env.write(f"VERSION={version}\n")
                 env.write(f"TAG_NAME={tag_name}\n")
                 env.write(f"IS_PRERELEASE={is_prerelease}\n")
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: all-artifacts/
+
+      - name: Prepare Release folder
+        run: |
+          mkdir release-dist
+          # Only pick files that match the CURRENT version to avoid leftovers from other runs
+          find all-artifacts/ -type f \( -name "*${{ env.VERSION }}*" -o -name "*.sha256" \) -exec cp {} release-dist/ \;
+          ls -R release-dist/
 
       - name: Generate Beautiful Release Notes
         run: |
