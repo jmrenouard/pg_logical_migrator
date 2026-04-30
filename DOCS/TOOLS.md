@@ -25,7 +25,7 @@ This document covers all the ways to invoke and operate `pg_logical_migrator`, f
 
 | Requirement | Description |
 | --- | --- |
-| Python ≥ 3.10 | Interpreter for all tool logic (`textual` requires ≥ 3.10) |
+| Python ≥ 3.9 | Interpreter for all tool logic (`textual` requires ≥ 3.8) |
 | `pg_dump` / `psql` | PostgreSQL client tools (≥ v10) — must be on `PATH` |
 | `psycopg` v3 | Python PostgreSQL driver — installed via `requirements.txt` |
 | Docker + Compose | Required **only** for the integrated test environment |

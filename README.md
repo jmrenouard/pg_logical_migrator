@@ -3,7 +3,7 @@
 # pg_logical_migrator
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v10+-blue.svg)](https://www.postgresql.org/)
-[![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.9+-green.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/jmrenouard)
@@ -89,7 +89,7 @@ docker pull jmrenouard/pg_logical_migrator:latest
 ```
 
 ### Option B — Local Python Setup
-For local development, ensure you have Python 3.10+ and the required drivers.
+For local development, ensure you have Python 3.9+ and the required drivers.
 
 ```bash
 git clone https://github.com/jmrenouard/pg_logical_migrator

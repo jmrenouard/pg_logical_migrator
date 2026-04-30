@@ -6,7 +6,7 @@
 
 `pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a Textual Terminal User Interface (TUI) for interactive step-by-step execution and incremental pipeline commands (`init-replication`, `post-migration`) for hands-off migrations.
 
-- **Language**: Python ≥ 3.10
+- **Language**: Python ≥ 3.9
 - **Key Libraries**: `textual`, `rich`, `psycopg` (v3), `psycopg-binary`
 - **PostgreSQL**: Source and destination must be PostgreSQL 10 or higher with `wal_level = logical`
 

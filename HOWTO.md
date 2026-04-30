@@ -7,7 +7,7 @@ This guide explains how to test the `pg_logical_migrator` in various modes, from
 ## 1. Prerequisites
 
 - **Docker & docker compose**: For running the test databases.
-- **Python 3.10+**: With a virtual environment.
+- **Python 3.9+**: With a virtual environment.
 - **PostgreSQL Client Tools**: `pg_dump` and `psql` must be in your PATH.
 
 ---
