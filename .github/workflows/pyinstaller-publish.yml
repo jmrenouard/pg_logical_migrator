@@ -117,7 +117,7 @@ jobs:
         id: locate
         run: |
             # Find the actual binary filename (not the sha256)
-            bin_file=$(find dist/ -name "pg_migrator-linux-amd64-v*" ! -name "*.sha256" | head -n 1)
+            bin_file=$(find dist/ -name "pg_migrator-linux-amd64-python*-v*" ! -name "*.sha256" | head -n 1)
             echo "BIN_FILE=$bin_file" >> $GITHUB_OUTPUT
             echo "Found binary: $bin_file"
 
