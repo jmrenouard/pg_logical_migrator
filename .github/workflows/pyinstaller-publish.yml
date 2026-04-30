@@ -162,13 +162,18 @@ jobs:
 
   # 3. Build Python Wheel and Source Distribution
   package-python:
+    needs: [build-binaries]
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.9", "3.11"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Python 3.9
+      - name: Set up Python ${{ matrix.python_version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python_version }}
       
       - name: Extract Version
         id: info
@@ -184,12 +189,18 @@ jobs:
           rm -rf dist
           python -m build
           cd dist
+          for f in *.whl; do
+            mv "$f" "${f%.whl}-python${{ matrix.python_version }}.whl"
+          done
+          for f in *.tar.gz; do
+            mv "$f" "${f%.tar.gz}-python${{ matrix.python_version }}.tar.gz"
+          done
           for f in *; do sha256sum "$f" > "$f.sha256"; done
       
       - name: Upload Python assets
         uses: actions/upload-artifact@v6
         with:
-          name: python-assets-v${{ steps.info.outputs.VERSION }}
+          name: python-assets-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/*
 
   # 4. Create GitHub Release
