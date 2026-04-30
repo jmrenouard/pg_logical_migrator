@@ -142,7 +142,7 @@ jobs:
           homepage: "https://github.com/jmrenouard/pg_logical_migrator"
           license: "MIT"
           contents:
-            - src: "${{ steps.info.outputs.BIN_FILE }}"
+            - src: "${{ steps.locate.outputs.BIN_FILE }}"
               dst: "/usr/bin/pg_migrator"
           EOF
 
