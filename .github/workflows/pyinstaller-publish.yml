@@ -30,9 +30,9 @@ jobs:
             platform: macos-arm64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python_version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
 
@@ -80,7 +80,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.platform }}-python${{ matrix.python_version }}-v${{ env.VERSION }}
           path: dist/pg_migrator-*
@@ -91,7 +91,7 @@ jobs:
     needs: build-binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       
       - name: Extract Version
         id: info
@@ -108,7 +108,7 @@ jobs:
             print(f"Version: {version}")
 
       - name: Download Linux binary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: binary-linux-amd64-python3.9-v${{ steps.info.outputs.VERSION }}
           path: dist/
@@ -116,6 +116,8 @@ jobs:
       - name: Locate binary
         id: locate
         run: |
+            echo "Listing dist/ directory:"
+            ls -la dist/ || echo "dist/ not found!"
             # Find the actual binary filename (not the sha256)
             bin_file=$(find dist/ -name "pg_migrator-linux-amd64-python*-v*" ! -name "*.sha256" | head -n 1)
             echo "BIN_FILE=$bin_file" >> $GITHUB_OUTPUT
@@ -153,7 +155,7 @@ jobs:
           for f in *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
 
       - name: Upload OS packages
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: os-packages-v${{ steps.info.outputs.VERSION }}
           path: |
@@ -169,9 +171,9 @@ jobs:
         python_version: ["3.9", "3.11"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python_version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
       
@@ -198,7 +200,7 @@ jobs:
           for f in *; do sha256sum "$f" > "$f.sha256"; done
       
       - name: Upload Python assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: python-assets-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/*
@@ -208,7 +210,7 @@ jobs:
     needs: [build-binaries, package-os, package-python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       
       - name: Set Release Info
         id: rel_info
@@ -240,7 +242,7 @@ jobs:
                 env.write(f"IS_PRERELEASE={is_prerelease}\n")
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           path: all-artifacts/
 
