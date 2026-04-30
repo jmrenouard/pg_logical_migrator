@@ -19,23 +19,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        python_version: ["3.9", "3.11"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             platform: linux-amd64
-            artifact_name: pg_migrator-linux-amd64
           - os: windows-latest
             platform: win-amd64
-            artifact_name: pg_migrator-win-amd64
           - os: macos-latest
             platform: macos-arm64
-            artifact_name: pg_migrator-macos-arm64
 
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Python 3.9
+      - name: Set up Python ${{ matrix.python_version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python_version }}
 
       - name: Extract Version
         id: get_version
@@ -69,7 +68,7 @@ jobs:
 
           pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
           
-          BINARY_NAME="pg_migrator-${{ matrix.platform }}-v${VERSION}${EXE_EXT}"
+          BINARY_NAME="pg_migrator-${{ matrix.platform }}-python${{ matrix.python_version }}-v${VERSION}${EXE_EXT}"
           mv dist/pg_migrator${EXE_EXT} "dist/${BINARY_NAME}"
           
           # Generate SHA256
@@ -83,7 +82,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: binary-${{ matrix.platform }}-v${{ env.VERSION }}
+          name: binary-${{ matrix.platform }}-python${{ matrix.python_version }}-v${{ env.VERSION }}
           path: dist/pg_migrator-*
           if-no-files-found: error
 
@@ -111,7 +110,7 @@ jobs:
       - name: Download Linux binary
         uses: actions/download-artifact@v6
         with:
-          name: binary-linux-amd64-v${{ steps.info.outputs.VERSION }}
+          name: binary-linux-amd64-python3.9-v${{ steps.info.outputs.VERSION }}
           path: dist/
 
       - name: Locate binary
