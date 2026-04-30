@@ -3,6 +3,7 @@ import subprocess
 import psycopg
 from src.db import PostgresClient
 import src.db as _db_module
+from psycopg import sql
 
 class Migrator:
     def __init__(self, config):
@@ -489,7 +490,7 @@ class Migrator:
             if res and res[0]['count'] > 0:
                 msg = f"Forward replication subscription '{fwd_sub_name}' still exists on destination. Please run 'cleanup' first to terminate forward replication before setting up reverse replication."
                 logging.error(msg)
-                return False, msg, [f"[DEST] {check_sql % fwd_sub_name}"], ["Exists"]
+                return False, msg, [f"[DEST] {check_sql} | params={fwd_sub_name!r}"], ["Exists"]
 
             # Exec on SOURCE: drop sub (this might fail if slot is missing, so we wrap it)
             try:
@@ -521,7 +522,12 @@ class Migrator:
 
         except Exception as e:
             logging.error(f"Reverse replication setup failed: {e}")
-            return False, f"Reverse setup failed: {str(e)}", executed_sqls, [str(e)] * (len(executed_sqls) or 1)
+            while len(out_results) < len(executed_sqls):
+                out_results.append(str(e))
+            if not executed_sqls:
+                executed_sqls.append("INITIALIZATION")
+                out_results.append(str(e))
+            return False, f"Reverse setup failed: {str(e)}", executed_sqls, out_results
 
     def cleanup_reverse_replication(self):
         """Cleanup reverse publication (on DEST) and reverse subscription (on SOURCE)."""
@@ -643,8 +649,8 @@ class Migrator:
                     continue
 
                 # Open connections for streaming
-                src_conn_str = f"host={self.source_conn['host']} port={self.source_conn['port']} user={self.source_conn['user']} password={self.source_conn['password']} dbname={self.source_conn['database']}"
-                dst_conn_str = f"host={self.dest_conn['host']} port={self.dest_conn['port']} user={self.dest_conn['user']} password={self.dest_conn['password']} dbname={self.dest_conn['database']}"
+                src_conn_str = self.config.get_source_conn()
+                dst_conn_str = self.config.get_dest_conn()
                 
                 with psycopg.connect(src_conn_str) as s_conn, psycopg.connect(dst_conn_str) as d_conn:
                     # LOB operations must be in a transaction
@@ -656,21 +662,12 @@ class Migrator:
                         old_oid = row[column]
                         
                         try:
-                            # 1. Read from source using server-side functions
-                            with s_conn.cursor() as s_cur:
+                            # 1. Read from source and write to destination using server-side functions
+                            with s_conn.cursor() as s_cur, d_conn.cursor() as d_cur:
                                 # INV_READ = 0x40000
                                 s_cur.execute("SELECT lo_open(%s, %s)", (old_oid, 0x40000))
                                 fd_src = s_cur.fetchone()[0]
                                 
-                                # Read all content (for very large objects, we should chunk this)
-                                # Defaulting to reading up to 1GB for simplicity in this version
-                                s_cur.execute("SELECT loread(%s, 1000000000)", (fd_src,))
-                                content = s_cur.fetchone()[0]
-                                
-                                s_cur.execute("SELECT lo_close(%s)", (fd_src,))
-
-                            # 2. Write to destination using server-side functions
-                            with d_conn.cursor() as d_cur:
                                 d_cur.execute("SELECT lo_create(0)")
                                 new_oid = d_cur.fetchone()[0]
                                 
@@ -678,12 +675,26 @@ class Migrator:
                                 d_cur.execute("SELECT lo_open(%s, %s)", (new_oid, 0x20000))
                                 fd_dst = d_cur.fetchone()[0]
                                 
-                                d_cur.execute("SELECT lowrite(%s, %s)", (fd_dst, content))
+                                CHUNK_SIZE = 4 * 1024 * 1024  # 4MB chunks
+                                while True:
+                                    s_cur.execute("SELECT loread(%s, %s)", (fd_src, CHUNK_SIZE))
+                                    content = s_cur.fetchone()[0]
+                                    if not content:
+                                        break
+                                    d_cur.execute("SELECT lowrite(%s, %s)", (fd_dst, content))
+                                
+                                s_cur.execute("SELECT lo_close(%s)", (fd_src,))
                                 d_cur.execute("SELECT lo_close(%s)", (fd_dst,))
                                 
                                 # 3. Update reference in destination table
-                                update_sql = f'UPDATE "{schema}"."{table}" SET "{column}" = %s WHERE "{pk_col}" = %s'
+                                update_sql = sql.SQL('UPDATE {}.{} SET {} = %s WHERE {} = %s').format(
+                                    sql.Identifier(schema),
+                                    sql.Identifier(table),
+                                    sql.Identifier(column),
+                                    sql.Identifier(pk_col)
+                                )
                                 d_cur.execute(update_sql, (new_oid, pk_val))
+                            
                             
                             s_conn.commit()
                             d_conn.commit()

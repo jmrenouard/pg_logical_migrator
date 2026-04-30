@@ -52,7 +52,7 @@ def test_sync_large_objects_success():
         mock_d_cur = MagicMock()
         mock_d_conn.cursor.return_value.__enter__.return_value = mock_d_cur
         
-        mock_s_cur.fetchone.side_effect = [[100], [b"data"]]
+        mock_s_cur.fetchone.side_effect = [[100], [b"data"], [None]]
         mock_d_cur.fetchone.side_effect = [[67890], [200]]
         
         success, msg, cmds, outs = m.sync_large_objects()
@@ -105,3 +105,25 @@ def test_sync_large_objects_failure():
         assert success is True
         assert any("Read error" in str(o) for o in outs)
         mock_d_conn.rollback.assert_called()
+
+def test_sync_large_objects_connection_failure():
+    mock_config = MagicMock()
+    mock_config.get_source_conn.return_value = "host=h1"
+    mock_config.get_dest_conn.return_value = "host=h2"
+    
+    m = Migrator(mock_config)
+    
+    with patch("src.migrator.psycopg.connect") as mock_connect, \
+         patch("src.migrator.PostgresClient") as mock_pc:
+        
+        mock_pc_instance = mock_pc.return_value
+        mock_pc_instance.execute_query.side_effect = [
+            [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
+            [{"attname": "id"}],
+            [{"id": 1, "c1": 12345}]
+        ]
+        mock_connect.side_effect = Exception("Connection Failed")
+        success, msg, cmds, outs = m.sync_large_objects()
+        
+        assert success is False
+        assert "Connection Failed" in msg

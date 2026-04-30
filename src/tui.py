@@ -287,8 +287,12 @@ class MigratorApp(App):
 
     @work(exclusive=True, thread=True)
     def _run_sub_async(self):
-        s, m, c, o = self.migrator.step6_setup_destination()
-        self.call_from_thread(self.update_display, Panel(m, title="Subscription Result", border_style="green" if s else "red"), "Step 6: Sub")
+        label = "Step 6: Sub"
+        try:
+            s, m, c, o = self.migrator.step6_setup_destination()
+            self.call_from_thread(self.update_display, Panel(m, title="Subscription Result", border_style="green" if s else "red"), label)
+        except Exception as e:
+            self.call_from_thread(self.update_display, Panel(f"Pipeline Failed: {e}", title=label, border_style="red"), label)
 
     @work(exclusive=True, thread=True)
     def _run_init_pipeline(self):
