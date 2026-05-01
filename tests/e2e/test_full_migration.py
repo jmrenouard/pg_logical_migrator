@@ -91,4 +91,13 @@ def test_full_migration_e2e(tmp_path):
     res_src_sub = sc.execute_query(f"SELECT count(*) FROM pg_subscription WHERE subname = '{sub_rev_name}';")
     assert res_src_sub[0]['count'] == 1
     
-    print(f"E2E Success: {s_count} actors migrated and Rollback configured.")
+    print("Testing Reverse Replication cleanup...")
+    cmd_cleanup_rev = [python_bin, "pg_migrator.py", "cleanup-reverse", "-c", config_path]
+    res_cleanup_rev = subprocess.run(cmd_cleanup_rev, capture_output=True, text=True)
+    assert res_cleanup_rev.returncode == 0
+    
+    # Check if sub_rev is gone on SOURCE
+    res_src_sub_after = sc.execute_query(f"SELECT count(*) FROM pg_subscription WHERE subname = '{sub_rev_name}';")
+    assert res_src_sub_after[0]['count'] == 0
+    
+    print(f"E2E Success: {s_count} actors migrated and Rollback configured and cleaned up.")

@@ -103,7 +103,7 @@ def test_cleanup_reverse_replication():
         
         # Verify it attempted to drop reverse subscription on source
         calls_src = [c[0][0] for c in mock_source_instance.execute_script.call_args_list]
-        assert any("DROP SUBSCRIPTION IF EXISTS sub_rev" in call for call in calls_src)
+        assert any("ALTER SUBSCRIPTION sub_rev DISABLE" in call for call in calls_src)
         
         # Verify it attempted to drop reverse publication on dest
         calls_dest = [c[0][0] for c in mock_dest_instance.execute_script.call_args_list]
@@ -137,10 +137,16 @@ def test_cleanup_reverse_replication_failure():
         
         assert success is False
         assert "Reverse replication cleanup partially failed" in msg
-        assert "Source failure" in outs[0]
-        # In the best-effort case, it should still try to execute the second command
-        assert len(cmds) == 2
-        assert len(outs) == 2
+        assert len(cmds) == len(outs) == 3
+        assert "drop" in cmds[0].lower()
+        assert "drop" in cmds[1].lower()
+        assert "drop" in cmds[2].lower()
+        assert "failure" in outs[0].lower()
+        assert outs[1] == "OK"
+        assert outs[2] == "OK"
+        # In the best-effort case, it should still try to execute the second and third commands
+        assert len(cmds) == 3
+        assert len(outs) == 3
 
 def test_cleanup_reverse_replication_init_failure():
     mock_config = MagicMock()

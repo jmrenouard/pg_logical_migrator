@@ -1,11 +1,11 @@
 # Documentation Hub
 
-Welcome to the **pg_logical_migrator** documentation suite. This repository is organized to provide deep technical insights into our 16-step migration architecture and operational best practices.
+Welcome to the **pg_logical_migrator** documentation suite. This repository is organized to provide deep technical insights into our 17-step migration architecture and operational best practices.
 
 ### 🏗️ Architecture & Concepts
 - **[CONCEPTS.md](CONCEPTS.md)**: Core principles of logical replication and our design philosophy.
 - **[CODEBASE.md](CODEBASE.md)**: Technical overview of the module structure, class responsibilities, and internal APIs.
-- **[WORKFLOW.md](WORKFLOW.md)**: Detailed breakdown of the standardized 16-step sequence with failure recovery strategies.
+- **[WORKFLOW.md](WORKFLOW.md)**: Detailed breakdown of the standardized 17-step sequence with failure recovery strategies.
 
 ### ⚙️ Configuration & Setup
 - **[CONFIGURATION.md](CONFIGURATION.md)**: Exhaustive reference for `config_migrator.ini` and required PostgreSQL parameters.

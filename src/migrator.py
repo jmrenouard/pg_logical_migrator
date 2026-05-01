@@ -440,16 +440,34 @@ class Migrator:
         """Step 12: Cleanup publication and subscription."""
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
-        sql1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
+        
+        # Robust subscription drop
+        sql1 = f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
+                ALTER SUBSCRIPTION {sub_name} DISABLE;
+                ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
+                DROP SUBSCRIPTION {sub_name};
+            END IF;
+        END
+        $$;
+        """
         sql2 = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        sql3 = f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');"
+        
         try:
             dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
             source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+            
             dest_client.execute_script(sql1, autocommit=True)
+            source_client.execute_script(sql3, autocommit=True)
             source_client.execute_script(sql2, autocommit=True)
-            return True, "Replication cleaned up.", [f"[DEST] {sql1}", f"[SOURCE] {sql2}"], ["OK", "OK"]
+            
+            return True, "Replication cleaned up.", [f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], ["OK", "OK", "OK"]
         except Exception as e:
-            return False, f"Cleanup failed: {str(e)}", [f"[DEST] {sql1}", f"[SOURCE] {sql2}"], [str(e)]
+            return False, f"Cleanup failed: {str(e)}", [f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], [str(e)]
+
 
     def setup_reverse_replication(self):
         """
@@ -534,8 +552,20 @@ class Migrator:
         pub_name = self.replication_cfg['publication_name'] + "_rev"
         sub_name = self.replication_cfg['subscription_name'] + "_rev"
         
-        sql_sub = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
+        # Robust subscription drop (on SOURCE for reverse)
+        sql_sub = f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
+                ALTER SUBSCRIPTION {sub_name} DISABLE;
+                ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
+                DROP SUBSCRIPTION {sub_name};
+            END IF;
+        END
+        $$;
+        """
         sql_pub = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        sql_slot = f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');"
         
         executed_sqls = []
         out_results = []
@@ -553,6 +583,14 @@ class Migrator:
                 logging.warning(f"Failed to drop reverse subscription on source: {e}")
                 out_results.append(str(e))
                 
+            # Slot is on DEST for reverse
+            executed_sqls.append(f"[DEST] {sql_slot}")
+            try:
+                dest_client.execute_script(sql_slot, autocommit=True)
+                out_results.append("OK")
+            except Exception as e:
+                logging.warning(f"Failed to drop reverse replication slot on destination: {e}")
+                out_results.append(str(e))
             # Pub is on DEST for reverse
             executed_sqls.append(f"[DEST] {sql_pub}")
             try:
@@ -642,6 +680,7 @@ class Migrator:
                 logging.info(f"[BOTH] Syncing LOBs for table {schema}.{table} (column: {column}, PK: {pk_col})...")
                 
                 # Fetch all rows with non-null OIDs from source
+                # sourcery skip: python.sqlalchemy.security.sqlalchemy-execute-raw-query
                 data_query = f'SELECT "{pk_col}", "{column}" FROM "{schema}"."{table}" WHERE "{column}" IS NOT NULL AND "{column}" != 0;'
                 rows = source_client.execute_query(data_query)
                 

@@ -121,7 +121,7 @@ python pg_migrator.py post-migration
 
 | Resource | Description |
 | :--- | :--- |
-| **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | **Standardized 16-Step Sequence** with technical deep-dives. |
+| **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | **Standardized 17-Step Workflow** with technical deep-dives. |
 | **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | `config_migrator.ini` reference and PG parameters. |
 | **[DOCS/LIMITATIONS.md](DOCS/LIMITATIONS.md)** | Critical constraints (PK, LOBs, DDL restrictions). |
 | **[DOCS/DOCKER.md](DOCS/DOCKER.md)** | Running within isolated containerized environments. |
