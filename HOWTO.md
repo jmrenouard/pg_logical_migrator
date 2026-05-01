@@ -63,7 +63,7 @@ PYTHONPATH=. venv/bin/python pg_migrator.py tui
 - Use the **"Initial Copy Progress"** button to monitor data sync in real-time.
 
 ### C. Manual Step-by-Step (CLI)
-You can run any of the 14 steps individually for granular control.
+You can run any of the 17 steps individually for granular control.
 
 ```bash
 # Example: Just run diagnostics

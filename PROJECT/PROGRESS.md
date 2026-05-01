@@ -28,7 +28,7 @@ This document provides a high-level overview of the `pg_logical_migrator` develo
 
 - **Enhanced Migration Reporting**: Implemented a detailed audit engine that captures all executed shell/SQL commands and their raw results.
 - **Data Integrity Validation**: Verified row parity and object consistency between source and destination.
-- **Automated Workflow**: Successfully reached 100% completion of the 14-step logical migration process via the two-phase pipeline (`init-replication` and `post-migration`).
+- **Automated Workflow**: Successfully reached 100% completion of the 17-step logical migration process via the two-phase pipeline (`init-replication` and `post-migration`).
 - **Reporting Aesthetics**: Upgraded the HTML reports with premium styling (Outfit font, color-coded execution logs).
 
 ### Detailed Milestone Health
@@ -45,4 +45,4 @@ This document provides a high-level overview of the `pg_logical_migrator` develo
 - **Velocity**: High
 - **Blockers**: None
 
-**Note**: All core features are implemented. The 14-step migration framework is fully functional and auditable.
+**Note**: All core features are implemented. The 17-step migration framework is fully functional and auditable.

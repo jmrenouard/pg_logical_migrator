@@ -57,3 +57,35 @@ graph TD
     D15 --> D16(16. Cleanup)
     D16 --> D17(17. Rollback Prep)
 ```
+
+---
+
+### 🚀 Automated Pipelines
+
+Instead of running the 17 steps manually, `pg_logical_migrator` provides two macro-commands (pipelines) that bundle these steps for automated CI/CD workflows:
+
+#### 1. Initialization Pipeline (`init-replication`)
+Executes **Phase 1** and **Phase 2**:
+- `check`
+- `diagnose`
+- `params`
+- `migrate-schema-pre-data`
+- `setup-pub`
+- `setup-sub`
+
+*Result: Replication is active and data is syncing in the background.*
+
+#### 2. Cutover Pipeline (`post-migration`)
+Executes **Phase 3** and **Phase 4**:
+- `post-sync` (Stops replication)
+- `migrate-schema-post-data`
+- `sync-sequences`
+- `refresh-matviews`
+- `reassign-owner`
+- `enable-triggers`
+- `sync-lobs`
+- `audit-objects`
+- `validate-rows`
+- `cleanup`
+
+*Result: The target database is fully independent, verified, and ready for production traffic.*

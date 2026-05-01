@@ -172,79 +172,81 @@ python pg_migrator.py --results-dir /var/reports/migration_001 post-migration
 
 ## 6. Available Commands
 
-Each command corresponds to one or more steps in the 14-step migration workflow. Use `python pg_migrator.py <command> --help` for per-command details.
+Each command corresponds to one or more steps in the 17-step migration workflow. Use `python pg_migrator.py <command> --help` for per-command details.
 
-### Pre-Flight Checks (Steps 1–3)
+### Pre-Flight Checks (Phase 1)
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
 | `check` | 1 | **SOURCE + DEST** | Test connectivity to source and destination databases |
-| `diagnose` | 2 | **SOURCE** | Pre-migration diagnostics: tables without PK, LOBs, identity columns, unowned sequences, unlogged/temp/foreign tables, materialized views (queries `pg_class`, `pg_largeobject_metadata`, `information_schema.columns` on **SOURCE**) |
-| `params` | 3 | **SOURCE + DEST** | Verify replication parameters (`wal_level`, `max_replication_slots`, `max_wal_senders`) — queries `pg_settings` on **SOURCE** and on **DEST** |
+| `diagnose` | 2 | **SOURCE** | Pre-migration diagnostics: tables without PK, LOBs, identity columns, unowned sequences, unlogged/temp/foreign tables, materialized views |
+| `params` | 3 | **SOURCE + DEST** | Verify replication parameters (`wal_level`, `max_replication_slots`, `max_wal_senders`) |
 | `apply-params` | — | **SOURCE + DEST** | Utility: execute `ALTER SYSTEM SET` on **SOURCE** and/or **DEST** to fix missing parameters |
+| `migrate-schema-pre-data` | 4 | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on **SOURCE** piped into `psql` on **DEST**. With `--drop-dest`: `DROP DATABASE` + `CREATE DATABASE` on **DEST** |
 
 ```bash
 python pg_migrator.py check            # SOURCE + DEST
 python pg_migrator.py diagnose         # SOURCE
 python pg_migrator.py params           # SOURCE + DEST
 python pg_migrator.py apply-params     # SOURCE + DEST
+python pg_migrator.py migrate-schema-pre-data # SOURCE → DEST
 ```
 
-### Replication Setup (Steps 4–7)
+### Replication Setup (Phase 2)
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
-| `migrate-schema-pre-data` | 4a | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on **SOURCE** piped into `psql` on **DEST**. With `--drop-dest`: `DROP DATABASE` + `CREATE DATABASE` on **DEST** |
-| `migrate-schema-post-data`| 4b | **SOURCE → DEST** | `pg_dump -s --section=post-data` on **SOURCE** piped into `psql` on **DEST** |
 | `setup-pub` | 5 | **SOURCE** | `DROP PUBLICATION IF EXISTS` + `CREATE PUBLICATION … FOR ALL TABLES` on **SOURCE** |
 | `setup-sub` | 6 | **DEST** | `DROP SUBSCRIPTION IF EXISTS` + `CREATE SUBSCRIPTION … CONNECTION '…' PUBLICATION …` on **DEST** |
 | `repl-status` | 7 | **SOURCE + DEST** | Query `pg_stat_subscription` on **DEST** and `pg_stat_replication`, `pg_replication_slots` on **SOURCE** |
+| `repl-progress` | 7 | **SOURCE + DEST** | Monitor byte-level data copy progress during initial synchronization |
 
 ```bash
-python pg_migrator.py migrate-schema-pre-data   # SOURCE → DEST
-python pg_migrator.py migrate-schema-post-data  # SOURCE → DEST
 python pg_migrator.py setup-pub        # SOURCE
 python pg_migrator.py setup-sub        # DEST
 python pg_migrator.py repl-status      # SOURCE + DEST
+python pg_migrator.py repl-progress    # SOURCE + DEST
 ```
 
-### Post-Sync Operations (Steps 8–11)
+### Finalization (Phase 3)
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
-| `sync-sequences` | 8/9 | **SOURCE → DEST** | `SELECT last_value, is_called` on **SOURCE**, then `SELECT setval(…)` on **DEST** |
-| `enable-triggers` | 10 | **DEST** | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table on **DEST** |
+| `refresh-matviews` | 8 | **DEST** | `REFRESH MATERIALIZED VIEW` for every materialized view on **DEST** |
+| `sync-sequences` | 9 | **SOURCE → DEST** | `SELECT last_value, is_called` on **SOURCE**, then `SELECT setval(…)` on **DEST** |
+| `migrate-schema-post-data`| 10 | **SOURCE → DEST** | `pg_dump -s --section=post-data` on **SOURCE** piped into `psql` on **DEST** |
+| `sync-lobs` | 11 | **SOURCE → DEST** | Synchronize Large Objects (LOBs) manually via temporary files and update matching OIDs |
+| `enable-triggers` | 12 | **DEST** | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table on **DEST** |
 | `disable-triggers` | — | **DEST** | Utility: `ALTER TABLE … DISABLE TRIGGER ALL` on every user table on **DEST** |
-| `refresh-matviews` | 11 | **DEST** | `REFRESH MATERIALIZED VIEW` for every materialized view on **DEST** |
+| `reassign-owner` | 13 | **DEST** | `REASSIGN OWNED BY ... TO ...` to ensure proper ownership matching source |
 
 ```bash
-python pg_migrator.py sync-sequences     # SOURCE → DEST
-python pg_migrator.py enable-triggers    # DEST
 python pg_migrator.py refresh-matviews   # DEST
+python pg_migrator.py sync-sequences     # SOURCE → DEST
+python pg_migrator.py migrate-schema-post-data # SOURCE → DEST
+python pg_migrator.py sync-lobs          # SOURCE → DEST
+python pg_migrator.py enable-triggers    # DEST
+python pg_migrator.py reassign-owner     # DEST
 ```
 
-### Validation (Steps 13–14)
+### Validation & Cleanup (Phase 4)
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
-| `audit-objects` | 13 | **SOURCE + DEST** | Same object-count query (tables, views, indexes, sequences, functions) run on **SOURCE** and on **DEST**, results compared |
-| `validate-rows` | 14 | **SOURCE + DEST** | `SELECT COUNT(*)` on every table executed on **SOURCE** and on **DEST**, row counts compared |
-
-```bash
-python pg_migrator.py audit-objects     # SOURCE + DEST
-python pg_migrator.py validate-rows    # SOURCE + DEST
-```
-
-### Cleanup (Step 12)
-
-| Command | Step | Server | Description |
-| --- | --- | --- | --- |
-| `cleanup` | 12 | **DEST + SOURCE** | `DROP SUBSCRIPTION IF EXISTS` on **DEST**, then `DROP PUBLICATION IF EXISTS` on **SOURCE** (**destructive**) |
+| `audit-objects` | 14 | **SOURCE + DEST** | Same object-count query (tables, views, indexes, sequences, functions) run on **SOURCE** and on **DEST**, results compared |
+| `validate-rows` | 15 | **SOURCE + DEST** | `SELECT COUNT(*)` on every table executed on **SOURCE** and on **DEST**, row counts compared |
+| `cleanup` | 16 | **DEST + SOURCE** | `DROP SUBSCRIPTION IF EXISTS` on **DEST**, then `DROP PUBLICATION IF EXISTS` on **SOURCE** (**destructive**) |
+| `setup-reverse` | 17 | **DEST → SOURCE** | Prepares reverse logical replication (pub on DEST, sub on SOURCE) to synchronize fallback |
+| `cleanup-reverse` | — | **DEST + SOURCE** | Cleans up reverse replication objects (subscription on SOURCE, publication on DEST) |
 
 > **Warning**: Always run `audit-objects` and `validate-rows` **before** `cleanup` to confirm data parity.
 
 ```bash
+python pg_migrator.py audit-objects    # SOURCE + DEST
+python pg_migrator.py validate-rows    # SOURCE + DEST
 python pg_migrator.py cleanup          # DEST + SOURCE
+python pg_migrator.py setup-reverse    # DEST → SOURCE
+python pg_migrator.py cleanup-reverse  # DEST + SOURCE
 ```
 
 ### Pipeline & UI Commands

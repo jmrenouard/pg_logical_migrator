@@ -81,7 +81,7 @@ pg_logical_migrator/
   - `post-migration`: `wait_for_sync` + Step 16 (Stop) + Step 12 (Post-Data) + Post-sync + Validation.
 
 ### Terminal User Interface (TUI)
-- **`src/tui.py`**: A full-screen dashboard with a 16-step interactive sidebar.
+- **`src/tui.py`**: A full-screen dashboard with a 17-step interactive sidebar.
 - Features real-time progress widgets, size analysis tables, and toggleable options (Stats counting, Verbose mode).
 - Uses `rich` components (Panel, Table) for robust, styled rendering.
 
