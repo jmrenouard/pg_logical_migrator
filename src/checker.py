@@ -1,6 +1,5 @@
 import logging
-import psycopg
-from src.db import PostgresClient
+
 
 class DBChecker:
     def __init__(self, source_client, dest_client=None, config=None):
@@ -20,25 +19,25 @@ class DBChecker:
     def check_connectivity(self):
         results = {"source": False, "dest": False}
         try:
-            with self.source.get_conn() as conn:
+            with self.source.get_conn():
                 results["source"] = True
         except Exception as e:
             logging.error(f"[SOURCE] Source Connection Failed: {e}")
 
         if self.dest:
             try:
-                with self.dest.get_conn() as conn:
+                with self.dest.get_conn():
                     results["dest"] = True
             except Exception as e:
                 logging.error(f"[DEST] Destination Connection Failed: {e}")
         return results
 
     def get_pg_parameters(self, client):
-        query = f"""
+        query = """
         SELECT name, setting, unit, category, pending_restart
         FROM pg_settings
         WHERE name IN (
-            'wal_level', 'max_replication_slots', 'max_wal_senders', 
+            'wal_level', 'max_replication_slots', 'max_wal_senders',
             'max_worker_processes', 'server_version',
             'max_logical_replication_workers', 'max_sync_workers_per_subscription'
         );
@@ -90,12 +89,12 @@ class DBChecker:
           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
           {self._get_schema_filter()}
           AND NOT EXISTS (
-              SELECT 1 FROM pg_depend d 
+              SELECT 1 FROM pg_depend d
               WHERE d.objid = c.oid AND d.deptype = 'a'
           );
         """
         unowned_seqs = self.source.execute_query(query_unowned_seq)
-        
+
         query_unlogged = f"""
         SELECT n.nspname AS schema_name, c.relname AS table_name
         FROM pg_class c
@@ -153,12 +152,14 @@ class DBChecker:
     def check_replication_params(self, apply_source=False, apply_dest=False):
         """Step 3: Verify parameters on source and destination."""
         results = {"source": [], "dest": []}
-        
+
         reqs = {
             "source": ['server_version', 'wal_level', 'max_replication_slots', 'max_wal_senders', 'max_worker_processes'],
-            "dest": ['server_version', 'wal_level', 'max_replication_slots', 'max_logical_replication_workers', 'max_sync_workers_per_subscription', 'max_worker_processes']
+            "dest": ['server_version', 'wal_level', 'max_replication_slots', 
+                     'max_logical_replication_workers', 'max_sync_workers_per_subscription', 
+                     'max_worker_processes']
         }
-        
+
         apply_flags = {"source": apply_source, "dest": apply_dest}
 
         for label, client in [("source", self.source), ("dest", self.dest)]:
@@ -175,7 +176,7 @@ class DBChecker:
                 expected = val
                 needs_apply = False
                 apply_val = None
-                
+
                 if name == 'wal_level':
                     expected = "logical"
                     if val != 'logical':
@@ -183,8 +184,10 @@ class DBChecker:
                             status = "FAIL"
                         needs_apply = True
                         apply_val = "logical"
-                elif name in ('max_replication_slots', 'max_wal_senders', 'max_logical_replication_workers', 'max_sync_workers_per_subscription'):
-                    min_val = 10 if name in ('max_replication_slots', 'max_wal_senders') else 4
+                elif name in ('max_replication_slots', 'max_wal_senders', 
+                              'max_logical_replication_workers', 'max_sync_workers_per_subscription'):
+                    min_val = 10 if name in (
+                        'max_replication_slots', 'max_wal_senders') else 4
                     expected = f">= {min_val}"
                     try:
                         int_val = int(val)
@@ -202,11 +205,14 @@ class DBChecker:
                 # Apply parameter if specified and needed
                 if needs_apply and apply_flags[label] and apply_val is not None:
                     try:
-                        client.execute_query(f"ALTER SYSTEM SET {name} = '{apply_val}';")
+                        client.execute_query(
+                            f"ALTER SYSTEM SET {name} = '{apply_val}';")
                         status = "PENDING RESTART"
-                        logging.info(f"[{label.upper()}] Applied {name} = '{apply_val}' on {label}. Restart required.")
+                        logging.info(
+                            f"[{label.upper()}] Applied {name} = '{apply_val}' on {label}. Restart required.")
                     except Exception as e:
-                        logging.error(f"[{label.upper()}] Failed to apply parameter {name} on {label}: {e}")
+                        logging.error(
+                            f"[{label.upper()}] Failed to apply parameter {name} on {label}: {e}")
 
                 results[label].append({
                     "parameter": name,
@@ -221,11 +227,16 @@ class DBChecker:
         sf_ns = self._get_schema_filter(nspname_col="nspname")
         query = f"""
         SELECT
-            (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema' {sf_ns}) as schemas,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as tables,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as views,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as matviews,
-            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'S' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as sequences,
+            (SELECT count(*) FROM pg_namespace 
+             WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema' {sf_ns}) as schemas,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace 
+             WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as tables,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace 
+             WHERE c.relkind = 'v' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as views,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace 
+             WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as matviews,
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace 
+             WHERE c.relkind = 'S' AND n.nspname NOT IN ('pg_catalog', 'information_schema') {sf}) as sequences,
             (SELECT count(*) FROM pg_trigger) as triggers;
         """
         return client.execute_query(query)
@@ -233,10 +244,13 @@ class DBChecker:
     def get_database_size_analysis(self, client):
         """Fetch total database size and top tables breakdown."""
         sf = self._get_schema_filter()
-        
+
         # 1. Total Database Size
-        db_size_query = "SELECT pg_database_size(current_database()) AS total_bytes, pg_size_pretty(pg_database_size(current_database())) AS total_pretty;"
-        
+        db_size_query = (
+            "SELECT pg_database_size(current_database()) AS total_bytes, "
+            "pg_size_pretty(pg_database_size(current_database())) AS total_pretty;"
+        )
+
         try:
             db_size_rows = client.execute_query(db_size_query)
             db_size = db_size_rows[0] if db_size_rows else None
@@ -244,7 +258,7 @@ class DBChecker:
 
             # 2. Table Breakdown (Data, Index, Total)
             table_size_query = f"""
-            SELECT 
+            SELECT
                 n.nspname AS schema_name,
                 c.relname AS table_name,
                 pg_table_size(c.oid) AS data_bytes,
@@ -261,7 +275,7 @@ class DBChecker:
               {sf}
             ORDER BY pg_total_relation_size(c.oid) DESC;
             """
-            
+
             table_sizes = client.execute_query(table_size_query) or []
             return {
                 "database": db_size,

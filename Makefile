@@ -71,6 +71,13 @@ test-all: test-unit test-integration test-e2e test-packaging
 test-packaging:
 	./e2e_packaging_test.sh
 
+test-coverage: install
+	PYTHONPATH=. $(PYTEST) tests/unit \
+		--cov=src \
+		--cov-report=term-missing \
+		--cov-report=html:RESULTS/coverage \
+		--cov-fail-under=80
+
 test-report: install
 	@mkdir -p RESULTS/$(TIMESTAMP)
 	PYTHONPATH=. $(PYTEST) tests/unit --html=RESULTS/$(TIMESTAMP)/unit_tests.html --self-contained-html

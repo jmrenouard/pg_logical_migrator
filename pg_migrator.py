@@ -3,6 +3,18 @@
 # pg_logical_migrator
 # PostgreSQL Logical Migrator CLI Tool
 # ============================================================================
+import src.db as _db_module
+from src.cli.helpers import setup_logging
+from src.cli.commands import (
+    cmd_check, cmd_diagnose, cmd_params,
+    cmd_migrate_schema_pre_data, cmd_terminate_replication,
+    cmd_setup_pub, cmd_setup_sub, cmd_progress, cmd_wait_sync,
+    cmd_sync_sequences, cmd_enable_triggers, cmd_refresh_matviews,
+    cmd_reassign_owner, cmd_audit_objects,
+    cmd_validate_rows, cmd_cleanup, cmd_setup_reverse, cmd_cleanup_reverse,
+    cmd_sync_lobs, cmd_tui, cmd_generate_config
+)
+from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 import argparse
 import sys
 import textwrap
@@ -14,18 +26,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 __version__ = "1.3.2"
 
-from src.cli.pipelines import cmd_init_replication, cmd_post_migration
-from src.cli.commands import (
-    cmd_check, cmd_diagnose, cmd_params,
-    cmd_migrate_schema_pre_data, cmd_terminate_replication,
-    cmd_setup_pub, cmd_setup_sub, cmd_progress, cmd_wait_sync,
-    cmd_sync_sequences, cmd_enable_triggers, cmd_disable_triggers,
-    cmd_refresh_matviews, cmd_reassign_owner,
-    cmd_audit_objects, cmd_validate_rows, cmd_cleanup, cmd_setup_reverse,
-    cmd_cleanup_reverse, cmd_sync_lobs, cmd_tui, cmd_generate_config
-)
-from src.cli.helpers import setup_logging
-import src.db as _db_module
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the complete argument parser with subcommands."""
@@ -151,7 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Step 4  — Schema (pre-data): Deploy base structures",
         description="Deploy schemas, tables, types, and views from source to destination.",
     )
-    p_schema_pre.add_argument("--drop-dest", action="store_true", default=False, help="Drop and recreate destination database before migration")
+    p_schema_pre.add_argument(
+        "--drop-dest",
+        action="store_true",
+        default=False,
+        help="Drop and recreate destination database before migration")
     p_schema_pre.set_defaults(func=cmd_migrate_schema_pre_data)
 
     # --- Phase 2: Execution ---
@@ -237,7 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Step 13 — Reassign object ownership",
         description="Set correct role owners for all database objects on the destination.",
     )
-    p_owner.add_argument("--owner", metavar="ROLE", default=None, help="Target owner role (default: destination user)")
+    p_owner.add_argument(
+        "--owner",
+        metavar="ROLE",
+        default=None,
+        help="Target owner role (default: destination user)")
     p_owner.set_defaults(func=cmd_reassign_owner)
 
     # --- Phase 4: Validation & Cleanup ---
@@ -281,33 +289,64 @@ def build_parser() -> argparse.ArgumentParser:
     # --- Utilities ---
 
     # progress
-    p_p = sub.add_parser("progress", parents=[global_parser], help="Utility: Quick replication status check")
+    p_p = sub.add_parser(
+        "progress",
+        parents=[global_parser],
+        help="Utility: Quick replication status check")
     p_p.set_defaults(func=cmd_progress)
 
     # wait-sync
-    p_w = sub.add_parser("wait-sync", parents=[global_parser], help="Utility: Wait for replication synchronization")
+    p_w = sub.add_parser(
+        "wait-sync",
+        parents=[global_parser],
+        help="Utility: Wait for replication synchronization")
     p_w.set_defaults(func=cmd_wait_sync)
 
     # cleanup-reverse
-    p_cr = sub.add_parser("cleanup-reverse", parents=[global_parser], help="Utility: Cleanup reverse replication objects")
+    p_cr = sub.add_parser(
+        "cleanup-reverse",
+        parents=[global_parser],
+        help="Utility: Cleanup reverse replication objects")
     p_cr.set_defaults(func=cmd_cleanup_reverse)
 
     # generate-config
-    p_gen = sub.add_parser("generate-config", parents=[global_parser], help="Utility: Generate sample configuration file")
-    p_gen.add_argument("-o", "--output", default="config_migrator.sample.ini", help="Output path")
+    p_gen = sub.add_parser(
+        "generate-config",
+        parents=[global_parser],
+        help="Utility: Generate sample configuration file")
+    p_gen.add_argument(
+        "-o",
+        "--output",
+        default="config_migrator.sample.ini",
+        help="Output path")
     p_gen.set_defaults(func=cmd_generate_config)
 
     # --- Automated Pipelines ---
 
-    p_init = sub.add_parser("init-replication", parents=[global_parser], help="Automated Phase 1 & 2 (Init replication)")
-    p_init.add_argument("--drop-dest", action="store_true", help="Drop destination first")
-    p_init.add_argument("--no-wait", action="store_true", help="Do not wait for initial sync")
+    p_init = sub.add_parser(
+        "init-replication",
+        parents=[global_parser],
+        help="Automated Phase 1 & 2 (Init replication)")
+    p_init.add_argument(
+        "--drop-dest",
+        action="store_true",
+        help="Drop destination first")
+    p_init.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Do not wait for initial sync")
     p_init.set_defaults(func=cmd_init_replication)
 
-    p_post = sub.add_parser("post-migration", parents=[global_parser], help="Automated Phase 3 & 4 (Cutover & Validation)")
+    p_post = sub.add_parser(
+        "post-migration",
+        parents=[global_parser],
+        help="Automated Phase 3 & 4 (Cutover & Validation)")
     p_post.set_defaults(func=cmd_post_migration)
 
-    p_tui = sub.add_parser("tui", parents=[global_parser], help="Launch interactive Terminal UI dashboard")
+    p_tui = sub.add_parser(
+        "tui",
+        parents=[global_parser],
+        help="Launch interactive Terminal UI dashboard")
     p_tui.set_defaults(func=cmd_tui)
 
     return parser

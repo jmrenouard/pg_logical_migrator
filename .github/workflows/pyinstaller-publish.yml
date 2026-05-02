@@ -64,7 +64,7 @@ jobs:
         run: |
           EXE_EXT=""
           if [ "${{ runner.os }}" == "Windows" ]; then EXE_EXT=".exe"; fi
-          
+
           # Ensure clean dist directory
           rm -rf dist
           mkdir -p dist
@@ -86,10 +86,10 @@ jobs:
           else
             pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
           fi
-          
+
           BINARY_NAME="pg_migrator-${{ matrix.platform }}-python${{ matrix.python_version }}-v${VERSION}${EXE_EXT}"
           mv dist/pg_migrator${EXE_EXT} "dist/${BINARY_NAME}"
-          
+
           # Generate SHA256
           cd dist
           if [ "${{ runner.os }}" == "Windows" ]; then
@@ -115,7 +115,7 @@ jobs:
         python_version: ["3.9", "3.11"]
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Extract Version
         id: info
         run: |
@@ -146,7 +146,7 @@ jobs:
         python_version: ["3.9", "3.11"]
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Extract Version
         id: info
         shell: python
@@ -235,7 +235,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-      
+
       - name: Extract Version
         id: info
         run: |
@@ -244,7 +244,7 @@ jobs:
 
       - name: Install dependencies
         run: pip install build
-      
+
       - name: Build Wheel and Sdist
         run: |
           rm -rf dist
@@ -257,7 +257,7 @@ jobs:
             mv "$f" "${f%.tar.gz}-python${{ matrix.python_version }}.tar.gz"
           done
           for f in *; do sha256sum "$f" > "$f.sha256"; done
-      
+
       - name: Upload Python assets
         uses: actions/upload-artifact@v4
         with:
@@ -270,7 +270,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set Release Info
         id: rel_info
         shell: python
@@ -281,7 +281,7 @@ jobs:
                 content = f.read()
                 match = re.search(r'__version__ = "([^"]+)"', content)
                 version = match.group(1) if match else "unknown"
-            
+
             ref = os.environ['GITHUB_REF']
             if ref.startswith('refs/tags/'):
                 tag_name = ref.replace('refs/tags/', '')
@@ -289,7 +289,7 @@ jobs:
             else:
                 tag_name = ref.replace('refs/heads/', '')
                 is_prerelease = 'true'
-            
+
             # Verify version matches tag if tag push
             if ref.startswith('refs/tags/') and tag_name != f"v{version}":
                 print(f"::error::Tag {tag_name} does not match script version v{version}")
@@ -320,7 +320,7 @@ jobs:
           else
             echo "# Release ${{ env.TAG_NAME }}" > release_body.md
           fi
-          
+
           # 2. Add Deliverables Section
           {
             echo ""
@@ -375,6 +375,6 @@ jobs:
               --notes-file release_body.md \
               $(if [ "${{ env.IS_PRERELEASE }}" = "true" ]; then echo "--prerelease"; fi)
           fi
-          
+
           # Upload all files, clobbering existing ones
           gh release upload "${{ env.TAG_NAME }}" release-dist/* --clobber

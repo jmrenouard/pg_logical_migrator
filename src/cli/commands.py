@@ -4,14 +4,16 @@ from src.migrator import Migrator
 from src.post_sync import PostSync
 from src.validation import Validator
 from src.cli.helpers import (
-    build_clients, 
-    print_status, 
-    print_table, 
+    build_clients,
+    print_status,
+    print_table,
     print_verbose_execution,
     generate_sample_config
 )
 
 # -- Step 1 ------------------------------------------------------------------
+
+
 def cmd_check(args):
     """Step 1: Check connectivity to source and destination databases."""
     cfg = Config(args.config)
@@ -19,8 +21,12 @@ def cmd_check(args):
     checker = DBChecker(sc, dc, cfg)
     res = checker.check_connectivity()
     print("\n=== Step 1 — Connectivity Check ===")
-    print_status(res["source"], f"Source  : {'CONNECTED' if res['source'] else 'UNREACHABLE'}")
-    print_status(res["dest"],   f"Dest    : {'CONNECTED' if res['dest'] else 'UNREACHABLE'}")
+    print_status(
+        res["source"], f"Source  : {'CONNECTED' if res['source'] else 'UNREACHABLE'}"
+    )
+    print_status(
+        res["dest"], f"Dest    : {'CONNECTED' if res['dest'] else 'UNREACHABLE'}"
+    )
     return 0 if res["source"] and res["dest"] else 1
 
 
@@ -36,12 +42,12 @@ def cmd_diagnose(args):
         ["Category", "Count / Detail"],
         [
             ["Tables without PK", len(res["no_pk"])],
-            ["Large Objects",     res["large_objects"]],
-            ["Identity Columns",  len(res["identities"])],
+            ["Large Objects", res["large_objects"]],
+            ["Identity Columns", len(res["identities"])],
             ["Unowned Sequences", len(res["unowned_seqs"])],
-            ["Unlogged Tables",   len(res.get("unlogged_tables", []))],
-            ["Temporary Tables",  len(res.get("temp_tables", []))],
-            ["Foreign Tables",    len(res.get("foreign_tables", []))],
+            ["Unlogged Tables", len(res.get("unlogged_tables", []))],
+            ["Temporary Tables", len(res.get("temp_tables", []))],
+            ["Foreign Tables", len(res.get("foreign_tables", []))],
             ["Materialized Views", len(res.get("matviews", []))],
         ],
     )
@@ -64,8 +70,10 @@ def cmd_diagnose(args):
     if sizes:
         print("=== Step 2 — Size Analysis ===")
         if sizes["database"]:
-            print(f"  Total Database Size: {sizes['database']['total_pretty']}")
-        
+            print(
+                f"  Total Database Size: {
+                    sizes['database']['total_pretty']}")
+
         table_rows = []
         # Show top 20 tables by total size
         for t in sizes["tables"][:20]:
@@ -76,10 +84,11 @@ def cmd_diagnose(args):
                 t['total_pretty'],
                 f"{t['percent']}%"
             ])
-        
+
         if table_rows:
             print("\n  Top 20 Tables by Size:")
-            print_table(["Table", "Data Size", "Index Size", "Total Size", "% DB"], table_rows)
+            print_table(["Table", "Data Size", "Index Size",
+                        "Total Size", "% DB"], table_rows)
         print()
 
     return 0
@@ -96,7 +105,8 @@ def cmd_params(args):
     for label, title in [("source", "Source"), ("dest", "Destination")]:
         if results.get(label):
             print(f"\n=== Step 3 — Replication Parameters ({title}) ===")
-            rows = [[r["parameter"], r["actual"], r["expected"], r["status"]] for r in results[label]]
+            rows = [[r["parameter"], r["actual"], r["expected"], r["status"]]
+                    for r in results[label]]
             print_table(["Parameter", "Current", "Expected", "Status"], rows)
             if any(r["status"] != "OK" for r in results[label]):
                 has_fail = True
@@ -114,7 +124,8 @@ def cmd_migrate_schema_pre_data(args):
             print("[DRY-RUN]  -> WITH --drop-dest (would drop destination DB first)")
         return 0
     print("\n=== Step 4 — Schema Migration (Pre-data) ===")
-    success, msg, cmds, outs = migrator.step4a_migrate_schema_pre_data(drop_dest=args.drop_dest)
+    success, msg, cmds, outs = migrator.step4a_migrate_schema_pre_data(
+        drop_dest=args.drop_dest)
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
@@ -142,7 +153,8 @@ def cmd_setup_pub(args):
     migrator = Migrator(cfg)
     if args.dry_run:
         pub = cfg.get_replication()["publication_name"]
-        print(f"[DRY-RUN] Would create publication '{pub}' FOR ALL TABLES on source")
+        print(
+            f"[DRY-RUN] Would create publication '{pub}' FOR ALL TABLES on source")
         return 0
     print("\n=== Step 5 — Setup Publication ===")
     success, msg, cmds, outs = migrator.step5_setup_source()
@@ -172,44 +184,55 @@ def cmd_progress(args):
     """Step 7: Monitor progress of initial data synchronization."""
     from rich.console import Console
     from rich.table import Table
-    from rich.progress import Progress, BarColumn, TextColumn
 
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     console = Console()
-    
-    console.print("\n[bold blue]=== Step 7 — Logical Replication Progress ===[/bold blue]")
-    
+
+    console.print(
+        "\n[bold blue]=== Step 7 — Logical Replication Progress ===[/bold blue]")
+
     progress_data = migrator.get_initial_copy_progress()
     if not progress_data:
         console.print("[red]Error: Could not fetch progress data.[/red]")
         return 1
-    
+
     summary = progress_data["summary"]
     tables = progress_data["tables"]
-    
+
     if summary["total_tables"] == 0:
-        console.print("[yellow]No tables found in publication/replication.[/yellow]")
+        console.print(
+            "[yellow]No tables found in publication/replication.[/yellow]")
         return 0
 
     # 1. Summary Panel
-    console.print(f"\n[bold]Overall Progress (Bytes): {summary['percent_bytes']}%[/bold]")
-    console.print(f"  {summary['bytes_copied_pretty']} / {summary['total_source_pretty']} copied")
-    
-    console.print(f"\n[bold]Table Progress: {summary['percent_tables']}%[/bold]")
-    console.print(f"  {summary['completed_tables']} / {summary['total_tables']} tables ready")
-    
+    console.print(
+        f"\n[bold]Overall Progress (Bytes): {
+            summary['percent_bytes']}%[/bold]")
+    console.print(
+        f"  {summary['bytes_copied_pretty']} / {summary['total_source_pretty']} copied")
+
+    console.print(
+        f"\n[bold]Table Progress: {
+            summary['percent_tables']}%[/bold]")
+    console.print(
+        f"  {summary['completed_tables']} / {summary['total_tables']} tables ready")
+
     # 2. Individual Tables Table
-    table = Table(title="[Table Sync Progress]", show_header=True, header_style="bold magenta")
+    table = Table(
+        title="[Table Sync Progress]",
+        show_header=True,
+        header_style="bold magenta")
     table.add_column("Table", style="cyan")
     table.add_column("State")
     table.add_column("Progress (Bytes)")
     table.add_column("%")
-    
+
     for r in tables:
         color = "green" if r['state'] in ('r', 's') else "yellow"
-        if r['state'] == 'd': color = "bold blue"
-        
+        if r['state'] == 'd':
+            color = "bold blue"
+
         from src.db import pretty_size
         table.add_row(
             str(r['table_name']),
@@ -267,24 +290,24 @@ def cmd_terminate_replication(args):
     if args.dry_run:
         print("[DRY-RUN] Would stop logical replication and deploy indexes/FKs")
         return 0
-    
+
     print("\n=== Step 10 — Terminate Replication & Deploy Schema (Post-data) ===")
-    
+
     # 1. Stop Replication
     success1, msg1, cmds1, outs1 = migrator.step10_terminate_replication()
     print_status(success1, f"Replication stop: {msg1}")
-    
+
     if not success1:
         return 1
-        
+
     # 2. Deploy post-data schema
     success2, msg2, cmds2, outs2 = migrator.step4b_migrate_schema_post_data()
     print_status(success2, f"Schema migration (post-data): {msg2}")
-    
+
     all_cmds = (cmds1 or []) + (cmds2 or [])
     all_outs = (outs1 or []) + (outs2 or [])
     print_verbose_execution(args, all_cmds, all_outs)
-    
+
     return 0 if success2 else 1
 
 
@@ -299,7 +322,8 @@ def cmd_sync_lobs(args):
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     if args.dry_run:
-        print("[DRY-RUN] Would synchronize Large Objects (LOBs) and update OID references")
+        print(
+            "[DRY-RUN] Would synchronize Large Objects (LOBs) and update OID references")
         return 0
     print("\n=== Step 11 — Synchronize Large Objects (LOBs) ===")
     success, msg, cmds, outs = migrator.sync_large_objects()
@@ -347,7 +371,8 @@ def cmd_reassign_owner(args):
     ps = PostSync(sc, dc, cfg)
     target_owner = getattr(args, 'owner', None) or cfg.get_dest_dict()['user']
     if args.dry_run:
-        print(f"[DRY-RUN] Would reassign all objects to '{target_owner}' on destination")
+        print(
+            f"[DRY-RUN] Would reassign all objects to '{target_owner}' on destination")
         return 0
     print(f"\n=== Step 13 — Reassign Ownership to '{target_owner}' ===")
     success, msg, cmds, outs = ps.reassign_ownership(target_owner)
@@ -378,8 +403,10 @@ def cmd_validate_rows(args):
     sc, dc = build_clients(cfg)
     validator = Validator(sc, dc, cfg)
     print("\n=== Step 15 — Row Count Parity ===")
-    success, msg, cmds, outs, report = validator.compare_row_counts(use_stats=args.use_stats)
-    rows = [[r["table"], r["source"], r["dest"], r["diff"], r["status"]] for r in report]
+    success, msg, cmds, outs, report = validator.compare_row_counts(
+        use_stats=args.use_stats)
+    rows = [[r["table"], r["source"], r["dest"], r["diff"], r["status"]]
+            for r in report]
     print_table(["Table", "Source", "Dest", "Diff", "Status"], rows)
     print(f"  {msg}")
     print_verbose_execution(args, cmds, outs)
@@ -395,7 +422,8 @@ def cmd_cleanup(args):
     if args.dry_run:
         sub = cfg.get_replication()["subscription_name"]
         pub = cfg.get_replication()["publication_name"]
-        print(f"[DRY-RUN] Would drop subscription '{sub}' and publication '{pub}'")
+        print(
+            f"[DRY-RUN] Would drop subscription '{sub}' and publication '{pub}'")
         return 0
     print("\n=== Step 16 — Cleanup Replication ===")
     success, msg, cmds, outs = migrator.step10_terminate_replication()
@@ -426,7 +454,8 @@ def cmd_wait_sync(args):
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     print("\n=== Waiting for replication sync ===")
-    success, msg, _, _ = migrator.wait_for_sync(timeout=300, show_progress=True)
+    success, msg, _, _ = migrator.wait_for_sync(
+        timeout=300, show_progress=True)
     print_status(success, msg)
     return 0 if success else 1
 
@@ -452,6 +481,7 @@ def cmd_tui(args):
 
 def cmd_generate_config(args):
     """Generate a sample config_migrator.ini file."""
-    output = args.output if hasattr(args, "output") and args.output else "config_migrator.sample.ini"
+    output = args.output if hasattr(
+        args, "output") and args.output else "config_migrator.sample.ini"
     generate_sample_config(output)
     return 0

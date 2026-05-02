@@ -1,8 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
 from src.cli.commands import cmd_sync_lobs
-from src.config import Config
+
 
 def test_cmd_sync_lobs_success():
     """Test the CLI wrapper for synchronizing large objects (success case)."""
@@ -11,12 +10,13 @@ def test_cmd_sync_lobs_success():
     args.dry_run = False
 
     with patch("src.cli.commands.Config") as mock_config_cls, \
-         patch("src.cli.commands.Migrator") as mock_migrator_cls, \
-         patch("src.cli.commands.print_status") as mock_print_status, \
-         patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
-         
+            patch("src.cli.commands.Migrator") as mock_migrator_cls, \
+            patch("src.cli.commands.print_status") as mock_print_status, \
+            patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
+
         mock_migrator_instance = MagicMock()
-        mock_migrator_instance.sync_large_objects.return_value = (True, "Success", ["cmd1"], ["out1"])
+        mock_migrator_instance.sync_large_objects.return_value = (
+            True, "Success", ["cmd1"], ["out1"])
         mock_migrator_cls.return_value = mock_migrator_instance
 
         # Invoke the command
@@ -36,12 +36,13 @@ def test_cmd_sync_lobs_failure():
     args.dry_run = False
 
     with patch("src.cli.commands.Config") as mock_config_cls, \
-         patch("src.cli.commands.Migrator") as mock_migrator_cls, \
-         patch("src.cli.commands.print_status") as mock_print_status, \
-         patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
-         
+            patch("src.cli.commands.Migrator") as mock_migrator_cls, \
+            patch("src.cli.commands.print_status") as mock_print_status, \
+            patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
+
         mock_migrator_instance = MagicMock()
-        mock_migrator_instance.sync_large_objects.return_value = (False, "Failure", ["cmd1"], ["err1"])
+        mock_migrator_instance.sync_large_objects.return_value = (
+            False, "Failure", ["cmd1"], ["err1"])
         mock_migrator_cls.return_value = mock_migrator_instance
 
         # Invoke the command
@@ -61,8 +62,8 @@ def test_cmd_sync_lobs_dry_run():
     args.dry_run = True
 
     with patch("src.cli.commands.Config") as mock_config_cls, \
-         patch("src.cli.commands.Migrator") as mock_migrator_cls:
-         
+            patch("src.cli.commands.Migrator") as mock_migrator_cls:
+
         mock_migrator_instance = MagicMock()
         mock_migrator_cls.return_value = mock_migrator_instance
 

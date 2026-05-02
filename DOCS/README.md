@@ -18,6 +18,7 @@ Welcome to the **pg_logical_migrator** documentation suite. This repository is o
 
 ### 🛠️ Developer Resources
 - **[TOOLS.md](TOOLS.md)**: Guide for extending the tool, internal utilities, and local development setup.
+- **[TESTING.md](TESTING.md)**: Complete test infrastructure reference — unit tests (279 tests, 96% coverage), GitHub Actions workflow tests, packaging validation, and CI/CD pipeline documentation.
 
 ---
 

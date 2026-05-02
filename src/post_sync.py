@@ -1,5 +1,5 @@
 import logging
-from src.db import PostgresClient
+
 
 class PostSync:
     def __init__(self, source_client, dest_client, config=None):
@@ -64,11 +64,13 @@ class PostSync:
                 schema = row['schema_name']
                 name = row['seq_name']
                 try:
-                    res = self.source.execute_query(f'SELECT last_value, is_called FROM "{schema}"."{name}"')
+                    res = self.source.execute_query(
+                        f'SELECT last_value, is_called FROM "{schema}"."{name}"')
                     if res:
                         last_val = res[0]['last_value']
                         is_called = res[0]['is_called']
-                        sql = f'SELECT setval(\'"{schema}"."{name}"\', {last_val}, {str(is_called).lower()});'
+                        sql = f'SELECT setval(\'"{schema}"."{name}"\', {last_val}, {
+                            str(is_called).lower()});'
                         cmds.append(f"[DEST] {sql}")
                         self.dest.execute_script(sql)
                         outs.append(f"Synced to {last_val}")
@@ -152,7 +154,8 @@ class PostSync:
 
     def reassign_ownership(self, target_owner):
         """Reassign ownership of ALL database objects to target_owner on destination."""
-        logging.info(f"[DEST] Reassigning ownership of all objects to '{target_owner}'...")
+        logging.info(
+            f"[DEST] Reassigning ownership of all objects to '{target_owner}'...")
         sf = self._get_schema_filter()
         cmds = []
         outs = []
@@ -160,11 +163,13 @@ class PostSync:
 
         # --- 1. Database ---
         try:
-            db_name_result = self.dest.execute_query("SELECT current_database() AS db;")
+            db_name_result = self.dest.execute_query(
+                "SELECT current_database() AS db;")
             if db_name_result:
                 db_name = db_name_result[0]['db']
                 sql = f'ALTER DATABASE "{db_name}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"Database {db_name}", cmds, outs)
+                errors += self._apply_reassign(sql,
+                                               f"Database {db_name}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER DATABASE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -184,7 +189,8 @@ class PostSync:
             for row in schemas:
                 schema = row['schema_name']
                 sql = f'ALTER SCHEMA "{schema}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"Schema {schema}", cmds, outs)
+                errors += self._apply_reassign(sql,
+                                               f"Schema {schema}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER SCHEMA ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -202,8 +208,13 @@ class PostSync:
         try:
             tables = self.dest.execute_query(table_query) or []
             for row in tables:
-                sql = f'ALTER TABLE "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"Table {row['schema_name']}.{row['obj_name']}", cmds, outs)
+                sql = f'ALTER TABLE "{
+                    row["schema_name"]}"."{
+                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"Table {
+                        row['schema_name']}.{
+                        row['obj_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER TABLE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -221,8 +232,13 @@ class PostSync:
         try:
             views = self.dest.execute_query(view_query) or []
             for row in views:
-                sql = f'ALTER VIEW "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"View {row['schema_name']}.{row['obj_name']}", cmds, outs)
+                sql = f'ALTER VIEW "{
+                    row["schema_name"]}"."{
+                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"View {
+                        row['schema_name']}.{
+                        row['obj_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER VIEW ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -240,8 +256,13 @@ class PostSync:
         try:
             matviews = self.dest.execute_query(matview_query) or []
             for row in matviews:
-                sql = f'ALTER MATERIALIZED VIEW "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"MatView {row['schema_name']}.{row['obj_name']}", cmds, outs)
+                sql = f'ALTER MATERIALIZED VIEW "{
+                    row["schema_name"]}"."{
+                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"MatView {
+                        row['schema_name']}.{
+                        row['obj_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER MATERIALIZED VIEW ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -259,8 +280,13 @@ class PostSync:
         try:
             seqs = self.dest.execute_query(seq_query) or []
             for row in seqs:
-                sql = f'ALTER SEQUENCE "{row["schema_name"]}"."{row["obj_name"]}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"Sequence {row['schema_name']}.{row['obj_name']}", cmds, outs)
+                sql = f'ALTER SEQUENCE "{
+                    row["schema_name"]}"."{
+                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"Sequence {
+                        row['schema_name']}.{
+                        row['obj_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER SEQUENCE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -281,8 +307,14 @@ class PostSync:
             funcs = self.dest.execute_query(func_query) or []
             for row in funcs:
                 ftype = row['func_type']
-                sql = f'ALTER {ftype} "{row["schema_name"]}"."{row["func_name"]}"({row["func_args"]}) OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"{ftype} {row['schema_name']}.{row['func_name']}", cmds, outs)
+                sql = f'ALTER {ftype} "{
+                    row["schema_name"]}"."{
+                    row["func_name"]}"({
+                    row["func_args"]}) OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"{ftype} {
+                        row['schema_name']}.{
+                        row['func_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER FUNCTION/PROCEDURE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -301,8 +333,13 @@ class PostSync:
         try:
             types = self.dest.execute_query(type_query) or []
             for row in types:
-                sql = f'ALTER TYPE "{row["schema_name"]}"."{row["type_name"]}" OWNER TO "{target_owner}";'
-                errors += self._apply_reassign(sql, f"Type {row['schema_name']}.{row['type_name']}", cmds, outs)
+                sql = f'ALTER TYPE "{
+                    row["schema_name"]}"."{
+                    row["type_name"]}" OWNER TO "{target_owner}";'
+                errors += self._apply_reassign(
+                    sql, f"Type {
+                        row['schema_name']}.{
+                        row['type_name']}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER TYPE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -311,5 +348,6 @@ class PostSync:
         total = len(cmds)
         success_count = total - errors
         ok = errors == 0
-        msg = f"Reassigned {success_count}/{total} objects to '{target_owner}'" + (f" ({errors} errors)" if errors else "")
+        msg = f"Reassigned {success_count}/{total} objects to '{target_owner}'" + \
+            (f" ({errors} errors)" if errors else "")
         return ok, msg, cmds, outs

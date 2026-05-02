@@ -2,13 +2,15 @@ import os
 import datetime
 from jinja2 import Template
 
+
 class ReportGenerator:
     def __init__(self, project_name="PostgreSQL Logical Migration"):
         self.project_name = project_name
         self.steps = []
         self.start_time = datetime.datetime.now()
 
-    def add_step(self, step_id, name, status, message, details=None, commands=None, outputs=None):
+    def add_step(self, step_id, name, status, message,
+                 details=None, commands=None, outputs=None):
         self.steps.append({
             "id": step_id,
             "name": name,
@@ -28,7 +30,8 @@ class ReportGenerator:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ project_name }} - Execution Audit</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" 
+          rel="stylesheet">
     <style>
         :root {
             --primary: #2563eb;
@@ -40,17 +43,17 @@ class ReportGenerator:
             --card-bg: #ffffff;
             --text: #1e293b;
         }
-        body { 
-            font-family: 'Outfit', sans-serif; 
-            background: var(--bg); 
-            margin: 0; 
-            padding: 40px 20px; 
-            color: var(--text); 
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            margin: 0;
+            padding: 40px 20px;
+            color: var(--text);
             line-height: 1.6;
         }
-        .container { 
-            max-width: 1100px; 
-            margin: auto; 
+        .container {
+            max-width: 1100px;
+            margin: auto;
         }
         .header {
             background: linear-gradient(135deg, var(--primary), var(--primary-dark));
@@ -64,15 +67,15 @@ class ReportGenerator:
         }
         .header h1 { margin: 0; font-size: 2.5em; font-weight: 700; letter-spacing: -1px; }
         .header p { margin: 10px 0 0; opacity: 0.9; font-size: 1.1em; }
-        
-        .card { 
-            background: var(--card-bg); 
-            padding: 30px; 
-            border-radius: 20px; 
+
+        .card {
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 20px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
         }
-        
+
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -85,20 +88,25 @@ class ReportGenerator:
             border-radius: 12px;
             text-align: center;
         }
-        .summary-item span { display: block; font-size: 0.85em; color: #64748b; text-transform: uppercase; font-weight: 600; }
+        .summary-item span { 
+            display: block; font-size: 0.85em; color: #64748b; text-transform: uppercase; font-weight: 600; 
+        }
         .summary-item strong { display: block; font-size: 1.25em; margin-top: 5px; }
 
         table { width: 100%; border-collapse: separate; border-spacing: 0 10px; margin-top: 20px; }
-        th { text-align: left; padding: 15px 20px; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 0.8em; }
-        td { 
-            background: white; 
-            padding: 20px; 
+        th { 
+            text-align: left; padding: 15px 20px; color: #64748b; font-weight: 600; text-transform: uppercase; 
+            font-size: 0.8em; 
+        }
+        td {
+            background: white;
+            padding: 20px;
             border-top: 1px solid #f1f5f9;
             border-bottom: 1px solid #f1f5f9;
         }
         td:first-child { border-left: 1px solid #f1f5f9; border-radius: 12px 0 0 12px; }
         td:last-child { border-right: 1px solid #f1f5f9; border-radius: 0 12px 12px 0; }
-        
+
         .badge {
             padding: 6px 12px;
             border-radius: 20px;
@@ -110,12 +118,12 @@ class ReportGenerator:
         .badge-fail { background: #fee2e2; color: #991b1b; }
         .badge-warn { background: #fef3c7; color: #92400e; }
 
-        pre { 
-            background: #0f172a; 
-            color: #e2e8f0; 
-            padding: 15px; 
-            border-radius: 12px; 
-            font-size: 0.85em; 
+        pre {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 0.85em;
             overflow-x: auto;
             margin-top: 10px;
             border-left: 4px solid var(--primary);
@@ -150,7 +158,7 @@ class ReportGenerator:
                 </div>
             </div>
         </div>
-        
+
         <table>
             <thead>
                 <tr>
@@ -170,16 +178,19 @@ class ReportGenerator:
                         {% if step.details %}
                         <pre>{{ step.details }}</pre>
                         {% endif %}
-                        
+
                         {% if step.commands or step.outputs %}
                         <div class="log-section">
                             <div class="log-header">Execution Logs</div>
-                            {% for i in range(step.commands|length if step.commands|length > step.outputs|length else step.outputs|length) %}
+                            {% for i in range(
+                                step.commands|length if step.commands|length > step.outputs|length 
+                                else step.outputs|length
+                            ) %}
                                 {% if i < step.commands|length %}
                                 <div class="log-header" style="font-size: 0.7em; margin-top: 8px;">Command:</div>
                                 <pre class="command-block">{{ step.commands[i] }}</pre>
                                 {% endif %}
-                                
+
                                 {% if i < step.outputs|length %}
                                 <div class="log-header" style="font-size: 0.7em; margin-top: 4px;">Result:</div>
                                 <pre class="output-block">{{ step.outputs[i] }}</pre>
@@ -189,7 +200,9 @@ class ReportGenerator:
                         {% endif %}
                     </td>
                     <td>
-                        <span class="badge badge-{{ 'ok' if step.status == 'OK' else 'fail' if step.status == 'FAIL' else 'warn' }}">
+                        <span class="badge badge-{{ 
+                            'ok' if step.status == 'OK' else 'fail' if step.status == 'FAIL' else 'warn' 
+                        }}">
                             {{ step.status }}
                         </span>
                     </td>
@@ -213,7 +226,10 @@ class ReportGenerator:
             steps=self.steps
         )
         # Ensure the directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        os.makedirs(
+            os.path.dirname(
+                os.path.abspath(output_path)),
+            exist_ok=True)
         with open(output_path, "w") as f:
             f.write(html_content)
         return output_path
