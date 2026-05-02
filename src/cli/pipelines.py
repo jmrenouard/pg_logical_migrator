@@ -54,12 +54,12 @@ def cmd_init_replication(args):
             ("1",  "Connectivity Check"),
             ("2",  "Pre-Migration Diagnostics"),
             ("3",  "Replication Parameters Check"),
-            ("4a", "Schema Migration (Pre-Data)"),
+            ("4",  "Schema Migration (Pre-Data)"),
             ("5",  "Create Publication"),
             ("6",  "Create Subscription"),
             ("--", f"Wait {sync_delay}s for initial sync"),
-            ("13", "Object Audit"),
-            ("14", "Row Parity Check"),
+            ("14", "Object Audit"),
+            ("15", "Row Parity Check"),
         ]
         for num, desc in steps:
             print(f"  [DRY-RUN] Step {num:>2s} : {desc}")
@@ -158,10 +158,10 @@ def cmd_init_replication(args):
                           details=param_details)
         print_status(params_ok, "Replication parameters verified")
 
-        # Step 4a — Schema Pre-Data
-        print("[Step 4a] Schema pre-data migration...")
+        # Step 4 — Schema Pre-Data
+        print("[Step  4] Schema pre-data migration...")
         s, m, c, o = migrator.step4a_migrate_schema_pre_data(drop_dest=args.drop_dest)
-        reporter.add_step("4a", "Schema Pre-Data", "OK" if s else "FAIL", m, commands=c, outputs=o)
+        reporter.add_step("4", "Schema Pre-Data", "OK" if s else "FAIL", m, commands=c, outputs=o)
         print_status(s, m)
 
         # Step 5 — Publication
@@ -176,18 +176,18 @@ def cmd_init_replication(args):
         reporter.add_step("6", "Destination Setup", "OK" if s else "FAIL", m, commands=c, outputs=o)
         print_status(s, m)
 
-        # Wait for sync
+        # Wait for sync (Step 7)
         if not getattr(args, "no_wait", False):
-            print("[  wait ] Waiting for initial table sync to complete...")
+            print("[Step  7] Waiting for initial table sync to complete...")
             success_sync, msg_sync, _, _ = migrator.wait_for_sync(timeout=args.sync_delay, show_progress=True)
+            reporter.add_step("7", "Initial Sync", "OK" if success_sync else "TIMEOUT", msg_sync)
             print_status(success_sync, msg_sync)
         else:
             print("[  skip ] Skipping wait for initial synchronization (--no-wait).")
 
-        # Step 13 — Object Audit
-        print("[Step 13] Object audit...")
+        # Step 14 — Object Audit
+        print("[Step 14] Object audit...")
         s1, m1, c1, o1, r1 = validator.audit_objects()
-        # Build a readable text table from the object audit report
         audit_detail_lines = [f"{'Object Type':<15} {'Source':>10} {'Dest':>10} {'Status':>8}"]
         audit_detail_lines.append("-" * 47)
         for row in r1:
@@ -195,14 +195,13 @@ def cmd_init_replication(args):
                 f"{row['type']:<15} {str(row['source']):>10} {str(row['dest']):>10} {row['status']:>8}"
             )
         audit_details = "\n".join(audit_detail_lines)
-        reporter.add_step("13", "Object Audit", "OK" if s1 else "FAIL", m1,
+        reporter.add_step("14", "Object Audit", "OK" if s1 else "FAIL", m1,
                           details=audit_details, commands=c1, outputs=o1)
         print_status(s1, m1)
 
-        # Step 14 — Row Parity
-        print("[Step 14] Row count parity...")
+        # Step 15 — Row Parity
+        print("[Step 15] Row count parity...")
         s2, m2, c2, o2, r2 = validator.compare_row_counts(use_stats=args.use_stats)
-        # Build a readable text table from the per-table report
         parity_detail_lines = [f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
         parity_detail_lines.append("-" * 85)
         for row in r2:
@@ -211,10 +210,9 @@ def cmd_init_replication(args):
                 f"{str(row['diff']):>8} {row['status']:>8}"
             )
         parity_details = "\n".join(parity_detail_lines)
-        reporter.add_step("14", "Row Parity", "OK" if s2 else "FAIL", m2,
+        reporter.add_step("15", "Row Parity", "OK" if s2 else "FAIL", m2,
                           details=parity_details, commands=c2, outputs=o2)
         print_status(s2, m2)
-
 
         # Generate report
         report_path = os.path.join(results_dir, "report_init.html")
@@ -237,7 +235,7 @@ def cmd_init_replication(args):
 
 # -- Full Post Migration pipeline --------------------------------------------
 def cmd_post_migration(args):
-    """Stop replication and finalize migration objects."""
+    """Stop replication and finalize migration objects (Steps 10-15)."""
     results_dir = setup_results_dir(args.results_dir)
     log_file = os.path.join(results_dir, "pg_migrator.log")
     setup_logging(args.loglevel, log_file)
@@ -257,7 +255,6 @@ def cmd_post_migration(args):
     print(f"  Config      : {args.config}")
     print(f"  Results dir : {results_dir}")
     print(f"  Log level   : {args.loglevel}")
-    print(f"  Sync delay  : {sync_delay}s")
     if args.dry_run:
         print(f"  Mode        : DRY-RUN (no changes)")
     print(f"{'='*60}\n")
@@ -265,13 +262,14 @@ def cmd_post_migration(args):
     if args.dry_run:
         steps = [
             ("1",  "Connectivity Check"),
-            ("12", "Cleanup Replication (Stop)"),
-            ("4b", "Schema Migration (Post-Data)"),
+            ("10", "Terminate Replication & Schema Post-Data"),
+            ("11", "Large Object Sync"),
             ("8",  "Refresh Materialized Views"),
             ("9",  "Sync Sequences"),
-            ("10", "Enable Triggers"),
-            ("13", "Object Audit"),
-            ("14", "Row Parity Check"),
+            ("12", "Enable Triggers"),
+            ("13", "Reassign Ownership"),
+            ("14", "Object Audit"),
+            ("15", "Row Parity Check"),
         ]
         for num, desc in steps:
             print(f"  [DRY-RUN] Step {num:>2s} : {desc}")
@@ -295,63 +293,71 @@ def cmd_post_migration(args):
         success_sync, msg_sync, _, _ = migrator.wait_for_sync(timeout=args.sync_delay, show_progress=True)
         print_status(success_sync, msg_sync)
 
-        # Step 12 — Cleanup (Stop replication)
-        print("[Step 12] Cleanup replication...")
-        s, m, c, o = migrator.step12_terminate_replication()
-        reporter.add_step("12", "Cleanup", "OK" if s else "FAIL", m, commands=c, outputs=o)
-        print_status(s, m)
-
-        # Step 4b / 8/9/10/11 — Post-Sync
-        print("[Step 4b] Schema post-data migration...")
-        s4b, m4b, c4b, o4b = migrator.step4b_migrate_schema_post_data()
-        reporter.add_step("4b", "Schema Post-Data", "OK" if s4b else "FAIL", m4b, commands=c4b, outputs=o4b)
-        print_status(s4b, m4b)
-
+        # Step 8 — MatViews
         print("[Step  8] Refresh materialized views...")
-        s1, m1, c1, o1 = post_sync.refresh_materialized_views()
-        print_status(s1, m1)
+        s8, m8, c8, o8 = post_sync.refresh_materialized_views()
+        print_status(s8, m8)
 
+        # Step 9 — Sequences
         print("[Step  9] Sync sequences...")
-        s2, m2, c2, o2 = post_sync.sync_sequences()
-        print_status(s2, m2)
+        s9, m9, c9, o9 = post_sync.sync_sequences()
+        print_status(s9, m9)
 
-        print("[Step 10] Enable triggers...")
-        s3, m3, c3, o3 = post_sync.enable_triggers()
-        print_status(s3, m3)
+        # Step 10 — Terminate & Post-Data Schema
+        print("[Step 10] Terminate replication & Deploy Schema (post-data)...")
+        # 1. Stop Replication
+        s10_1, m10_1, c10_1, o10_1 = migrator.step10_terminate_replication()
+        print_status(s10_1, f"Replication stop: {m10_1}")
+        if not s10_1: raise RuntimeError(f"Step 10 failed: {m10_1}")
 
-        # Reassign Ownership
+        # 2. Schema post-data
+        s10_2, m10_2, c10_2, o10_2 = migrator.step4b_migrate_schema_post_data()
+        print_status(s10_2, f"Schema post-data: {m10_2}")
+        if not s10_2: raise RuntimeError(f"Step 10 failed: {m10_2}")
+
+        # Step 11 — LOB Sync
+        print("[Step 11] Synchronize Large Objects (LOBs)...")
+        sl, ml, cl, ol = migrator.sync_large_objects()
+        print_status(sl, ml)
+
+        # Step 12 — Triggers
+        print("[Step 12] Enable triggers...")
+        s12, m12, c12, o12 = post_sync.enable_triggers()
+        print_status(s12, m12)
+
+        # Step 13 — Ownership
         target_owner = cfg.get_dest_dict()['user']
-        print(f"[  owner] Reassign ownership to '{target_owner}'...")
-        s4, m4, c4, o4 = post_sync.reassign_ownership(target_owner)
-        print_status(s4, m4)
+        print(f"[Step 13] Reassign ownership to '{target_owner}'...")
+        s13, m13, c13, o13 = post_sync.reassign_ownership(target_owner)
+        print_status(s13, m13)
 
-        all_cmds = (c1 or []) + (c2 or []) + (c3 or []) + (c4 or [])
-        all_outs = (o1 or []) + (o2 or []) + (o3 or []) + (o4 or [])
-        reporter.add_step("POST", "Post-Sync", "OK",
-                          "MatViews, Sequences, Triggers, Ownership processed",
+        all_cmds = (c8 or []) + (c9 or []) + (c10_1 or []) + (c10_2 or []) + (cl or []) + (c12 or []) + (c13 or [])
+        all_outs = (o8 or []) + (o9 or []) + (o10_1 or []) + (o10_2 or []) + (ol or []) + (o12 or []) + (o13 or [])
+        reporter.add_step("FINAL", "Post-Sync Finalization", "OK",
+                          "MatViews, Sequences, Replication stop, Schema post-data, LOBs, Triggers, Ownership processed",
                           commands=all_cmds, outputs=all_outs)
 
-        # Step 13 — Object Audit
-        print("[Step 13] Object audit...")
+        # Step 14 — Object Audit
+        print("[Step 14] Object audit...")
         s1, m1, c1, o1, r1 = validator.audit_objects()
         audit_detail_lines = [f"{'Object Type':<15} {'Source':>10} {'Dest':>10} {'Status':>8}"]
         audit_detail_lines.append("-" * 47)
         for row in r1:
             audit_detail_lines.append(f"{row['type']:<15} {str(row['source']):>10} {str(row['dest']):>10} {row['status']:>8}")
         audit_details = "\n".join(audit_detail_lines)
-        reporter.add_step("13", "Object Audit", "OK" if s1 else "FAIL", m1,
+        reporter.add_step("14", "Object Audit", "OK" if s1 else "FAIL", m1,
                           details=audit_details, commands=c1, outputs=o1)
         print_status(s1, m1)
 
-        # Step 14 — Row Parity
-        print("[Step 14] Row count parity...")
+        # Step 15 — Row Parity
+        print("[Step 15] Row count parity...")
         s2, m2, c2, o2, r2 = validator.compare_row_counts(use_stats=args.use_stats)
         parity_detail_lines = [f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
         parity_detail_lines.append("-" * 85)
         for row in r2:
             parity_detail_lines.append(f"{row['table']:<45} {str(row['source']):>10} {str(row['dest']):>10} {str(row['diff']):>8} {row['status']:>8}")
         parity_details = "\n".join(parity_detail_lines)
-        reporter.add_step("14", "Row Parity", "OK" if s2 else "FAIL", m2,
+        reporter.add_step("15", "Row Parity", "OK" if s2 else "FAIL", m2,
                           details=parity_details, commands=c2, outputs=o2)
         print_status(s2, m2)
 

@@ -19,7 +19,7 @@
 
 8.  **Refresh Materialized Views (`refresh-matviews`)**: Manually refresh non-replicated data in matviews.
 9.  **Sync Sequences (`sync-sequences`)**: Align sequence values to prevent ID collisions after cutover.
-10. **Schema (Post-Data) (`migrate-schema-post-data`)**: Create indexes, foreign keys, and constraints.
+10. **Terminate & Post-Schema (`terminate-repl`)**: Stop replication and deploy indexes, foreign keys, and constraints.
 11. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
 12. **Enable Triggers (`enable-triggers`)**: Restore application-level trigger logic on the target.
 13. **Reassign Ownership (`reassign-owner`)**: Set correct role owners for all database objects.
@@ -48,7 +48,7 @@ graph TD
     B6 --> B7(7. Progress)
     
     C8(8. MatViews) --> C9(9. Sequences)
-    C9 --> C10(10. Post-Schema)
+    C9 --> C10(10. Terminate & Post-Schema)
     C10 --> C11(11. LOBs Sync)
     C11 --> C12(12. Triggers)
     C12 --> C13(13. Owners)
@@ -66,26 +66,26 @@ Instead of running the 17 steps manually, `pg_logical_migrator` provides two mac
 
 #### 1. Initialization Pipeline (`init-replication`)
 Executes **Phase 1** and **Phase 2**:
-- `check`
-- `diagnose`
-- `params`
-- `migrate-schema-pre-data`
-- `setup-pub`
-- `setup-sub`
+- `check` (Step 1)
+- `diagnose` (Step 2)
+- `params` (Step 3)
+- `migrate-schema-pre-data` (Step 4)
+- `setup-pub` (Step 5)
+- `setup-sub` (Step 6)
 
 *Result: Replication is active and data is syncing in the background.*
 
 #### 2. Cutover Pipeline (`post-migration`)
 Executes **Phase 3** and **Phase 4**:
-- `post-sync` (Stops replication)
-- `migrate-schema-post-data`
-- `sync-sequences`
-- `refresh-matviews`
-- `reassign-owner`
-- `enable-triggers`
-- `sync-lobs`
-- `audit-objects`
-- `validate-rows`
-- `cleanup`
+- `wait-for-sync` (Internal Step 7)
+- `refresh-matviews` (Step 8)
+- `sync-sequences` (Step 9)
+- `terminate-repl` (Step 10: Terminate & Post-Schema)
+- `sync-lobs` (Step 11)
+- `enable-triggers` (Step 12)
+- `reassign-owner` (Step 13)
+- `audit-objects` (Step 14)
+- `validate-rows` (Step 15)
+- **Report Generation** (Final Audit)
 
 *Result: The target database is fully independent, verified, and ready for production traffic.*

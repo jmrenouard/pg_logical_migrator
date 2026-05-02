@@ -116,7 +116,7 @@ async def test_app_buttons(mock_config, mock_pgclient, mock_dbchecker, mock_migr
         app.handle_buttons(MockButtonEvent("cmd_progress"))
         mock_mig_instance.get_initial_copy_progress.assert_called_once()
         
-        app.handle_buttons(MockButtonEvent("step_15b"))
+        app.handle_buttons(MockButtonEvent("step_11"))
         mock_mig_instance.sync_large_objects.assert_called_once()
         
         app.handle_buttons(MockButtonEvent("step_14"))
@@ -148,7 +148,7 @@ async def test_app_pipelines(mock_config, mock_pgclient, mock_dbchecker, mock_mi
     mock_mig_instance.step5_setup_source.return_value = (True, "msg", [], [])
     mock_mig_instance.step6_setup_destination.return_value = (True, "msg", [], [])
     mock_mig_instance.sync_large_objects.return_value = (True, "msg", [], [])
-    mock_mig_instance.step12_terminate_replication.return_value = (True, "msg", [], [])
+    mock_mig_instance.step10_terminate_replication.return_value = (True, "msg", [], [])
     mock_mig_instance.step4b_migrate_schema_post_data.return_value = (True, "msg", [], [])
     
     async with app.run_test() as pilot:
@@ -161,7 +161,7 @@ async def test_app_pipelines(mock_config, mock_pgclient, mock_dbchecker, mock_mi
         # Post Pipeline
         app.handle_buttons(MockButtonEvent("cmd_post"))
         await pilot.pause(0.2)
-        mock_mig_instance.step12_terminate_replication.assert_called_once()
+        mock_mig_instance.step10_terminate_replication.assert_called_once()
         mock_postsync.return_value.sync_sequences.assert_called_once()
 
 @pytest.mark.asyncio

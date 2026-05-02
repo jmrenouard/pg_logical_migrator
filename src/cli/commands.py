@@ -103,9 +103,9 @@ def cmd_params(args):
     return 1 if has_fail else 0
 
 
-# -- Step 4a -----------------------------------------------------------------
+# -- Step 4 ------------------------------------------------------------------
 def cmd_migrate_schema_pre_data(args):
-    """Step 4a: Copy schema pre-data from source to destination (pg_dump -s --section=pre-data)."""
+    """Step 4: Copy schema pre-data from source to destination (pg_dump -s --section=pre-data)."""
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     if args.dry_run:
@@ -113,22 +113,22 @@ def cmd_migrate_schema_pre_data(args):
         if args.drop_dest:
             print("[DRY-RUN]  -> WITH --drop-dest (would drop destination DB first)")
         return 0
-    print("\n=== Step 4a — Schema Migration (Pre-data) ===")
+    print("\n=== Step 4 — Schema Migration (Pre-data) ===")
     success, msg, cmds, outs = migrator.step4a_migrate_schema_pre_data(drop_dest=args.drop_dest)
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
 
 
-# -- Step 4b -----------------------------------------------------------------
+# -- Step 10 -----------------------------------------------------------------
 def cmd_migrate_schema_post_data(args):
-    """Step 4b: Copy schema post-data from source to destination (pg_dump -s --section=post-data)."""
+    """Step 10: Copy schema post-data from source to destination (pg_dump -s --section=post-data)."""
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would execute schema post-data migration")
         return 0
-    print("\n=== Step 4b — Schema Migration (Post-data) ===")
+    print("\n=== Step 10 — Schema Migration (Post-data) ===")
     success, msg, cmds, outs = migrator.step4b_migrate_schema_post_data()
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
@@ -168,56 +168,8 @@ def cmd_setup_sub(args):
 
 
 # -- Step 7 ------------------------------------------------------------------
-def cmd_repl_status(args):
-    """Step 7: Check replication status for both publisher and subscriber on both instances."""
-    from rich.console import Console
-    from rich.table import Table
-
-    cfg = Config(args.config)
-    migrator = Migrator(cfg)
-    console = Console()
-    console.print("\n[bold blue]=== Step 7 — Replication Status (Multi-Side) ===[/bold blue]")
-    status = migrator.get_replication_status()
-
-    pub_rows = status.get("publisher", [])
-    sub_rows = status.get("subscriber", [])
-    slot_rows = status.get("slots", [])
-    pub_info_rows = status.get("publications", [])
-
-    if not any([pub_rows, sub_rows, slot_rows, pub_info_rows]):
-        console.print("[yellow]  No active publisher, subscriber, or replication slots found.[/yellow]")
-        return 1
-
-    def print_rich_table(title, rows):
-        if not rows: return
-        table = Table(title=title, show_header=True, header_style="bold magenta")
-        keys = list(rows[0].keys())
-        for key in keys:
-            table.add_column(str(key), style="cyan", overflow="fold")
-        for r in rows:
-            table.add_row(*[str(v) for v in r.values()])
-        console.print(table)
-
-    for side in ["SOURCE", "DEST"]:
-        # Filter rows by side
-        s_pub = [r for r in pub_rows if r.get('side') == side]
-        s_slots = [r for r in slot_rows if r.get('side') == side]
-        s_sub = [r for r in sub_rows if r.get('side') == side]
-        s_pubs = [r for r in pub_info_rows if r.get('side') == side]
-        
-        if any([s_pub, s_slots, s_sub, s_pubs]):
-            console.print(f"\n[bold green]--- Current Role: {side} ---[/bold green]")
-            if s_pub: print_rich_table(f"[{side}] PUBLISHER (pg_stat_replication)", s_pub)
-            if s_slots: print_rich_table(f"[{side}] SLOTS (pg_replication_slots)", s_slots)
-            if s_sub: print_rich_table(f"[{side}] SUBSCRIBER (pg_stat_subscription)", s_sub)
-            if s_pubs: print_rich_table(f"[{side}] PUBLICATIONS (pg_publication)", s_pubs)
-
-    return 0
-
-
-# -- Replication Progress ----------------------------------------------------
-def cmd_repl_progress(args):
-    """Monitor progress of initial data synchronization."""
+def cmd_progress(args):
+    """Step 7: Monitor progress of initial data synchronization."""
     from rich.console import Console
     from rich.table import Table
     from rich.progress import Progress, BarColumn, TextColumn
@@ -226,7 +178,7 @@ def cmd_repl_progress(args):
     migrator = Migrator(cfg)
     console = Console()
     
-    console.print("\n[bold blue]=== Logical Replication Progress ===[/bold blue]")
+    console.print("\n[bold blue]=== Step 7 — Logical Replication Progress ===[/bold blue]")
     
     progress_data = migrator.get_initial_copy_progress()
     if not progress_data:
@@ -270,31 +222,102 @@ def cmd_repl_progress(args):
     return 0
 
 
-# -- Step 8 / 9 / 10 ---------------------------------------------------------
+def cmd_repl_progress(args):
+    """Legacy alias for Step 7 progress."""
+    return cmd_progress(args)
+
+
+# -- Step 8 ------------------------------------------------------------------
+def cmd_refresh_matviews(args):
+    """Step 8: Refresh materialized views on destination."""
+    cfg = Config(args.config)
+    sc, dc = build_clients(cfg)
+    ps = PostSync(sc, dc, cfg)
+    if args.dry_run:
+        print("[DRY-RUN] Would refresh all materialized views on destination")
+        return 0
+    print("\n=== Step 8 — Refresh Materialized Views ===")
+    success, msg, cmds, outs = ps.refresh_materialized_views()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
+# -- Step 9 ------------------------------------------------------------------
 def cmd_sync_sequences(args):
-    """Steps 8-9: Synchronize sequence values from source to destination."""
+    """Step 9: Synchronize sequence values from source to destination."""
     cfg = Config(args.config)
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
         print("[DRY-RUN] Would synchronize all sequences from source to destination")
         return 0
-    print("\n=== Steps 8/9 — Sync Sequences ===")
+    print("\n=== Step 9 — Sync Sequences ===")
     success, msg, cmds, outs = ps.sync_sequences()
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
 
 
+# -- Step 10 -----------------------------------------------------------------
+def cmd_terminate_replication(args):
+    """Step 10: Terminate logical replication and deploy post-data schema."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    if args.dry_run:
+        print("[DRY-RUN] Would stop logical replication and deploy indexes/FKs")
+        return 0
+    
+    print("\n=== Step 10 — Terminate Replication & Deploy Schema (Post-data) ===")
+    
+    # 1. Stop Replication
+    success1, msg1, cmds1, outs1 = migrator.step10_terminate_replication()
+    print_status(success1, f"Replication stop: {msg1}")
+    
+    if not success1:
+        return 1
+        
+    # 2. Deploy post-data schema
+    success2, msg2, cmds2, outs2 = migrator.step4b_migrate_schema_post_data()
+    print_status(success2, f"Schema migration (post-data): {msg2}")
+    
+    all_cmds = (cmds1 or []) + (cmds2 or [])
+    all_outs = (outs1 or []) + (outs2 or [])
+    print_verbose_execution(args, all_cmds, all_outs)
+    
+    return 0 if success2 else 1
+
+
+def cmd_migrate_schema_post_data(args):
+    """Legacy alias for Step 10."""
+    return cmd_terminate_replication(args)
+
+
+# -- Step 11 ------------------------------------------------------------------
+def cmd_sync_lobs(args):
+    """Step 11: Synchronize Large Objects (LOBs/BLOBs) and update OID references."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    if args.dry_run:
+        print("[DRY-RUN] Would synchronize Large Objects (LOBs) and update OID references")
+        return 0
+    print("\n=== Step 11 — Synchronize Large Objects (LOBs) ===")
+    success, msg, cmds, outs = migrator.sync_large_objects()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
+# -- Step 12 -----------------------------------------------------------------
 def cmd_enable_triggers(args):
-    """Step 10: Enable all triggers on destination tables."""
+    """Step 12: Enable all triggers on destination tables."""
     cfg = Config(args.config)
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
         print("[DRY-RUN] Would enable triggers on all destination tables")
         return 0
-    print("\n=== Step 10 — Enable Triggers ===")
+    print("\n=== Step 12 — Enable Triggers ===")
     success, msg, cmds, outs = ps.enable_triggers()
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
@@ -316,25 +339,9 @@ def cmd_disable_triggers(args):
     return 0 if success else 1
 
 
-# -- Step 11 ------------------------------------------------------------------
-def cmd_refresh_matviews(args):
-    """Step 11: Refresh materialized views on destination."""
-    cfg = Config(args.config)
-    sc, dc = build_clients(cfg)
-    ps = PostSync(sc, dc, cfg)
-    if args.dry_run:
-        print("[DRY-RUN] Would refresh all materialized views on destination")
-        return 0
-    print("\n=== Step 11 — Refresh Materialized Views ===")
-    success, msg, cmds, outs = ps.refresh_materialized_views()
-    print_status(success, msg)
-    print_verbose_execution(args, cmds, outs)
-    return 0 if success else 1
-
-
-# -- Reassign Ownership -------------------------------------------------------
+# -- Step 13 -----------------------------------------------------------------
 def cmd_reassign_owner(args):
-    """Reassign ownership of all database objects on destination."""
+    """Step 13: Reassign ownership of all database objects on destination."""
     cfg = Config(args.config)
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
@@ -342,20 +349,20 @@ def cmd_reassign_owner(args):
     if args.dry_run:
         print(f"[DRY-RUN] Would reassign all objects to '{target_owner}' on destination")
         return 0
-    print(f"\n=== Reassign Ownership to '{target_owner}' ===")
+    print(f"\n=== Step 13 — Reassign Ownership to '{target_owner}' ===")
     success, msg, cmds, outs = ps.reassign_ownership(target_owner)
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
 
 
-# -- Step 13 ------------------------------------------------------------------
+# -- Step 14 ------------------------------------------------------------------
 def cmd_audit_objects(args):
-    """Step 13: Compare object counts between source and destination."""
+    """Step 14: Compare object counts between source and destination."""
     cfg = Config(args.config)
     sc, dc = build_clients(cfg)
     validator = Validator(sc, dc, cfg)
-    print("\n=== Step 13 — Object Audit ===")
+    print("\n=== Step 14 — Object Audit ===")
     success, msg, cmds, outs, report = validator.audit_objects()
     rows = [[r["type"], r["source"], r["dest"], r["status"]] for r in report]
     print_table(["Object Type", "Source", "Dest", "Status"], rows)
@@ -364,13 +371,13 @@ def cmd_audit_objects(args):
     return 1 if has_diff else 0
 
 
-# -- Step 14 ------------------------------------------------------------------
+# -- Step 15 ------------------------------------------------------------------
 def cmd_validate_rows(args):
-    """Step 14: Compare row counts for every table."""
+    """Step 15: Compare row counts for every table."""
     cfg = Config(args.config)
     sc, dc = build_clients(cfg)
     validator = Validator(sc, dc, cfg)
-    print("\n=== Step 14 — Row Count Parity ===")
+    print("\n=== Step 15 — Row Count Parity ===")
     success, msg, cmds, outs, report = validator.compare_row_counts(use_stats=args.use_stats)
     rows = [[r["table"], r["source"], r["dest"], r["diff"], r["status"]] for r in report]
     print_table(["Table", "Source", "Dest", "Diff", "Status"], rows)
@@ -380,9 +387,9 @@ def cmd_validate_rows(args):
     return 1 if has_diff else 0
 
 
-# -- Step 12 ------------------------------------------------------------------
+# -- Step 16 ------------------------------------------------------------------
 def cmd_cleanup(args):
-    """Step 12: Drop subscription, publication, and replication slot."""
+    """Step 16: Drop subscription, publication, and replication slot."""
     cfg = Config(args.config)
     migrator = Migrator(cfg)
     if args.dry_run:
@@ -390,38 +397,37 @@ def cmd_cleanup(args):
         pub = cfg.get_replication()["publication_name"]
         print(f"[DRY-RUN] Would drop subscription '{sub}' and publication '{pub}'")
         return 0
-    print("\n=== Step 12 — Cleanup Replication ===")
-    success, msg, cmds, outs = migrator.step12_terminate_replication()
+    print("\n=== Step 16 — Cleanup Replication ===")
+    success, msg, cmds, outs = migrator.step10_terminate_replication()
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
     return 0 if success else 1
 
 
-# -- TUI mode ----------------------------------------------------------------
-def cmd_tui(args):
-    """Launch the interactive Textual TUI."""
-    from src.main import MigratorApp
-    app = MigratorApp(args.config)
-    app.run()
-    return 0
-
-
-# -- Generate sample config --------------------------------------------------
-def cmd_generate_config(args):
-    """Generate a sample config_migrator.ini file."""
-    output = args.output if hasattr(args, "output") and args.output else "config_migrator.sample.ini"
-    generate_sample_config(output)
-    return 0
-
-
+# -- Step 17 ------------------------------------------------------------------
 def cmd_setup_reverse(args):
-    """Setup reverse replication for rollback capability."""
+    """Step 17: Setup reverse replication for rollback capability."""
     cfg = Config(args.config)
     migrator = Migrator(cfg)
-    print("\n=== Setup REVERSE Replication (Rollback) ===")
+    if args.dry_run:
+        print("[DRY-RUN] Would setup reverse replication")
+        return 0
+    print("\n=== Step 17 — Setup REVERSE Replication (Rollback) ===")
     success, msg, cmds, outs = migrator.setup_reverse_replication()
     print_status(success, msg)
     print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
+# -- Utilities ---------------------------------------------------------------
+
+def cmd_wait_sync(args):
+    """Utility: Wait for replication to be in 'streaming' state and fully synced."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    print("\n=== Waiting for replication sync ===")
+    success, msg, _, _ = migrator.wait_for_sync(timeout=300, show_progress=True)
+    print_status(success, msg)
     return 0 if success else 1
 
 
@@ -436,15 +442,16 @@ def cmd_cleanup_reverse(args):
     return 0 if success else 1
 
 
-def cmd_sync_lobs(args):
-    """Synchronize Large Objects (LOBs/BLOBs) and update OID references."""
-    cfg = Config(args.config)
-    migrator = Migrator(cfg)
-    if args.dry_run:
-        print("[DRY-RUN] Would synchronize Large Objects (LOBs) and update OID references")
-        return 0
-    print("\n=== Synchronize Large Objects (LOBs) ===")
-    success, msg, cmds, outs = migrator.sync_large_objects()
-    print_status(success, msg)
-    print_verbose_execution(args, cmds, outs)
-    return 0 if success else 1
+def cmd_tui(args):
+    """Launch the interactive Textual TUI."""
+    from src.main import MigratorApp
+    app = MigratorApp(args.config)
+    app.run()
+    return 0
+
+
+def cmd_generate_config(args):
+    """Generate a sample config_migrator.ini file."""
+    output = args.output if hasattr(args, "output") and args.output else "config_migrator.sample.ini"
+    generate_sample_config(output)
+    return 0

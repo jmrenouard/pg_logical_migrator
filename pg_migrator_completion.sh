@@ -10,7 +10,7 @@ _pg_migrator_completion() {
     opts="-h --help -V --version -c --config --results-dir --loglevel --log-file --sync-delay -n --dry-run -v --verbose --use-stats"
     
     # Subcommands
-    subcmds="check diagnose params migrate-schema-pre-data migrate-schema-post-data setup-pub setup-sub repl-status repl-progress sync-sequences enable-triggers refresh-matviews reassign-owner audit-objects validate-rows cleanup setup-reverse cleanup-reverse sync-lobs init-replication post-migration tui generate-config"
+    subcmds="check diagnose params migrate-schema-pre-data setup-pub setup-sub repl-progress refresh-matviews sync-sequences terminate-repl sync-lobs enable-triggers reassign-owner audit-objects validate-rows cleanup setup-reverse progress wait-sync cleanup-reverse init-replication post-migration tui generate-config"
 
     # If the previous word is an option that expects a value
     case "${prev}" in

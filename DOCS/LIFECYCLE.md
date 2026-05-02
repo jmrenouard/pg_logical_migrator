@@ -26,7 +26,7 @@ The most critical phase where application traffic is redirected.
     - **Sequences**: Synchronize all sequence values (`sync-sequences`).
     - **Large Objects**: Manually migrate binary data (`sync-lobs`).
     - **Materialized Views**: Refresh data on the target (`refresh-matviews`).
-- **Post-Data Schema**: Create indexes and constraints (`migrate-schema-post-data`) once initial data is landed.
+- **Post-Data Schema**: Create indexes and constraints (`terminate-repl`) once initial data is landed.
 - **Verification**: Perform final object audits and row count parity checks.
 - **Cutover**: Point the application connection string to the new destination instance.
 

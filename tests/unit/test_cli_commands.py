@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from src.cli.commands import (
     cmd_check, cmd_diagnose, cmd_params, cmd_migrate_schema_pre_data,
     cmd_migrate_schema_post_data, cmd_setup_pub, cmd_setup_sub,
-    cmd_repl_status, cmd_repl_progress, cmd_sync_sequences,
+    cmd_repl_progress, cmd_sync_sequences,
     cmd_enable_triggers, cmd_disable_triggers, cmd_refresh_matviews,
     cmd_reassign_owner, cmd_audit_objects, cmd_validate_rows,
     cmd_cleanup, cmd_tui, cmd_generate_config, cmd_setup_reverse,
@@ -122,21 +122,6 @@ def test_cmd_setup_sub(mock_migrator, mock_cfg, mock_args):
     mock_cfg_instance.get_replication.return_value = {"subscription_name": "sub"}
     assert cmd_setup_sub(mock_args) == 0
 
-@patch("src.cli.commands.Config")
-@patch("src.cli.commands.Migrator")
-def test_cmd_repl_status(mock_migrator, mock_cfg, mock_args):
-    mock_mig_instance = mock_migrator.return_value
-    mock_mig_instance.get_replication_status.return_value = {
-        "publisher": [{"side": "SOURCE", "pid": 1}],
-        "subscriber": [{"side": "DEST", "pid": 2}],
-        "slots": [{"side": "SOURCE", "slot_name": "test"}],
-        "publications": [{"side": "SOURCE", "pubname": "test"}]
-    }
-    
-    assert cmd_repl_status(mock_args) == 0
-
-    mock_mig_instance.get_replication_status.return_value = {}
-    assert cmd_repl_status(mock_args) == 1
 
 @patch("src.cli.commands.Config")
 @patch("src.cli.commands.Migrator")
@@ -260,7 +245,7 @@ def test_cmd_validate_rows(mock_val, mock_bc, mock_cfg, mock_args):
 @patch("src.cli.commands.Migrator")
 def test_cmd_cleanup(mock_migrator, mock_cfg, mock_args):
     mock_mig_instance = mock_migrator.return_value
-    mock_mig_instance.step12_terminate_replication.return_value = (True, "msg", [], [])
+    mock_mig_instance.step10_terminate_replication.return_value = (True, "msg", [], [])
     
     assert cmd_cleanup(mock_args) == 0
     

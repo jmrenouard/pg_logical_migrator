@@ -116,7 +116,7 @@ def test_cmd_post_migration_success(mock_rg, mock_val, mock_ps, mock_mig, mock_d
     mock_mig_instance = mock_mig.return_value
     mock_mig_instance.wait_for_sync.return_value = (True, "msg", [], [])
     mock_mig_instance.step4b_migrate_schema_post_data.return_value = (True, "msg", [], [])
-    mock_mig_instance.step12_terminate_replication.return_value = (True, "msg", [], [])
+    mock_mig_instance.step10_terminate_replication.return_value = (True, "msg", [], [])
     
     # Mock validator
     mock_val_instance = mock_val.return_value

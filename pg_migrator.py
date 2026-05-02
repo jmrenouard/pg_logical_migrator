@@ -17,8 +17,8 @@ __version__ = "1.3.2"
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 from src.cli.commands import (
     cmd_check, cmd_diagnose, cmd_params,
-    cmd_migrate_schema_pre_data, cmd_migrate_schema_post_data,
-    cmd_setup_pub, cmd_setup_sub, cmd_repl_status, cmd_repl_progress,
+    cmd_migrate_schema_pre_data, cmd_terminate_replication,
+    cmd_setup_pub, cmd_setup_sub, cmd_progress, cmd_wait_sync,
     cmd_sync_sequences, cmd_enable_triggers, cmd_disable_triggers,
     cmd_refresh_matviews, cmd_reassign_owner,
     cmd_audit_objects, cmd_validate_rows, cmd_cleanup, cmd_setup_reverse,
@@ -130,8 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_diag = sub.add_parser(
         "diagnose",
         parents=[global_parser],
-        help="Step 2  — Pre-migration diagnostics (PK, LOBs, sequences)",
-        description="Scan the source database for objects that may block logical replication.",
+        help="Step 2  — Database diagnostics and compatibility scan",
+        description="Scan for Primary Keys, LOBs, Sequences, Unlogged tables, and Materialized Views.",
     )
     p_diag.set_defaults(func=cmd_diagnose)
 
@@ -139,32 +139,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_params = sub.add_parser(
         "params",
         parents=[global_parser],
-        help="Step 3  — Verify replication parameters (wal_level, etc.)",
-        description="Check that wal_level, max_replication_slots, max_wal_senders are correct.",
+        help="Step 3  — Verify PostgreSQL replication parameters",
+        description="Confirm mandatory settings (wal_level, slots, workers) on both instances.",
     )
     p_params.set_defaults(func=cmd_params)
 
-    # Step 4a — migrate-schema-pre-data
+    # Step 4 — migrate-schema-pre-data
     p_schema_pre = sub.add_parser(
         "migrate-schema-pre-data",
         parents=[global_parser],
-        help="Step 4a — Copy schema pre-data from source to destination",
-        description="Run pg_dump -s --section=pre-data on source and pipe into psql on destination.",
+        help="Step 4  — Schema (pre-data): Deploy base structures",
+        description="Deploy schemas, tables, types, and views from source to destination.",
     )
+    p_schema_pre.add_argument("--drop-dest", action="store_true", default=False, help="Drop and recreate destination database before migration")
     p_schema_pre.set_defaults(func=cmd_migrate_schema_pre_data)
-    p_schema_pre.add_argument(
-        "--drop-dest",
-        action="store_true",
-        default=False,
-        help="Drop and recreate destination database before migration",
-    )
+
+    # --- Phase 2: Execution ---
 
     # Step 5 — setup-pub
     p_pub = sub.add_parser(
         "setup-pub",
         parents=[global_parser],
-        help="Step 5  — Create publication on source",
-        description="DROP + CREATE PUBLICATION on the source.",
+        help="Step 5  — Setup publication on source database",
+        description="Create logical replication publication for the target schemas.",
     )
     p_pub.set_defaults(func=cmd_setup_pub)
 
@@ -172,28 +169,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_sub = sub.add_parser(
         "setup-sub",
         parents=[global_parser],
-        help="Step 6  — Create subscription on destination",
-        description="DROP + CREATE SUBSCRIPTION on the destination pointing to the source publication.",
+        help="Step 6  — Setup subscription on destination database",
+        description="Create logical replication subscription and trigger initial data copy.",
     )
     p_sub.set_defaults(func=cmd_setup_sub)
 
-    # Step 7 — repl-status
-    p_repl = sub.add_parser(
-        "repl-status",
-        parents=[global_parser],
-        help="Step 7  — Show replication status",
-        description="Query pg_stat_subscription to display current replication state.",
-    )
-    p_repl.set_defaults(func=cmd_repl_status)
-
-    # repl-progress
+    # Step 7 — repl-progress
     p_prog = sub.add_parser(
         "repl-progress",
         parents=[global_parser],
-        help="Monitor progress of initial data copy",
-        description="Show individual table sync states and active COPY progress.",
+        help="Step 7  — Monitor initial data copy progress",
+        description="Interactive monitor showing individual table sync states and COPY progress.",
     )
-    p_prog.set_defaults(func=cmd_repl_progress)
+    p_prog.set_defaults(func=cmd_progress)
+
+    # --- Phase 3: Finalization ---
 
     # Step 8 — refresh-matviews
     p_mv = sub.add_parser(
@@ -204,54 +194,60 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_mv.set_defaults(func=cmd_refresh_matviews)
 
-    # Step 9/10 — sync-sequences
+    # Step 9 — sync-sequences
     p_seq = sub.add_parser(
         "sync-sequences",
         parents=[global_parser],
-        help="Steps 9/10 — Synchronize sequence values",
+        help="Step 9  — Synchronize sequence values",
         description="Read current sequence values from source and apply them on destination.",
     )
     p_seq.set_defaults(func=cmd_sync_sequences)
 
-    # Step 11 — enable-triggers
+    # Step 10 — terminate-repl
+    p_term = sub.add_parser(
+        "terminate-repl",
+        parents=[global_parser],
+        help="Step 10 — Terminate replication & Schema (post-data)",
+        description="Stop logical replication and deploy indexes, FKs, and constraints.",
+    )
+    p_term.set_defaults(func=cmd_terminate_replication)
+
+    # Step 11 — sync-lobs
+    p_lob = sub.add_parser(
+        "sync-lobs",
+        parents=[global_parser],
+        help="Step 11 — Synchronize Large Objects (LOBs)",
+        description="Manually migrate binary data (OIDs) and update table references.",
+    )
+    p_lob.set_defaults(func=cmd_sync_lobs)
+
+    # Step 12 — enable-triggers
     p_trig = sub.add_parser(
         "enable-triggers",
         parents=[global_parser],
-        help="Step 11 — Enable all triggers on destination",
-        description="ALTER TABLE … ENABLE TRIGGER ALL on every user table in the destination.",
+        help="Step 12 — Enable all triggers on destination",
+        description="Restore application-level trigger logic on the target database.",
     )
     p_trig.set_defaults(func=cmd_enable_triggers)
-
-    # Step 12 — migrate-schema-post-data
-    p_schema_post = sub.add_parser(
-        "migrate-schema-post-data",
-        parents=[global_parser],
-        help="Step 12 — Copy schema post-data from source to destination",
-        description="Run pg_dump -s --section=post-data on source and pipe into psql on destination.",
-    )
-    p_schema_post.set_defaults(func=cmd_migrate_schema_post_data)
 
     # Step 13 — reassign-owner
     p_owner = sub.add_parser(
         "reassign-owner",
         parents=[global_parser],
-        help="Step 13 — Reassign ownership of all objects on destination",
-        description="ALTER … OWNER TO for every object (database, schemas, tables, views, matviews, sequences, functions, types) on the destination.",
+        help="Step 13 — Reassign object ownership",
+        description="Set correct role owners for all database objects on the destination.",
     )
-    p_owner.add_argument(
-        "--owner",
-        metavar="ROLE",
-        default=None,
-        help="Target owner role (default: destination user from config)",
-    )
+    p_owner.add_argument("--owner", metavar="ROLE", default=None, help="Target owner role (default: destination user)")
     p_owner.set_defaults(func=cmd_reassign_owner)
+
+    # --- Phase 4: Validation & Cleanup ---
 
     # Step 14 — audit-objects
     p_audit = sub.add_parser(
         "audit-objects",
         parents=[global_parser],
-        help="Step 14 — Compare object counts (tables, views, indexes, sequences, functions)",
-        description="Count objects on both databases and show differences.",
+        help="Step 14 — Perform structural object audit",
+        description="Verify parity of tables, indexes, views, and sequences between databases.",
     )
     p_audit.set_defaults(func=cmd_audit_objects)
 
@@ -259,8 +255,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_rows = sub.add_parser(
         "validate-rows",
         parents=[global_parser],
-        help="Step 15 — Compare row counts per table",
-        description="SELECT COUNT(*) on every table in both source and destination.",
+        help="Step 15 — Perform row count parity validation",
+        description="Compare row counts for all replicated tables to ensure data consistency.",
     )
     p_rows.set_defaults(func=cmd_validate_rows)
 
@@ -268,8 +264,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_clean = sub.add_parser(
         "cleanup",
         parents=[global_parser],
-        help="Step 16 — Drop subscription, publication, and replication slot",
-        description="Destructive cleanup: removes all replication objects. Run AFTER validation.",
+        help="Step 16 — Decommission replication objects",
+        description="Destructive cleanup: removes subscription, publication, and slots.",
     )
     p_clean.set_defaults(func=cmd_cleanup)
 
@@ -277,72 +273,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_rev = sub.add_parser(
         "setup-reverse",
         parents=[global_parser],
-        help="Step 17 — Setup reverse replication for rollback",
-        description="Creates publication on destination and subscription on source to sync changes back.",
+        help="Step 17 — Setup reverse replication (Rollback path)",
+        description="Prepare a path to sync changes back from destination to source.",
     )
     p_rev.set_defaults(func=cmd_setup_reverse)
 
+    # --- Utilities ---
+
+    # progress
+    p_p = sub.add_parser("progress", parents=[global_parser], help="Utility: Quick replication status check")
+    p_p.set_defaults(func=cmd_progress)
+
+    # wait-sync
+    p_w = sub.add_parser("wait-sync", parents=[global_parser], help="Utility: Wait for replication synchronization")
+    p_w.set_defaults(func=cmd_wait_sync)
+
     # cleanup-reverse
-    p_cln_rev = sub.add_parser(
-        "cleanup-reverse",
-        parents=[global_parser],
-        help="Cleanup reverse replication objects",
-        description="Removes reverse publication (on DEST) and reverse subscription (on SOURCE).",
-    )
-    p_cln_rev.set_defaults(func=cmd_cleanup_reverse)
+    p_cr = sub.add_parser("cleanup-reverse", parents=[global_parser], help="Utility: Cleanup reverse replication objects")
+    p_cr.set_defaults(func=cmd_cleanup_reverse)
 
-    # sync-lobs
-    p_lob = sub.add_parser(
-        "sync-lobs",
-        parents=[global_parser],
-        help="Synchronize Large Objects (LOBs) and update references",
-        description="Manually export LOBs from source and import them to destination, updating OID columns.",
-    )
-    p_lob.set_defaults(func=cmd_sync_lobs)
+    # generate-config
+    p_gen = sub.add_parser("generate-config", parents=[global_parser], help="Utility: Generate sample configuration file")
+    p_gen.add_argument("-o", "--output", default="config_migrator.sample.ini", help="Output path")
+    p_gen.set_defaults(func=cmd_generate_config)
 
-    # init-replication
-    p_init = sub.add_parser(
-        "init-replication",
-        parents=[global_parser],
-        help="Initialize replication and update elements WITHOUT stopping replication",
-        description="Runs schema migration, setups pub/sub, syncs objects and validates. Leaves replication active.",
-    )
+    # --- Automated Pipelines ---
+
+    p_init = sub.add_parser("init-replication", parents=[global_parser], help="Automated Phase 1 & 2 (Init replication)")
+    p_init.add_argument("--drop-dest", action="store_true", help="Drop destination first")
+    p_init.add_argument("--no-wait", action="store_true", help="Do not wait for initial sync")
     p_init.set_defaults(func=cmd_init_replication)
-    p_init.add_argument("--drop-dest", action="store_true", default=False, help="Drop and recreate destination database before migration")
-    p_init.add_argument("--no-wait", action="store_true", default=False, help="Do not wait for initial synchronization to complete")
 
-    # post-migration
-    p_post = sub.add_parser(
-        "post-migration",
-        parents=[global_parser],
-        help="Stop replication and update elements on destination",
-        description="Terminates replication, refreshes matviews, sequences, triggers, then validates.",
-    )
+    p_post = sub.add_parser("post-migration", parents=[global_parser], help="Automated Phase 3 & 4 (Cutover & Validation)")
     p_post.set_defaults(func=cmd_post_migration)
 
-    # TUI — interactive mode
-    p_tui = sub.add_parser(
-        "tui",
-        parents=[global_parser],
-        help="Launch the interactive Terminal UI (Textual)",
-        description="Full-screen TUI dashboard for supervised step-by-step migration.",
-    )
+    p_tui = sub.add_parser("tui", parents=[global_parser], help="Launch interactive Terminal UI dashboard")
     p_tui.set_defaults(func=cmd_tui)
-
-    # Generate config file
-    p_gen = sub.add_parser(
-        "generate-config",
-        parents=[global_parser],
-        help="Generate a sample configuration file",
-        description="Write a sample config_migrator.ini to disk.",
-    )
-    p_gen.add_argument(
-        "-o", "--output",
-        default="config_migrator.sample.ini",
-        metavar="FILE",
-        help="Output path for generated config (default: config_migrator.sample.ini)",
-    )
-    p_gen.set_defaults(func=cmd_generate_config)
 
     return parser
 

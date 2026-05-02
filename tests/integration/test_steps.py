@@ -95,7 +95,7 @@ def test_step14_row_counts(db_validator):
 
 def test_step12_cleanup(migrator, source_client, dest_client):
     """Step 12: Cleanup (Termination)."""
-    success, msg, *_ = migrator.step12_terminate_replication()
+    success, msg, *_ = migrator.step10_terminate_replication()
     assert success is True
     
     # Verify removal

@@ -140,9 +140,10 @@ class MigratorApp(App):
                             with Horizontal(classes="btn_group"):
                                 yield Button("MatViews", id="step_8", classes="btn-final")
                                 yield Button("Sequences", id="step_9", classes="btn-final")
-                                yield Button("LOBs Sync", id="step_15b", classes="btn-final")
-                                yield Button("Schema Post", id="step_12", classes="btn-final")
-                                yield Button("Triggers", id="step_11", classes="btn-final")
+                                yield Button("Schema Post", id="step_10", classes="btn-final")
+                                yield Button("LOBs Sync", id="step_11", classes="btn-final")
+                                yield Button("Triggers", id="step_12", classes="btn-final")
+                                yield Button("Ownership", id="step_13", classes="btn-final")
                         with TabPane("4. Audit"):
                             with Horizontal(classes="btn_group"):
                                 yield Button("Objects", id="step_14", classes="btn-valid")
@@ -245,9 +246,31 @@ class MigratorApp(App):
                         table.add_row(t['table_name'], t['state'], f"{t['percent']}%")
                     self.update_display(table, label)
 
-            elif btn_id == "step_15b":
+            elif btn_id == "step_8":
+                s, m, c, o = self.post_sync.refresh_materialized_views()
+                self.update_display(Panel(m, title="MatViews Refresh"), label)
+
+            elif btn_id == "step_9":
+                s, m, c, o = self.post_sync.sync_sequences()
+                self.update_display(Panel(m, title="Sequences Sync"), label)
+
+            elif btn_id == "step_10":
+                s, m, c, o = self.migrator.step10_terminate_replication()
+                self.update_display(Panel(m, title="Terminate Replication"), label)
+                s2, m2, c2, o2 = self.migrator.step4b_migrate_schema_post_data()
+                self.update_display(Panel(m2, title="Schema Post-Data"), label)
+
+            elif btn_id == "step_11":
                 s, m, c, o = self.migrator.sync_large_objects()
                 self.update_display(Panel(m, title="LOBs Sync", border_style="green" if s else "red"), label)
+
+            elif btn_id == "step_12":
+                s, m, c, o = self.post_sync.enable_triggers()
+                self.update_display(Panel(m, title="Enable Triggers"), label)
+
+            elif btn_id == "step_13":
+                s, m, c, o = self.post_sync.reassign_ownership()
+                self.update_display(Panel(m, title="Reassign Ownership"), label)
 
             elif btn_id == "step_14":
                 s, m, c, o, rep = self.validator.audit_objects()
@@ -311,15 +334,43 @@ class MigratorApp(App):
     @work(exclusive=True, thread=True)
     def _run_post_pipeline(self):
         label = "POST PIPELINE"
-        self.call_from_thread(self.update_display, Panel("Starting Automated Post-Migration Pipeline...", border_style="blue"), label)
+        self.call_from_thread(self.update_display, Panel("Starting Automated Post-Migration Pipeline (Phase 3 & 4)...", border_style="blue"), label)
         try:
+            # Phase 3: Finalize
+            self.call_from_thread(self.update_display, Panel("Step 7: Waiting for final sync..."), label)
             self.migrator.wait_for_sync(show_progress=False)
-            self.migrator.sync_large_objects()
-            self.migrator.step12_terminate_replication()
-            self.migrator.step4b_migrate_schema_post_data()
+            
+            self.call_from_thread(self.update_display, Panel("Step 8: Refreshing MatViews..."), label)
+            self.post_sync.refresh_materialized_views()
+            
+            self.call_from_thread(self.update_display, Panel("Step 9: Syncing Sequences..."), label)
             self.post_sync.sync_sequences()
+            
+            self.call_from_thread(self.update_display, Panel("Step 10: Terminating Replication & Schema Post-Data..."), label)
+            self.migrator.step10_terminate_replication()
+            self.migrator.step4b_migrate_schema_post_data()
+            
+            self.call_from_thread(self.update_display, Panel("Step 11: Syncing Large Objects (LOBs)..."), label)
+            self.migrator.sync_large_objects()
+            
+            self.call_from_thread(self.update_display, Panel("Step 12: Enabling Triggers..."), label)
             self.post_sync.enable_triggers()
-            self.call_from_thread(self.update_display, Panel("Pipeline Completed Successfully", title=label, border_style="green"), label)
+            
+            self.call_from_thread(self.update_display, Panel("Step 13: Reassigning Ownership..."), label)
+            self.post_sync.reassign_ownership()
+            
+            # Phase 4: Validate
+            self.call_from_thread(self.update_display, Panel("Step 14: Auditing Objects..."), label)
+            self.validator.audit_objects()
+            
+            self.call_from_thread(self.update_display, Panel("Step 15: Comparing Row Parity..."), label)
+            self.validator.compare_row_counts()
+            
+            from src.report import ReportGenerator
+            self.call_from_thread(self.update_display, Panel("Generating Final Report..."), label)
+            ReportGenerator(self.config).generate_html_report()
+
+            self.call_from_thread(self.update_display, Panel("Post-Migration Pipeline Completed Successfully", title=label, border_style="green"), label)
         except Exception as e:
             self.call_from_thread(self.update_display, Panel(f"Pipeline Failed: {e}", title=label, border_style="red"), label)
 

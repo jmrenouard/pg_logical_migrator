@@ -1,8 +1,9 @@
 import logging
 import subprocess
-import psycopg
+
 from src.db import PostgresClient
 import src.db as _db_module
+import psycopg
 from psycopg import sql
 
 class Migrator:
@@ -33,7 +34,8 @@ class Migrator:
             # Pre-cleanup target DB: terminate active logical replication slots and subscriptions
             try:
                 tgt_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
-                with psycopg.connect(tgt_conn_str, autocommit=True) as tgt_conn:
+                tgt_client = PostgresClient(tgt_conn_str)
+                with tgt_client.get_conn(autocommit=True) as tgt_conn:
                     # Safely drop subscriptions
                     try:
                         subs = tgt_conn.execute("SELECT subname FROM pg_subscription").fetchall()
@@ -60,7 +62,8 @@ class Migrator:
             # Pre-cleanup source DB: drop the replication slot if it was orphaned
             try:
                 src_conn_str = f"host={src_host} port={src_port} user={src_user} dbname={src_db} password={src_pass}"
-                with psycopg.connect(src_conn_str, autocommit=True) as src_conn:
+                src_client = PostgresClient(src_conn_str)
+                with src_client.get_conn(autocommit=True) as src_conn:
                     sub_name = self.replication_cfg.get('subscription_name', 'migrator_sub')
                     try:
                         slots = src_conn.execute("SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s", (sub_name,)).fetchall()
@@ -76,7 +79,8 @@ class Migrator:
 
             admin_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname=postgres password={dst_pass}"
             try:
-                with psycopg.connect(admin_conn_str, autocommit=True) as conn:
+                admin_client = PostgresClient(admin_conn_str)
+                with admin_client.get_conn(autocommit=True) as conn:
                     # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
                     try:
                         conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
@@ -436,8 +440,8 @@ class Migrator:
             "publications": pub_info_status
         }
 
-    def step12_terminate_replication(self):
-        """Step 12: Cleanup publication and subscription."""
+    def step10_terminate_replication(self):
+        """Step 10: Cleanup publication and subscription."""
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
         
@@ -691,7 +695,9 @@ class Migrator:
                 src_conn_str = self.config.get_source_conn()
                 dst_conn_str = self.config.get_dest_conn()
                 
-                with psycopg.connect(src_conn_str) as s_conn, psycopg.connect(dst_conn_str) as d_conn:
+                s_client = PostgresClient(src_conn_str)
+                d_client = PostgresClient(dst_conn_str)
+                with s_client.get_conn() as s_conn, d_client.get_conn() as d_conn:
                     # LOB operations must be in a transaction
                     s_conn.autocommit = False
                     d_conn.autocommit = False

@@ -198,14 +198,14 @@ python pg_migrator.py migrate-schema-pre-data # SOURCE → DEST
 | --- | --- | --- | --- |
 | `setup-pub` | 5 | **SOURCE** | `DROP PUBLICATION IF EXISTS` + `CREATE PUBLICATION … FOR ALL TABLES` on **SOURCE** |
 | `setup-sub` | 6 | **DEST** | `DROP SUBSCRIPTION IF EXISTS` + `CREATE SUBSCRIPTION … CONNECTION '…' PUBLICATION …` on **DEST** |
-| `repl-status` | 7 | **SOURCE + DEST** | Query `pg_stat_subscription` on **DEST** and `pg_stat_replication`, `pg_replication_slots` on **SOURCE** |
 | `repl-progress` | 7 | **SOURCE + DEST** | Monitor byte-level data copy progress during initial synchronization |
+| `progress` | — | **SOURCE + DEST** | Utility: Quick one-shot status of replication progress |
 
 ```bash
 python pg_migrator.py setup-pub        # SOURCE
 python pg_migrator.py setup-sub        # DEST
-python pg_migrator.py repl-status      # SOURCE + DEST
-python pg_migrator.py repl-progress    # SOURCE + DEST
+python pg_migrator.py repl-progress    # Monitor progress (interactive)
+python pg_migrator.py progress         # Show progress (one-shot)
 ```
 
 ### Finalization (Phase 3)
@@ -214,16 +214,15 @@ python pg_migrator.py repl-progress    # SOURCE + DEST
 | --- | --- | --- | --- |
 | `refresh-matviews` | 8 | **DEST** | `REFRESH MATERIALIZED VIEW` for every materialized view on **DEST** |
 | `sync-sequences` | 9 | **SOURCE → DEST** | `SELECT last_value, is_called` on **SOURCE**, then `SELECT setval(…)` on **DEST** |
-| `migrate-schema-post-data`| 10 | **SOURCE → DEST** | `pg_dump -s --section=post-data` on **SOURCE** piped into `psql` on **DEST** |
+| `terminate-repl` | 10 | **SOURCE → DEST** | Terminate replication and apply `post-data` schema (indexes, FKs) |
 | `sync-lobs` | 11 | **SOURCE → DEST** | Synchronize Large Objects (LOBs) manually via temporary files and update matching OIDs |
 | `enable-triggers` | 12 | **DEST** | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table on **DEST** |
-| `disable-triggers` | — | **DEST** | Utility: `ALTER TABLE … DISABLE TRIGGER ALL` on every user table on **DEST** |
 | `reassign-owner` | 13 | **DEST** | `REASSIGN OWNED BY ... TO ...` to ensure proper ownership matching source |
 
 ```bash
 python pg_migrator.py refresh-matviews   # DEST
 python pg_migrator.py sync-sequences     # SOURCE → DEST
-python pg_migrator.py migrate-schema-post-data # SOURCE → DEST
+python pg_migrator.py terminate-repl # SOURCE → DEST
 python pg_migrator.py sync-lobs          # SOURCE → DEST
 python pg_migrator.py enable-triggers    # DEST
 python pg_migrator.py reassign-owner     # DEST
@@ -285,30 +284,30 @@ Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashbo
 │                                 │                                       │
 │  ── OPTIONS ────────────────    │  ┌── Result Panel ──────────────────┐ │
 │  [ ] Drop Dest Schema          │  │                                  │ │
-│  [ ] Monitor Replication        │  │  Step output shown here (Panel   │ │
+│  [ ] Verbose Mode               │  │  Step output shown here (Panel   │ │
 │                                 │  │  or Rich Table)                  │ │
 │  ── STEPS ──────────────────    │  └──────────────────────────────────┘ │
 │  [1. Check Connectivity]    🔵  │                                       │
-│  [2. Run Diagnostics]       🔵  │  ┌── Live Log ─────────────────────┐ │
-│  [3. Verify Parameters]     🔵  │  │ > TUI Initialized. Ready...    │ │
-│  [➤ Apply Parameters]       🔵  │  │ > Running Step 1...            │ │
-│  [4a. Schema Pre-data]      🟠  │  │ > ✔ Step 1 completed.          │ │
-│  [4b. Schema Post-data]     🟠  │  └──────────────────────────────────┘ │
-│  [5. Setup Publication]     🟠  │  └──────────────────────────────────┘ │
-│  [6. Setup Subscription]    🟠  │                                       │
-│  [7. Replication Status]    🟢  │                                       │
-│  [8/9. Sync Sequences]      🟣  │                                       │
-│  [10. Enable Triggers]      🟣  │                                       │
-│  [➤ Disable Triggers]       🟣  │                                       │
-│  [11. Refresh MatViews]     🟣  │                                       │
-│  [13. Object Audit]         🟡  │                                       │
-│  [14. Row Parity]           🟡  │                                       │
-│  [12. STOP/CLEANUP]         🔴  │                                       │
+│  [2. Run Diagnostics]       🔵  │  ┌── Live History ──────────────────┐ │
+│  [3. Verify Parameters]     🔵  │  │ 10:24:00 - Check Connectivity  │ │
+│  [4. Schema Pre-data]       🔵  │  │ 10:24:05 - Run Diagnostics     │ │
+│  [5. Setup Publication]     🟠  │  │                                  │ │
+│  [6. Setup Subscription]    🟠  │  └──────────────────────────────────┘ │
+│  [7. Progress Status]       🟠  │  └──────────────────────────────────┘ │
+│  [8. Refresh MatViews]      🟣  │                                       │
+│  [9. Sync Sequences]        🟣  │                                       │
+│  [10. Terminate & Post]     🟣  │                                       │
+│  [11. Sync LOBs]            🟣  │                                       │
+│  [12. Enable Triggers]      🟣  │                                       │
+│  [13. Reassign Ownership]   🟣  │                                       │
+│  [14. Object Audit]         🟡  │                                       │
+│  [15. Row Parity]           🟡  │                                       │
+│  [16. Cleanup Slots]        🔴  │                                       │
+│  [17. Setup Reverse]        🔴  │                                       │
 │                                 │                                       │
 │  ── AUTOMATION & UTILS ─────    │                                       │
 │  [▶ Init Replication]       🟩  │                                       │
 │  [▶ Post Migration]         🟩  │                                       │
-│  [⚙ Generate Config]        ⬜  │                                       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -326,21 +325,22 @@ Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashbo
 | Button | CLI Equivalent | Server | Description |
 | --- | --- | --- | --- |
 | 1. Check Connectivity | `check` | **SOURCE + DEST** | Test connectivity to source and destination |
-| 2. Run Diagnostics | `diagnose` | **SOURCE** | Pre-migration diagnostics (PK, LOBs, sequences, unlogged/temp/foreign tables, materialized views) |
+| 2. Run Diagnostics | `diagnose` | **SOURCE** | Pre-migration diagnostics (PK, LOBs, sequences, etc.) |
 | 3. Verify Parameters | `params` | **SOURCE + DEST** | Verify replication parameters (`wal_level`, etc.) |
-| ➤ Apply Parameters | `apply-params` | **SOURCE + DEST** | Apply missing replication parameters via `ALTER SYSTEM` |
-| 4a. Schema Pre-data | `migrate-schema-pre-data` | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on SOURCE piped to `psql` on DEST. Honors `Drop Dest Schema` checkbox |
-| 4b. Schema Post-data | `migrate-schema-post-data` | **SOURCE → DEST** | `pg_dump -s --section=post-data` on SOURCE piped to `psql` on DEST |
+| 4. Schema Pre-data | `migrate-schema-pre-data` | **SOURCE → DEST** | Deploy base structures. Honors `Drop Dest` checkbox |
 | 5. Setup Publication | `setup-pub` | **SOURCE** | Create publication on SOURCE |
-| 6. Setup Subscription | `setup-sub` | **DEST** | Create subscription on DEST (runs asynchronously) |
-| 7. Replication Status | `repl-status` | **SOURCE + DEST** | Query `pg_stat_subscription` on **DEST** and `pg_stat_replication`, `pg_replication_slots` on **SOURCE** |
-| 8/9. Sync Sequences | `sync-sequences` | **SOURCE → DEST** | Read sequence values from SOURCE, apply on DEST |
-| 10. Enable Triggers | `enable-triggers` | **DEST** | Enable all triggers on DEST tables |
-| ➤ Disable Triggers | `disable-triggers` | **DEST** | Disable all triggers on DEST tables |
-| 11. Refresh MatViews | `refresh-matviews` | **DEST** | Refresh materialized views on DEST |
-| 13. Object Audit | `audit-objects` | **SOURCE + DEST** | Compare object counts between databases |
-| 14. Row Parity | `validate-rows` | **SOURCE + DEST** | Compare row counts per table |
-| 12. STOP/CLEANUP | `cleanup` | **DEST + SOURCE** | `DROP SUBSCRIPTION` on DEST, `DROP PUBLICATION` on SOURCE |
+| 6. Setup Subscription | `setup-sub` | **DEST** | Create subscription on DEST (async) |
+| 7. Progress Status | `repl-progress` | **SOURCE + DEST** | Monitor replication progress |
+| 8. Refresh MatViews | `refresh-matviews` | **DEST** | Refresh materialized views on DEST |
+| 9. Sync Sequences | `sync-sequences` | **SOURCE → DEST** | Read sequences from SOURCE, apply on DEST |
+| 10. Terminate & Post | `terminate-repl` | **SOURCE → DEST** | Stop replication and apply post-data schema |
+| 11. Sync LOBs | `sync-lobs` | **SOURCE → DEST** | Synchronize Large Objects (LOBs) |
+| 12. Enable Triggers | `enable-triggers` | **DEST** | Enable all triggers on DEST tables |
+| 13. Reassign Ownership | `reassign-owner` | **DEST** | Reassign object ownership |
+| 14. Object Audit | `audit-objects` | **SOURCE + DEST** | Compare object counts between databases |
+| 15. Row Parity | `validate-rows` | **SOURCE + DEST** | Compare row counts per table |
+| 16. Cleanup Slots | `cleanup` | **DEST + SOURCE** | Drop subscription, publication, and slots |
+| 17. Setup Reverse | `setup-reverse` | **DEST → SOURCE** | Prepare reverse logical replication |
 
 **AUTOMATION & UTILS** — Pipeline and utility commands:
 
@@ -384,14 +384,16 @@ Runs the migration pipeline non-interactively in an incremental sequence via two
 
 ### B. Post Migration (`post-migration`)
 
-1. **Connectivity Check** (`checker.check_connectivity()` on **SOURCE + DEST**)
-2. **Cleanup Replication** (`migrator.step12_terminate_replication()` on **DEST + SOURCE**)
-3. **Schema Post-Data Migration** (`migrator.step4b_migrate_schema_post_data()` on **SOURCE → DEST**)
-4. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()` on **DEST**)
-5. **Sync Sequences** (`post_sync.sync_sequences()` on **SOURCE → DEST**)
-6. **Enable Triggers** (`post_sync.enable_triggers()` on **DEST**)
-7. **Object Audit** (`validator.audit_objects()` on **SOURCE + DEST**)
-8. **Row Parity Check** (`validator.compare_row_counts()` on **SOURCE + DEST**)
+1. **Connectivity Check** (`checker.check_connectivity()`)
+2. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()`) [Step 8]
+3. **Sync Sequences** (`post_sync.sync_sequences()`) [Step 9]
+4. **Terminate Replication & Schema Post-Data** (`migrator.step10_terminate_replication()` + `migrator.step4b_migrate_schema_post_data()`) [Step 10]
+5. **Sync Large Objects (LOBs)** (`migrator.sync_large_objects()`) [Step 11]
+6. **Enable Triggers** (`post_sync.enable_triggers()`) [Step 12]
+7. **Reassign Ownership** (`post_sync.reassign_ownership()`) [Step 13]
+8. **Object Audit** (`validator.audit_objects()`) [Step 14]
+9. **Row Parity Check** (`validator.compare_row_counts()`) [Step 15]
+10. **Report Generation** (Final Audit HTML)
 
 A timestamped HTML report is generated at the completion of *both* commands. If any step raises a fatal exception, a partial error report is written instead.
 
