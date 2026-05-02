@@ -89,6 +89,7 @@ def test_cmd_migrate_schema_pre_data(mock_migrator, mock_cfg, mock_args):
 @patch("src.cli.commands.Migrator")
 def test_cmd_migrate_schema_post_data(mock_migrator, mock_cfg, mock_args):
     mock_mig_instance = mock_migrator.return_value
+    mock_mig_instance.step10_terminate_replication.return_value = (True, "msg", [], [])
     mock_mig_instance.step4b_migrate_schema_post_data.return_value = (True, "msg", [], [])
     
     assert cmd_migrate_schema_post_data(mock_args) == 0

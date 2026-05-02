@@ -43,6 +43,7 @@ def test_sync_large_objects_success():
         mock_s_ctx = MagicMock()
         mock_d_ctx = MagicMock()
         mock_connect.side_effect = [mock_s_ctx, mock_d_ctx]
+        mock_pc_instance.get_conn.side_effect = [mock_s_ctx, mock_d_ctx]
         mock_s_ctx.__enter__.return_value = mock_s_conn
         mock_d_ctx.__enter__.return_value = mock_d_conn
         
@@ -93,6 +94,7 @@ def test_sync_large_objects_failure():
         mock_s_ctx = MagicMock()
         mock_d_ctx = MagicMock()
         mock_connect.side_effect = [mock_s_ctx, mock_d_ctx]
+        mock_pc_instance.get_conn.side_effect = [mock_s_ctx, mock_d_ctx]
         mock_s_ctx.__enter__.return_value = mock_s_conn
         mock_d_ctx.__enter__.return_value = mock_d_conn
         
@@ -123,6 +125,7 @@ def test_sync_large_objects_connection_failure():
             [{"id": 1, "c1": 12345}]
         ]
         mock_connect.side_effect = Exception("Connection Failed")
+        mock_pc_instance.get_conn.side_effect = Exception("Connection Failed")
         success, msg, cmds, outs = m.sync_large_objects()
         
         assert success is False
