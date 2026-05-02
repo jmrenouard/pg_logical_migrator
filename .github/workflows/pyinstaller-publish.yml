@@ -70,8 +70,8 @@ jobs:
           mkdir -p dist
 
           if [ "${{ runner.os }}" == "Linux" ]; then
-            echo "Building on Linux via almalinux:8 container for glibc backward compatibility"
-            docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace almalinux:8 bash -c "
+            echo "Building on Linux via registry.access.redhat.com/ubi8/ubi container for glibc backward compatibility"
+            docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace registry.access.redhat.com/ubi8/ubi bash -c "
               dnf install -y python3.11 python3.11-pip python3.11-devel python39 python39-pip python39-devel gcc &&
               if [ '${{ matrix.python_version }}' = '3.9' ]; then
                 PYTHON_CMD=python3.9
@@ -128,13 +128,13 @@ jobs:
           name: binary-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/
 
-      - name: Test Binary Execution in almalinux:8 container
+      - name: Test Binary Execution in registry.access.redhat.com/ubi8/ubi container
         run: |
           bin_file="dist/pg_migrator-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}"
           chmod +x "$bin_file"
-          # Run the binary inside an AlmaLinux 8 container to verify glibc 2.28 compatibility
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace almalinux:8.10 ./$bin_file --help
-          echo "Execution on almalinux:8 succeeded! glibc compatibility verified."
+          # Run the binary inside an UBI 8 container to verify glibc 2.28 compatibility
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace registry.access.redhat.com/ubi8/ubi ./$bin_file --help
+          echo "Execution on registry.access.redhat.com/ubi8/ubi succeeded! glibc compatibility verified."
 
   # 2. Create DEB and RPM packages (using nfpm)
   package-os:
