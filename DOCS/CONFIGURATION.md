@@ -20,32 +20,114 @@ Critical settings for the logical replication pipeline.
 - **dest_host_for_src / dest_port_for_src**: Host/Port used by the **source** to reach the **destination** during **reverse** replication.
 
 #### 🗂️ Target Schema & Database Topology Configuration
-The migrator is highly flexible and supports various replication topologies configured via the `.ini` file:
+The migrator is highly flexible and supports various replication topologies configured via the `.ini` file. Below are full examples of each supported configuration.
 
-1. **Single Schema / Single Database**
-   Configure your global `[source]` and `[destination]` blocks targeting a single database. Under `[replication]`, define exactly one schema:
-   `target_schema = public`
+---
 
-2. **Multiple Schemas / Single Database**
-   Under `[replication]`, define a comma-separated list of schemas:
-   `target_schema = public, auth, data`
+### Case 1: Single Schema / Single Database
+Replicating a single schema (e.g. `public`) from a single database.
 
-3. **Multiple Databases**
-   To replicate multiple databases simultaneously, define database-specific overrides in your `.ini` file using the `[database:<dbname>]` section syntax. This will override global settings for each specified database.
-   ```ini
-   [source]
-   host = global-db.internal
-   
-   [database:crm_db]
-   target_schema = public, crm_data
-   
-   [database:billing_db]
-   target_schema = invoices
-   ```
+```ini
+[source]
+host = 192.168.1.100
+port = 5432
+user = rep_user
+password = rep_pass
+database = my_database
 
-4. **All Schemas (Single or Multi-DB)**
-   Use `all` or `*` to automatically discover and replicate all user schemas in the target database(s) (ignoring system/extension schemas like `pg_catalog`, `postgis`, etc.):
-   `target_schema = all`
+[destination]
+host = 10.0.0.50
+port = 5432
+user = rep_user
+password = rep_pass
+
+[replication]
+publication_name = pub_single
+subscription_name = sub_single
+target_schema = public
+```
+
+---
+
+### Case 2: Multiple Schemas / Single Database
+Replicating specific schemas (e.g., `public`, `auth`, `data`) from a single database.
+
+```ini
+[source]
+host = 192.168.1.100
+user = rep_user
+password = rep_pass
+database = monolith_db
+
+[destination]
+host = 10.0.0.50
+user = rep_user
+password = rep_pass
+
+[replication]
+publication_name = pub_multi_schema
+subscription_name = sub_multi_schema
+# Use a comma-separated list of schemas
+target_schema = public, auth, data
+```
+
+---
+
+### Case 3: Multiple Databases (Multi-Tenant)
+Replicating multiple databases simultaneously. The orchestrator allows you to define a baseline global configuration and override specific settings (like schemas or specific source connection details) per database using the `[database:<dbname>]` section syntax.
+
+```ini
+[source]
+# Global defaults for all databases
+host = global-source.internal
+user = rep_user
+password = rep_pass
+
+[destination]
+# Global destination defaults
+host = global-dest.internal
+user = rep_user
+password = rep_pass
+
+[replication]
+publication_name = pub_global
+subscription_name = sub_global
+
+# Database 1: CRM Database overrides
+[database:crm_db]
+target_schema = public, crm_data
+
+# Database 2: Billing Database overrides
+[database:billing_db]
+target_schema = invoices
+source_port = 5433  # Overriding the port just for billing_db
+```
+
+---
+
+### Case 4: All Schemas (Single or Multi-DB)
+Automatically discovers and replicates all user-defined schemas in the target database(s). System and extension schemas (like `pg_catalog`, `information_schema`, `postgis`) are safely excluded.
+
+```ini
+[source]
+host = 192.168.1.100
+user = rep_user
+password = rep_pass
+database = legacy_db
+
+[destination]
+host = 10.0.0.50
+user = rep_user
+password = rep_pass
+
+[replication]
+publication_name = pub_all
+subscription_name = sub_all
+# Replicate everything
+target_schema = all
+```
+
+---
 
 ### 📝 [logging]
 - **loglevel**: Controls output verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
