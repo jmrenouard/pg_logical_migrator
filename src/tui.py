@@ -129,13 +129,20 @@ class MigratorApp(App):
         if '*' in self.databases:
             import os
             # Determine actual DBs from the source connection
-            sc = PostgresClient(self.config.get_source_conn())
-            res = sc.execute_query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
-            self.databases = [row['datname'] for row in res]
-            sc.close()
+            try:
+                sc = PostgresClient(self.config.get_source_conn())
+                res = sc.execute_query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+                self.databases = [row['datname'] for row in res]
+                sc.close()
+            except Exception as e:
+                # If connection fails, we fall back to a safe default or empty list
+                # This allows the user to fix the config in the TUI
+                import logging
+                logging.error(f"Failed to fetch databases from source: {e}")
+                self.databases = ['postgres']
             
         # Default to first DB
-        self.current_db = self.databases[0] if self.databases else None
+        self.current_db = self.databases[0] if self.databases else 'postgres'
         self._init_backend_for_db(self.current_db)
         self.history_data = []
 
