@@ -176,7 +176,8 @@ class MigratorApp(App):
             with Vertical(id="center_pane"):
                 with Horizontal(id="options_bar"):
                     db_options = [("ALL DATABASES", "ALL")] + [(db, db) for db in self.databases]
-                    yield Select(db_options, value="ALL" if len(self.databases) > 1 else self.databases[0], id="opt_database")
+                    db_val = "ALL" if len(self.databases) != 1 else self.databases[0]
+                    yield Select(db_options, value=db_val, id="opt_database")
                     yield Checkbox("Use Stats", id="opt_use_stats")
                     target_list = ", ".join(self.config.get_target_schemas())
                     yield Label(f" [dim]Schemas: {target_list}[/dim]")
