@@ -113,11 +113,9 @@ class Validator:
             logging.error(f"Failed to fetch row counts: {e}")
             return False, str(e), cmds, outs, []
 
-        summary = f"Compared {
-            len(report)} tables ({mode_label}). Diffs found: {
-            len(
-                [
-                    r for r in report if r['status'] != 'OK'])}"
+        n_tables = len(report)
+        n_diffs = len([r for r in report if r['status'] != 'OK'])
+        summary = f"Compared {n_tables} tables ({mode_label}). Diffs found: {n_diffs}"
         return True, summary, cmds, outs, report
 
     def audit_objects(self):

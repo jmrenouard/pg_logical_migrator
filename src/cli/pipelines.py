@@ -119,43 +119,30 @@ def cmd_init_replication(args):
         # Size Analysis
         sizes = checker.get_database_size_analysis(sc)
         if sizes:
-            diag_lines.append(
-                f"\nTotal Database Size: {
-                    sizes['database']['total_pretty']}")
+            db_size = sizes['database']['total_pretty']
+            diag_lines.append(f"\nTotal Database Size: {db_size}")
             diag_lines.append("\nTop 10 Tables by Size:")
             diag_lines.append(
-                f"{
-                    'Table':<45} {
-                    'Data':>10} {
-                    'Index':>10} {
-                    'Total':>10} {
-                        '%':>8}")
+                f"{'Table':<45} {'Data':>10} {'Index':>10} {'Total':>10} {'%':>8}")
             diag_lines.append("-" * 87)
             for t in sizes["tables"][:10]:
-                diag_lines.append(
-                    f"{t['schema_name'] + '.' + t['table_name']:<45} "
-                    f"{
-                        t['data_pretty']:>10} {
-                        t['index_pretty']:>10} {
-                        t['total_pretty']:>10} {
-                        str(
-                            t['percent']) +
-                        '%':>8}"
-                )
+                    tn = t['schema_name'] + '.' + t['table_name']
+                    diag_lines.append(
+                        f"{tn:<45} "
+                        f"{t['data_pretty']:>10} {t['index_pretty']:>10} "
+                        f"{t['total_pretty']:>10} {str(t['percent']) + '%':>8}"
+                    )
 
         diag_details = "\n".join(diag_lines)
         has_warnings = len(diag["no_pk"]) > 0 or diag["large_objects"] > 0
+        no_pk_count = len(diag['no_pk'])
+        lob_count = diag['large_objects']
+        identity_count = len(diag['identities'])
+        unowned_count = len(diag['unowned_seqs'])
         reporter.add_step("2", "Pre-Migration Diagnostics",
                           "WARN" if has_warnings else "OK",
-                          f"PK missing: {
-                              len(
-                                  diag['no_pk'])}, LOBs: {
-                              diag['large_objects']}, "
-                          f"Identity cols: {
-                              len(
-                                  diag['identities'])}, Unowned seqs: {
-                              len(
-                                  diag['unowned_seqs'])}",
+                          f"PK missing: {no_pk_count}, LOBs: {lob_count}, "
+                          f"Identity cols: {identity_count}, Unowned seqs: {unowned_count}",
                           details=diag_details)
         print_status(not has_warnings,
                      f"No-PK={len(diag['no_pk'])}  LOBs={diag['large_objects']}  "
@@ -173,12 +160,12 @@ def cmd_init_replication(args):
                     f"{'Parameter':<35} {'Current':>15} {'Expected':>15} {'Status':>8}")
                 param_lines.append("-" * 75)
                 for r in params[label]:
+                    p_name = r['parameter']
+                    p_actual = r['actual']
+                    p_expected = r['expected']
+                    p_status = r['status']
                     param_lines.append(
-                        f"{
-                            r['parameter']:<35} {
-                            r['actual']:>15} {
-                            r['expected']:>15} {
-                            r['status']:>8}"
+                        f"{p_name:<35} {p_actual:>15} {p_expected:>15} {p_status:>8}"
                     )
                     if r['status'] != 'OK':
                         params_ok = False
@@ -261,12 +248,7 @@ def cmd_init_replication(args):
         s2, m2, c2, o2, r2 = validator.compare_row_counts(
             use_stats=args.use_stats)
         parity_detail_lines = [
-            f"{
-                'Table':<45} {
-                'Source':>10} {
-                'Dest':>10} {
-                    'Diff':>8} {
-                        'Status':>8}"]
+            f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
         parity_detail_lines.append("-" * 85)
         for row in r2:
             parity_detail_lines.append(
@@ -424,12 +406,7 @@ def cmd_post_migration(args):
         s2, m2, c2, o2, r2 = validator.compare_row_counts(
             use_stats=args.use_stats)
         parity_detail_lines = [
-            f"{
-                'Table':<45} {
-                'Source':>10} {
-                'Dest':>10} {
-                    'Diff':>8} {
-                        'Status':>8}"]
+            f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
         parity_detail_lines.append("-" * 85)
         for row in r2:
             parity_detail_lines.append(

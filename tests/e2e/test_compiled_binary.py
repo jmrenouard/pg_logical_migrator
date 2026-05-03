@@ -53,7 +53,6 @@ def test_binary_glibc_backward_compatibility():
 
     # If the glibc is incompatible, it will fail with an error like "version
     # `GLIBC_2.38' not found"
-    assert res.returncode == 0, f"Binary failed to execute in AlmaLinux 8.10! Error:\n{
-        res.stderr}\nOutput:\n{
-        res.stdout}"
+    err_msg = f"Binary failed to execute in AlmaLinux 8.10! Error:\n{res.stderr}\nOutput:\n{res.stdout}"
+    assert res.returncode == 0, err_msg
     assert "usage" in res.stdout or "positional arguments:" in res.stdout, "Help output was not found."

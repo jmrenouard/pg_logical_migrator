@@ -69,8 +69,9 @@ class PostSync:
                     if res:
                         last_val = res[0]['last_value']
                         is_called = res[0]['is_called']
-                        sql = f'SELECT setval(\'"{schema}"."{name}"\', {last_val}, {
-                            str(is_called).lower()});'
+                        is_called_str = str(is_called).lower()
+                        sql = (f'SELECT setval(\'"{schema}"."{name}"\', {last_val}, '
+                               f'{is_called_str});')
                         cmds.append(f"[DEST] {sql}")
                         self.dest.execute_script(sql)
                         outs.append(f"Synced to {last_val}")

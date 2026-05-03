@@ -70,9 +70,8 @@ def cmd_diagnose(args):
     if sizes:
         print("=== Step 2 — Size Analysis ===")
         if sizes["database"]:
-            print(
-                f"  Total Database Size: {
-                    sizes['database']['total_pretty']}")
+            db_size = sizes['database']['total_pretty']
+            print(f"  Total Database Size: {db_size}")
 
         table_rows = []
         # Show top 20 tables by total size
@@ -206,15 +205,13 @@ def cmd_progress(args):
         return 0
 
     # 1. Summary Panel
-    console.print(
-        f"\n[bold]Overall Progress (Bytes): {
-            summary['percent_bytes']}%[/bold]")
+    pct_bytes = summary['percent_bytes']
+    console.print(f"\n[bold]Overall Progress (Bytes): {pct_bytes}%[/bold]")
     console.print(
         f"  {summary['bytes_copied_pretty']} / {summary['total_source_pretty']} copied")
 
-    console.print(
-        f"\n[bold]Table Progress: {
-            summary['percent_tables']}%[/bold]")
+    pct_tables = summary['percent_tables']
+    console.print(f"\n[bold]Table Progress: {pct_tables}%[/bold]")
     console.print(
         f"  {summary['completed_tables']} / {summary['total_tables']} tables ready")
 

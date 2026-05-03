@@ -209,9 +209,9 @@ class MigratorApp(App):
         try:
             if btn_id == "step_1":
                 res = self.checker.check_connectivity()
-                status = f"Source: {
-                    '[green]OK[/]' if res['source'] else '[red]FAIL[/]'}\nDest: {
-                    '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'}"
+                src_ok = '[green]OK[/]' if res['source'] else '[red]FAIL[/]'
+                dst_ok = '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'
+                status = f"Source: {src_ok}\nDest: {dst_ok}"
                 self.update_display(
                     Panel(
                         Text.from_markup(status),

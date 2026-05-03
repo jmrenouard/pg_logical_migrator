@@ -577,10 +577,11 @@ class Migrator:
             'dest_host_for_src', dst_conn['host'])
         dst_port_for_src = rep_config.get(
             'dest_port_for_src', dst_conn['port'])
-        conn_str = f"host={dst_host_for_src} port={dst_port_for_src} user={
-            dst_conn['user']} password={
-            dst_conn['password']} dbname={
-            dst_conn['database']}"
+        dst_user = dst_conn['user']
+        dst_password = dst_conn['password']
+        dst_database = dst_conn['database']
+        conn_str = (f"host={dst_host_for_src} port={dst_port_for_src}"
+                    f" user={dst_user} password={dst_password} dbname={dst_database}")
 
         sql_sub1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
         sql_sub2 = (f"CREATE SUBSCRIPTION {sub_name} CONNECTION '{conn_str}' "
