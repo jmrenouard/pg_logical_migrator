@@ -80,6 +80,14 @@ def test_sync_large_objects_success():
                 assert call[0][1][0] == 12345
         assert found_lo_open
 
+        # Check destination update verification
+        update_calls = [call for call in mock_d_cur.execute.call_args_list if hasattr(call[0][0], 'as_string')]
+        assert len(update_calls) == 1
+        
+        # Check commits
+        mock_s_conn.commit.assert_called()
+        mock_d_conn.commit.assert_called()
+
 
 def test_sync_large_objects_failure():
     mock_config = MagicMock()
@@ -150,3 +158,65 @@ def test_sync_large_objects_connection_failure():
 
         assert success is False
         assert "Connection Failed" in msg
+
+def test_sync_large_objects_no_data():
+    mock_config = MagicMock()
+    mock_config.get_source_dict.return_value = {
+        "host": "h1",
+        "port": 5432,
+        "user": "u1",
+        "password": "p1",
+        "database": "src"}
+    mock_config.get_dest_dict.return_value = {
+        "host": "h2",
+        "port": 5433,
+        "user": "u2",
+        "password": "p2",
+        "database": "dst"}
+    mock_config.get_replication.return_value = {
+        "publication_name": "pub", "subscription_name": "sub"}
+    mock_config.get_target_schemas.return_value = ["all"]
+
+    m = Migrator(mock_config)
+
+    with patch("src.migrator.PostgresClient") as mock_pc:
+        mock_pc_instance = mock_pc.return_value
+        mock_pc_instance.execute_query.side_effect = [
+            [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
+            [{"attname": "id"}],
+            [] # No data returned
+        ]
+
+        success, msg, cmds, outs = m.sync_large_objects()
+        assert success is True
+        assert "Processed 0 objects" in msg
+
+def test_sync_large_objects_outer_failure():
+    mock_config = MagicMock()
+    mock_config.get_source_dict.return_value = {
+        "host": "h1",
+        "port": 5432,
+        "user": "u1",
+        "password": "p1",
+        "database": "src"}
+    mock_config.get_dest_dict.return_value = {
+        "host": "h2",
+        "port": 5433,
+        "user": "u2",
+        "password": "p2",
+        "database": "dst"}
+    mock_config.get_replication.return_value = {
+        "publication_name": "pub", "subscription_name": "sub"}
+    mock_config.get_target_schemas.return_value = ["all"]
+
+    m = Migrator(mock_config)
+
+    with patch("src.migrator.PostgresClient") as mock_pc:
+        mock_pc_instance = mock_pc.return_value
+        mock_pc_instance.execute_query.side_effect = Exception("Outer query failed")
+
+        success, msg, cmds, outs = m.sync_large_objects()
+
+        assert success is False
+        assert "Outer query failed" in msg
+
