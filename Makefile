@@ -17,9 +17,10 @@ help:
 	@echo "  build-clean      Remove PyInstaller build artefacts (build/ dist/ *.spec)"
 	@echo "  test-unit        Run unit tests"
 	@echo "  test-integration Run integration tests (requires docker env)"
+	@echo "  test-tui         Run TUI end-to-end tests (requires docker env)"
 	@echo "  test-e2e         Run full end-to-end migration test (requires docker env)"
 	@echo "  test-packaging   Run packaging end-to-end test (build and validate binaries/packages)"
-	@echo "  test-all         Run all tests (unit, integration, e2e, packaging)"
+	@echo "  test-all         Run all tests (unit, integration, tui, e2e, packaging)"
 	@echo "  test-report      Run tests and generate reports"
 	@echo "  env-up           Start the Docker test environment"
 	@echo "  env-down         Stop the Docker test environment"
@@ -69,12 +70,13 @@ test-unit:
 	PYTHONPATH=. $(PYTEST) -vv tests/unit
 
 test-integration:
-	PYTHONPATH=. $(PYTEST) -vv tests/integration
+	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_steps.py
+
+test-tui:
+	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_tui_e2e.py
 
 test-e2e:
 	PYTHONPATH=. $(PYTEST) -vv tests/e2e
-
-test-all: test-unit test-integration test-e2e test-packaging
 
 test-packaging:
 	./e2e_packaging_test.sh
@@ -93,6 +95,8 @@ test-report: install
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest --results-dir RESULTS/$(TIMESTAMP)
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration --results-dir RESULTS/$(TIMESTAMP)
 	@echo "Reports generated in RESULTS/$(TIMESTAMP)/"
+
+test-all: test-unit test-integration test-tui test-e2e test-packaging test-coverage test-report
 
 run-pipeline:
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest
