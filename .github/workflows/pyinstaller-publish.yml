@@ -81,10 +81,10 @@ jobs:
                 PIP_CMD=pip3.11
               fi &&
               \$PIP_CMD install pyinstaller -r requirements.txt &&
-              \$PYTHON_CMD -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' pg_migrator.py
+              \$PYTHON_CMD -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' --collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py
             "
           else
-            pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
+            pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." --collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py
           fi
 
           BINARY_NAME="pg_migrator-${{ matrix.platform }}-python${{ matrix.python_version }}-v${VERSION}${EXE_EXT}"

@@ -20,7 +20,7 @@ docker run --rm -v $(pwd):/workspace -w /workspace almalinux:8 bash -c "
   dnf install -y python3.11 python3.11-pip python3.11-devel gcc &&
   pip3.11 install pyinstaller build &&
   pip3.11 install -r requirements.txt &&
-  python3.11 -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' pg_migrator.py &&
+  python3.11 -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' --collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py &&
   python3.11 -m build &&
   chmod 777 dist/* &&
   chown -R $(id -u):$(id -g) dist
