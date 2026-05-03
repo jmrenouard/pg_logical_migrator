@@ -16,9 +16,36 @@ Critical settings for the logical replication pipeline.
 
 - **publication_name**: Unique name for the publication on the source.
 - **subscription_name**: Unique name for the subscription on the destination.
-- **target_schema**: Use `all` for the whole database or a comma-separated list of specific schemas (e.g., `public, api_v1`).
 - **source_host / source_port**: Host/Port used by the **destination** container to reach the **source** DB. *Crucial for Docker networks.*
 - **dest_host_for_src / dest_port_for_src**: Host/Port used by the **source** to reach the **destination** during **reverse** replication.
+
+#### 🗂️ Target Schema & Database Topology Configuration
+The migrator is highly flexible and supports various replication topologies configured via the `.ini` file:
+
+1. **Single Schema / Single Database**
+   Configure your global `[source]` and `[destination]` blocks targeting a single database. Under `[replication]`, define exactly one schema:
+   `target_schema = public`
+
+2. **Multiple Schemas / Single Database**
+   Under `[replication]`, define a comma-separated list of schemas:
+   `target_schema = public, auth, data`
+
+3. **Multiple Databases**
+   To replicate multiple databases simultaneously, define database-specific overrides in your `.ini` file using the `[database:<dbname>]` section syntax. This will override global settings for each specified database.
+   ```ini
+   [source]
+   host = global-db.internal
+   
+   [database:crm_db]
+   target_schema = public, crm_data
+   
+   [database:billing_db]
+   target_schema = invoices
+   ```
+
+4. **All Schemas (Single or Multi-DB)**
+   Use `all` or `*` to automatically discover and replicate all user schemas in the target database(s) (ignoring system/extension schemas like `pg_catalog`, `postgis`, etc.):
+   `target_schema = all`
 
 ### 📝 [logging]
 - **loglevel**: Controls output verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
