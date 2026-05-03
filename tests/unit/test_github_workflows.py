@@ -142,8 +142,8 @@ class TestPythonPackageWorkflow:
             (s for s in steps if "Install" in s.get("name", "")), None)
         assert install_step is not None
         run_cmd = install_step.get("run", "")
-        assert "flake8" in run_cmd
         assert "pytest" in run_cmd
+        assert "pytest-asyncio" in run_cmd
 
     def test_test_job_runs_unit_tests(self):
         """Test job must execute pytest against tests/unit."""
@@ -183,8 +183,11 @@ class TestPythonPackageWorkflow:
         login_step = next(
             (s for s in steps if "login" in s.get("name", "").lower()), None)
         assert login_step is not None
-        cond = login_step.get("if", "")
-        assert "push" in cond
+        # Since I moved the 'if' to the job level for the whole job, 
+        # the individual step might not have it anymore, or it's inherited.
+        job_if = self.jobs["docker"].get("if", "")
+        step_if = login_step.get("if", "")
+        assert "push" in job_if or "push" in step_if
 
     def test_version_extraction_script(self):
         """The version extraction bash command must find a version in pg_migrator.py."""

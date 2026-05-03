@@ -57,6 +57,7 @@ class TestCheckProblematicObjectsSchemaFilter:
             [],       # temp_tables
             [],       # foreign_tables
             [],       # matviews
+            [],       # top_tables
         ]
 
         cfg = MagicMock()
@@ -72,6 +73,7 @@ class TestCheckProblematicObjectsSchemaFilter:
         source.execute_query.side_effect = [
             [],
             [{"count": 0}],
+            [],
             [],
             [],
             [],

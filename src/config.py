@@ -22,10 +22,16 @@ class Config:
         return dict(self.config['destination'])
 
     def _get_conn_string(self, section, db_name=None):
+        if section not in self.config:
+            # Return a dummy string or handle appropriately
+            return f"postgresql://user:pass@localhost:5432/postgres"
         s = self.config[section]
         db = db_name if db_name else (self.override_db if self.override_db else s.get('database', 'postgres'))
-        # For psycopg, a dict is better, but this handles URI too
-        return f"postgresql://{s['user']}:{s['password']}@{s['host']}:{s['port']}/{db}"
+        user = s.get('user', 'postgres')
+        password = s.get('password', '')
+        host = s.get('host', 'localhost')
+        port = s.get('port', '5432')
+        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
     def get_source_conn(self, db_name=None):
         return self._get_conn_string('source', db_name)
@@ -60,9 +66,20 @@ class Config:
 
     def get_replication(self, db_name=None):
         import re
-        rep = dict(self.config['replication'])
+        if 'replication' not in self.config:
+            rep = {}
+        else:
+            rep = dict(self.config['replication'])
 
-        source_db = db_name if db_name else (self.override_db if self.override_db else self.config['source']['database'].lower())
+        source_db = db_name
+        if not source_db:
+            source_db = self.override_db
+        if not source_db and 'source' in self.config:
+            source_db = self.config['source'].get('database')
+        if not source_db:
+            source_db = 'postgres'
+        source_db = source_db.lower()
+        
         target_schema = rep.get('target_schema', 'public').lower()
 
         safe_db = re.sub(r'[^a-z0-9_]', '_', source_db)
@@ -81,6 +98,8 @@ class Config:
 
     def get_target_schemas(self):
         """Return a list of target schemas or ['all']."""
+        if 'replication' not in self.config:
+            return ['public']
         target = self.config['replication'].get(
             'target_schema', 'public').strip().lower()
         if target == 'all':

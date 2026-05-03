@@ -38,7 +38,7 @@ jobs:
         run: cp config_migrator.sample.ini config_migrator.ini
       - name: Run Tests
         run: |
-          pytest tests/unit/
+          PYTHONPATH=. pytest tests/unit/
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4

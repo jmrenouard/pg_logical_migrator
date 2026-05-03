@@ -29,8 +29,9 @@ def test_check_problematic_objects():
         [],                                             # unowned seqs
         [],                                             # unlogged tables
         [],                                             # temp tables
-        [],                                             # foreign tables
-        []                                              # matviews
+        [],                                             # foreign_tables
+        [],                                             # matviews
+        []                                              # top_tables
     ]
 
     checker = DBChecker(source)
