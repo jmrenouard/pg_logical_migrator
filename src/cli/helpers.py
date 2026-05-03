@@ -8,11 +8,14 @@ from src.config import Config
 from src.db import PostgresClient
 
 
-def setup_logging(level: str = "INFO", log_file: str = None):
+def setup_logging(level: str = "INFO", log_file: str = None, tui_mode: bool = False):
     """Configure root logger with console + optional file handler."""
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
-    handlers = [logging.StreamHandler(sys.stderr)]
+    handlers = []
+    if not tui_mode:
+        handlers.append(logging.StreamHandler(sys.stderr))
+        
     if log_file:
         os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
         handlers.append(logging.FileHandler(log_file))

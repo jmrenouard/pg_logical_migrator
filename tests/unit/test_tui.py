@@ -1,8 +1,13 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from src.tui import MigratorApp, main
-from textual.widgets import Checkbox, ListView
+from textual.widgets import Checkbox, Button, ListView
 
+
+@pytest.fixture(autouse=True)
+def mock_sleep():
+    with patch("time.sleep", return_value=None) as mock:
+        yield mock
 
 @pytest.fixture
 def mock_config():
@@ -10,6 +15,10 @@ def mock_config():
         mock_instance = mock.return_value
         mock_instance.get_target_schemas.return_value = ["public"]
         mock_instance.get_databases.return_value = ["test_db"]
+        mock_instance.config = MagicMock()
+        mock_instance.config.get.return_value = "INFO"
+        mock_instance.get_source_dict.return_value = {'user': 'user', 'password': 'pw', 'host': 'host', 'port': '5432'}
+        mock_instance.get_dest_dict.return_value = {'user': 'user', 'password': 'pw', 'host': 'host', 'port': '5433'}
         yield mock
 
 
@@ -111,8 +120,10 @@ async def test_app_buttons(mock_config, mock_pgclient,
         True, "msg", [], [], [{'table': 't1', 'diff': 0, 'status': 'OK'}])
 
     async with app.run_test() as pilot:
-        # Check Drop Dest Checkbox is available
-        drop_dest_cb = app.query_one("#opt_drop_dest", Checkbox)
+        # Check Drop Dest Button is available
+        drop_dest_btn = app.query_one("#step_drop_dest", Button)
+        
+        app.handle_buttons(MockButtonEvent("step_show_config"))
 
         app.handle_buttons(MockButtonEvent("step_2"))
         mock_dbchecker_instance.check_problematic_objects.assert_called_once()
@@ -175,6 +186,18 @@ async def test_app_pipelines(mock_config, mock_pgclient,
         True, "msg", [], [])
     mock_mig_instance.step4b_migrate_schema_post_data.return_value = (
         True, "msg", [], [])
+    mock_mig_instance.sync_unlogged_tables.return_value = (
+        True, "msg", [], [])
+
+    mock_postsync_instance = mock_postsync.return_value
+    mock_postsync_instance.refresh_materialized_views.return_value = (True, "msg", [], [])
+    mock_postsync_instance.sync_sequences.return_value = (True, "msg", [], [])
+    mock_postsync_instance.enable_triggers.return_value = (True, "msg", [], [])
+    mock_postsync_instance.reassign_ownership.return_value = (True, "msg", [], [])
+
+    mock_validator_instance = mock_validator.return_value
+    mock_validator_instance.audit_objects.return_value = (True, "msg", [], [], [])
+    mock_validator_instance.compare_row_counts.return_value = (True, "msg", [], [], [])
 
     async with app.run_test() as pilot:
         # Init Pipeline

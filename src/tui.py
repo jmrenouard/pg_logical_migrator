@@ -1,7 +1,9 @@
+import time
 from datetime import datetime
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.console import Group
 from textual.app import App, ComposeResult
 from textual import work, on
 from textual.widgets import Header, Footer, Button, Label, Static, Checkbox, TabbedContent, TabPane, ListView, ListItem, Select, Input
@@ -100,7 +102,7 @@ class MigratorApp(App):
         margin-bottom: 1;
     }
     .form_row Label {
-        width: 10;
+        width: 14;
         content-align: left middle;
     }
     .form_row Input {
@@ -168,9 +170,7 @@ class MigratorApp(App):
                 with Horizontal(id="options_bar"):
                     db_options = [("ALL DATABASES", "ALL")] + [(db, db) for db in self.databases]
                     yield Select(db_options, value="ALL" if len(self.databases) > 1 else self.databases[0], id="opt_database")
-                    yield Checkbox("Drop Dest", id="opt_drop_dest")
                     yield Checkbox("Use Stats", id="opt_use_stats")
-                    yield Checkbox("Verbose", id="opt_verbose")
                     target_list = ", ".join(self.config.get_target_schemas())
                     yield Label(f" [dim]Schemas: {target_list}[/dim]")
 
@@ -178,6 +178,8 @@ class MigratorApp(App):
                     with TabbedContent():
                         with TabPane("1. Prepare"):
                             with Horizontal(classes="btn_group"):
+                                yield Button("Config", id="step_show_config", classes="btn-pre")
+                                yield Button("Drop Dest", id="step_drop_dest", classes="btn-pre")
                                 yield Button("Check", id="step_1", classes="btn-pre")
                                 yield Button("Diagnose", id="step_2", classes="btn-pre")
                                 yield Button("Parameters", id="step_3", classes="btn-pre")
@@ -226,9 +228,15 @@ class MigratorApp(App):
                                         yield Input(placeholder="Password", password=True, id="gen_dest_pass")
                                     
                                     with Horizontal(classes="form_row"):
-                                        yield Label("Misc:")
+                                        yield Label("Databases:")
                                         yield Input(placeholder="Databases (* or comma-separated)", value="*", id="gen_databases")
-                                        yield Input(placeholder="Output Filename", value="config_custom.ini", id="gen_filename")
+                                        yield Label("Schemas:")
+                                        yield Input(placeholder="Schemas (* or comma-separated)", value="public", id="gen_target_schema")
+                                    with Horizontal(classes="form_row"):
+                                        yield Label("Out Config:")
+                                        yield Input(placeholder="Output Filename", value="config_migrator.ini", id="gen_filename")
+                                        yield Label("Log Level:")
+                                        yield Input(placeholder="Log Level (INFO, DEBUG)", value="INFO", id="gen_loglevel")
                                 with Horizontal(classes="btn_group"):
                                     yield Button("Generate Config", id="cmd_generate_config", classes="btn-auto")
 
@@ -260,6 +268,27 @@ class MigratorApp(App):
             self.history_list.append(item)
             self.history_list.index = len(self.history_list) - 1
 
+    def _format_action_result(self, db, label, success, msg, cmds=None, outputs=None):
+        
+        status_table = Table(title=f"[{db}] {label}")
+        status_table.add_column("Status", style="green" if success else "red")
+        status_table.add_column("Message")
+        status_table.add_row("OK" if success else "ERROR", str(msg))
+        
+        renderables = [status_table]
+        
+        if cmds and isinstance(cmds, list):
+            cmd_table = Table(title="Executed Commands & Results")
+            cmd_table.add_column("Command", style="cyan")
+            cmd_table.add_column("Output")
+            if not outputs:
+                outputs = [""] * len(cmds)
+            for c, o in zip(cmds, outputs):
+                cmd_table.add_row(str(c), str(o) if o else "Executed")
+            renderables.append(cmd_table)
+            
+        return Group(*renderables)
+
     @on(ListView.Selected)
     def recall_history(self, event: ListView.Selected):
         if isinstance(event.item, HistoryItem):
@@ -285,179 +314,177 @@ class MigratorApp(App):
             for db in dbs_to_run:
                 self._init_backend_for_db(db)
                 
-                if btn_id == "step_1":
+                if btn_id == "step_show_config":
+                    table = Table(title=f"[{db}] Configuration")
+                    table.add_column("Property", style="cyan")
+                    table.add_column("Value")
+                    
+                    table.add_row("Config File", str(self.config.config_path))
+                    table.add_row("Databases", str(self.config.get_databases()))
+                    table.add_row("Target Schemas", str(self.config.get_target_schemas()))
+                    table.add_row("Log Level", str(self.config.config.get('replication', 'loglevel', fallback='INFO')))
+                    
+                    src_dict = self.config.get_source_dict()
+                    src_pass = "***" if src_dict.get('password') else "None"
+                    table.add_row("Source Connection", f"{src_dict.get('user')}@{src_dict.get('host')}:{src_dict.get('port')}/{db} (pw: {src_pass})")
+                    
+                    dst_dict = self.config.get_dest_dict()
+                    dst_pass = "***" if dst_dict.get('password') else "None"
+                    table.add_row("Dest Connection", f"{dst_dict.get('user')}@{dst_dict.get('host')}:{dst_dict.get('port')}/{db} (pw: {dst_pass})")
+                    
+                    status_res = self._format_action_result(db, "Show Config", True, "Configuration loaded.")
+                    self.update_display(Group(status_res, table), label)
+
+                elif btn_id == "step_1":
                     res = self.checker.check_connectivity()
+                    success = res['source'] and res['dest']
                     src_ok = '[green]OK[/]' if res['source'] else '[red]FAIL[/]'
                     dst_ok = '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'
-                    status = f"Source: {src_ok}\nDest: {dst_ok}"
-                    self.update_display(
-                        Panel(
-                            Text.from_markup(status),
-                            title="Connectivity"),
-                        label)
+                    msg = f"Source: {src_ok} | Dest: {dst_ok}"
+                    self.update_display(self._format_action_result(db, "Check Connectivity", success, msg), label)
 
                 elif btn_id == "step_2":
                     res = self.checker.check_problematic_objects()
-                    # Basic diagnostic table
                     table = Table(title="Diagnostics Summary")
                     table.add_column("Object Type", style="cyan")
                     table.add_column("Count", justify="right")
                     table.add_row("Tables without PK", str(len(res['no_pk'])))
-                    table.add_row(
-                        "Large Objects (LOBs)", str(
-                            res['large_objects']))
-                    table.add_row("Unowned Sequences", str(
-                        len(res['unowned_seqs'])))
-                    table.add_row("Unlogged Tables", str(
-                        len(res.get('unlogged_tables', []))))
-                    self.update_display(table, label)
+                    table.add_row("Large Objects (LOBs)", str(res['large_objects']))
+                    table.add_row("Unowned Sequences", str(len(res['unowned_seqs'])))
+                    table.add_row("Unlogged Tables", str(len(res.get('unlogged_tables', []))))
+                    
+                    status_res = self._format_action_result(db, "Diagnose Objects", True, "Diagnostics completed.")
+                    renderables = [status_res, table]
+                    
+                    if res.get('top_tables'):
+                        top_table = Table(title="Top 5 Tables by Estimated Rows")
+                        top_table.add_column("Schema")
+                        top_table.add_column("Table Name")
+                        top_table.add_column("Estimated Rows", justify="right")
+                        for t in res['top_tables']:
+                            top_table.add_row(t['schema_name'], t['table_name'], f"{t['estimated_count']:,}")
+                        renderables.append(top_table)
+                        
+                    self.update_display(Group(*renderables), label)
 
-                elif btn_id == "step_3":
-                    res = self.checker.check_replication_params()
+                elif btn_id in ("step_3", "cmd_apply_params"):
+                    apply = (btn_id == "cmd_apply_params")
+                    res = self.checker.check_replication_params(apply_source=apply, apply_dest=apply)
                     table = Table(title="PostgreSQL Parameters")
                     table.add_column("Instance")
                     table.add_column("Parameter")
                     table.add_column("Value")
                     table.add_column("Status")
+                    all_ok = True
                     for side in ["source", "dest"]:
                         for p in res.get(side, []):
-                            color = "green" if p['status'] == "OK" else "red"
-                            table.add_row(side.upper(),
-                                          p['parameter'],
-                                          p['actual'],
-                                          f"[{color}]{p['status']}[/]")
-                    self.update_display(table, label)
+                            color = "green" if p['status'] == "OK" else "yellow" if p['status'] == "PENDING RESTART" else "red"
+                            if p['status'] == "FAIL":
+                                all_ok = False
+                            table.add_row(side.upper(), p['parameter'], str(p['actual']), f"[{color}]{p['status']}[/]")
+                    
+                    action_name = "Apply Parameters" if apply else "Check Parameters"
+                    msg = "Parameters checked/applied." if all_ok else "Some parameters failed or require restart."
+                    status_res = self._format_action_result(db, action_name, all_ok, msg)
+                    self.update_display(Group(status_res, table), label)
+
+                elif btn_id == "step_drop_dest":
+                    s, m, c, o = self.migrator.drop_recreate_dest_db()
+                    self.update_display(self._format_action_result(db, "Drop Dest Database", s, m, c, o), label)
 
                 elif btn_id == "step_4":
-                    drop = self.query_one("#opt_drop_dest", Checkbox).value
-                    s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(
-                        drop_dest=drop)
-                    self.update_display(
-                        Panel(
-                            m,
-                            title="Schema Pre-Data",
-                            border_style="green" if s else "red"),
-                        label)
+                    s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(drop_dest=False)
+                    self.update_display(self._format_action_result(db, "Schema Pre-Data", s, m, c, o), label)
 
                 elif btn_id == "step_5":
                     s, m, c, o = self.migrator.step5_setup_source()
-                    self.update_display(Panel(m, title="Setup Publication"), label)
+                    self.update_display(self._format_action_result(db, "Setup Publication", s, m, c, o), label)
 
                 elif btn_id == "step_6":
                     self.update_display(
                         Panel(
                             "Starting subscription creation in background...",
                             title="Subscription"),
-                        label)
-                    self._run_sub_async()
+                        label=None) # Don't log this to history
+                    self._run_sub_async(db)
 
                 elif btn_id == "cmd_progress":
                     progress = self.migrator.get_initial_copy_progress()
                     if not progress:
-                        self.update_display(
-                            Panel(
-                                "No active replication progress found.",
-                                border_style="yellow"),
-                            label)
+                        self.update_display(self._format_action_result(db, "Sync Progress", False, "No active replication progress found."), label)
                     else:
-                        table = Table(title="Sync Progress")
+                        table = Table(title=f"[{db}] Sync Progress")
                         table.add_column("Table")
                         table.add_column("State")
                         table.add_column("Progress")
                         for t in progress['tables']:
-                            table.add_row(t['table_name'],
-                                          t['state'], f"{t['percent']}%")
-                        self.update_display(table, label)
+                            table.add_row(t['table_name'], t['state'], f"{t['percent']}%")
+                        status_res = self._format_action_result(db, "Sync Progress", True, "Progress fetched.")
+                        self.update_display(Group(status_res, table), label)
 
                 elif btn_id == "step_8":
                     s, m, c, o = self.post_sync.refresh_materialized_views()
-                    self.update_display(Panel(m, title="MatViews Refresh"), label)
+                    self.update_display(self._format_action_result(db, "MatViews Refresh", s, m, c, o), label)
 
                 elif btn_id == "step_9":
                     s, m, c, o = self.post_sync.sync_sequences()
-                    self.update_display(Panel(m, title="Sequences Sync"), label)
+                    self.update_display(self._format_action_result(db, "Sequences Sync", s, m, c, o), label)
 
                 elif btn_id == "step_10":
                     s, m, c, o = self.migrator.step10_terminate_replication()
-                    self.update_display(
-                        Panel(
-                            m,
-                            title="Terminate Replication"),
-                        label)
+                    self.update_display(self._format_action_result(db, "Terminate Replication", s, m, c, o), f"{label} (Terminate)")
+                    
                     s2, m2, c2, o2 = self.migrator.step4b_migrate_schema_post_data()
-                    self.update_display(Panel(m2, title="Schema Post-Data"), label)
+                    self.update_display(self._format_action_result(db, "Schema Post-Data", s2, m2, c2, o2), f"{label} (Schema Post)")
 
                 elif btn_id == "step_11":
                     s, m, c, o = self.migrator.sync_large_objects()
-                    self.update_display(
-                        Panel(
-                            f"[b]Step 11a: Sync Large Objects[/b]\n\n{m}",
-                            style="green" if s else "red"))
+                    self.update_display(self._format_action_result(db, "Sync Large Objects", s, m, c, o), label)
 
                 elif btn_id == "step_11b":
                     s, m, c, o = self.migrator.sync_unlogged_tables()
-                    self.update_display(
-                        Panel(
-                            f"[b]Step 11b: Sync UNLOGGED Tables[/b]\n\n{m}",
-                            style="green" if s else "red"))
+                    self.update_display(self._format_action_result(db, "Sync UNLOGGED Tables", s, m, c, o), label)
 
                 elif btn_id == "step_12":
                     s, m, c, o = self.post_sync.enable_triggers()
-                    self.update_display(Panel(m, title="Enable Triggers"), label)
+                    self.update_display(self._format_action_result(db, "Enable Triggers", s, m, c, o), label)
 
                 elif btn_id == "step_13":
                     s, m, c, o = self.post_sync.reassign_ownership()
-                    self.update_display(
-                        Panel(
-                            m,
-                            title="Reassign Ownership"),
-                        label)
+                    self.update_display(self._format_action_result(db, "Reassign Ownership", s, m, c, o), label)
 
                 elif btn_id == "step_14":
                     s, m, c, o, rep = self.validator.audit_objects()
-                    table = Table(title="Object Audit")
+                    table = Table(title=f"[{db}] Object Audit")
                     table.add_column("Type")
                     table.add_column("Source")
                     table.add_column("Dest")
                     table.add_column("Status")
                     for r in rep:
-                        table.add_row(
-                            r['type'], str(
-                                r['source']), str(
-                                r['dest']), r['status'])
-                    self.update_display(table, label)
+                        table.add_row(r['type'], str(r['source']), str(r['dest']), r['status'])
+                    res = self._format_action_result(db, "Audit Results", s, m, c, o)
+                    self.update_display(Group(res, table), label)
 
                 elif btn_id == "step_15":
                     use_stats = self.query_one("#opt_use_stats", Checkbox).value
-                    s, m, c, o, rep = self.validator.compare_row_counts(
-                        use_stats=use_stats)
-                    table = Table(title="Row Count Parity")
+                    s, m, c, o, rep = self.validator.compare_row_counts(use_stats=use_stats)
+                    table = Table(title=f"[{db}] Row Count Parity")
                     table.add_column("Table")
                     table.add_column("Diff")
                     table.add_column("Status")
                     for r in rep[:40]:
                         color = "green" if r['status'] == "OK" else "red"
-                        table.add_row(r['table'], str(r['diff']),
-                                      f"[{color}]{r['status']}[/]")
-                    self.update_display(table, label)
+                        table.add_row(r['table'], str(r['diff']), f"[{color}]{r['status']}[/]")
+                    res = self._format_action_result(db, "Parity Results", s, m, c, o)
+                    self.update_display(Group(res, table), label)
 
                 elif btn_id == "step_16":
                     s, m, c, o = self.migrator.cleanup_reverse_replication()
-                    self.update_display(
-                        Panel(
-                            m,
-                            title="Cleanup Reverse Replication",
-                            border_style="green" if s else "red"),
-                        label)
+                    self.update_display(self._format_action_result(db, "Cleanup Reverse Replication", s, m, c, o), label)
 
                 elif btn_id == "step_17":
                     s, m, c, o = self.migrator.setup_reverse_replication()
-                    self.update_display(
-                        Panel(
-                            m,
-                            title="Setup Reverse Replication",
-                            border_style="green" if s else "red"),
-                        label)
+                    self.update_display(self._format_action_result(db, "Setup Reverse Replication", s, m, c, o), label)
 
                 elif btn_id == "cmd_init":
                     self._run_init_pipeline(dbs_to_run)
@@ -487,16 +514,13 @@ class MigratorApp(App):
                 label)
 
     @work(exclusive=True, thread=True)
-    def _run_sub_async(self):
+    def _run_sub_async(self, db: str):
         label = "Step 6: Sub"
         try:
             s, m, c, o = self.migrator.step6_setup_destination()
             self.call_from_thread(
                 self.update_display,
-                Panel(
-                    m,
-                    title="Subscription Result",
-                    border_style="green" if s else "red"),
+                self._format_action_result(db, "Subscription Result", s, m, c, o),
                 label)
         except Exception as e:
             self.call_from_thread(
@@ -517,13 +541,23 @@ class MigratorApp(App):
                 border_style="blue"),
             label)
         try:
-            drop = self.query_one("#opt_drop_dest", Checkbox).value
             for db in dbs_to_run:
                 self.call_from_thread(self._init_backend_for_db, db)
-                self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Init)"), label)
-                self.migrator.step4a_migrate_schema_pre_data(drop_dest=drop)
-                self.migrator.step5_setup_source()
-                self.migrator.step6_setup_destination()
+                self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Init)"), None)
+                
+                s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(drop_dest=False)
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Schema Pre-Data", s, m, c, o), f"[{db}] Step 4")
+                time.sleep(1.5)
+                
+                s, m, c, o = self.migrator.step5_setup_source()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Setup Source", s, m, c, o), f"[{db}] Step 5")
+                time.sleep(1.5)
+                
+                s, m, c, o = self.migrator.step6_setup_destination()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Setup Destination", s, m, c, o), f"[{db}] Step 6")
+                time.sleep(1.5)
+                
+                self.call_from_thread(self.update_display, Panel(f"[{db}] Step 7: Waiting for final sync..."), None)
                 self.migrator.wait_for_sync(show_progress=False)
                 
             self.call_from_thread(
@@ -552,56 +586,70 @@ class MigratorApp(App):
                 border_style="blue"),
             label)
         try:
+            db = "Unknown"
             for db in dbs_to_run:
                 self.call_from_thread(self._init_backend_for_db, db)
                 self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Post-Migration)"), label)
 
                 # Phase 3: Finalize
                 self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 7: Waiting for final sync..."), label)
+                    f"[{db}] Step 7: Waiting for final sync..."), None)
                 self.migrator.wait_for_sync(show_progress=False)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 8: Refreshing MatViews..."), label)
-                self.post_sync.refresh_materialized_views()
+                s, m, c, o = self.post_sync.refresh_materialized_views()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Refresh MatViews", s, m, c, o), f"[{db}] Step 8")
+                time.sleep(1.5)
 
-                self.call_from_thread(
-                    self.update_display,
-                    Panel(f"[{db}] Step 9: Syncing Sequences..."),
-                    label)
-                self.post_sync.sync_sequences()
+                s, m, c, o = self.post_sync.sync_sequences()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Sync Sequences", s, m, c, o), f"[{db}] Step 9")
+                time.sleep(1.5)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 10: Terminating Replication & Schema Post-Data..."), label)
-                self.migrator.step10_terminate_replication()
-                self.migrator.step4b_migrate_schema_post_data()
+                s, m, c, o = self.migrator.step10_terminate_replication()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Terminate Replication", s, m, c, o), f"[{db}] Step 10a")
+                time.sleep(1.5)
+                
+                s, m, c, o = self.migrator.step4b_migrate_schema_post_data()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Schema Post-Data", s, m, c, o), f"[{db}] Step 10b")
+                time.sleep(1.5)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 11a: Syncing Large Objects (LOBs)..."), label)
-                self.migrator.sync_large_objects()
+                s, m, c, o = self.migrator.sync_large_objects()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Sync Large Objects", s, m, c, o), f"[{db}] Step 11a")
+                time.sleep(1.5)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 11b: Syncing UNLOGGED Tables..."), label)
-                self.migrator.sync_unlogged_tables()
+                s, m, c, o = self.migrator.sync_unlogged_tables()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Sync UNLOGGED Tables", s, m, c, o), f"[{db}] Step 11b")
+                time.sleep(1.5)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 12: Enabling Triggers..."), label)
-                self.post_sync.enable_triggers()
+                s, m, c, o = self.post_sync.enable_triggers()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Enable Triggers", s, m, c, o), f"[{db}] Step 12")
+                time.sleep(1.5)
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 13: Reassigning Ownership..."), label)
-                self.post_sync.reassign_ownership()
+                s, m, c, o = self.post_sync.reassign_ownership()
+                self.call_from_thread(self.update_display, self._format_action_result(db, "Reassign Ownership", s, m, c, o), f"[{db}] Step 13")
+                time.sleep(1.5)
 
                 # Phase 4: Validate
-                self.call_from_thread(
-                    self.update_display,
-                    Panel(f"[{db}] Step 14: Auditing Objects..."),
-                    label)
-                self.validator.audit_objects()
+                s, m, c, o, rep = self.validator.audit_objects()
+                table = Table(title=f"[{db}] Object Audit")
+                table.add_column("Type")
+                table.add_column("Source")
+                table.add_column("Dest")
+                table.add_column("Status")
+                for r in rep:
+                    table.add_row(r['type'], str(r['source']), str(r['dest']), r['status'])
+                res = self._format_action_result(db, "Audit Results", s, m, c, o)
+                self.call_from_thread(self.update_display, Group(res, table), f"[{db}] Step 14")
 
-                self.call_from_thread(self.update_display, Panel(
-                    f"[{db}] Step 15: Comparing Row Parity..."), label)
-                self.validator.compare_row_counts()
+                s, m, c, o, rep = self.validator.compare_row_counts(use_stats=True)
+                table = Table(title=f"[{db}] Row Count Parity")
+                table.add_column("Table")
+                table.add_column("Diff")
+                table.add_column("Status")
+                for r in rep[:40]:
+                    color = "green" if r['status'] == "OK" else "red"
+                    table.add_row(r['table'], str(r['diff']), f"[{color}]{r['status']}[/]")
+                res = self._format_action_result(db, "Parity Results", s, m, c, o)
+                self.call_from_thread(self.update_display, Group(res, table), f"[{db}] Step 15")
 
                 from src.report import ReportGenerator
                 self.call_from_thread(
@@ -640,6 +688,8 @@ class MigratorApp(App):
             dest_pass = self.query_one("#gen_dest_pass", Input).value
             
             databases = self.query_one("#gen_databases", Input).value
+            target_schema = self.query_one("#gen_target_schema", Input).value
+            loglevel = self.query_one("#gen_loglevel", Input).value
             filename = self.query_one("#gen_filename", Input).value
             
             if not filename:
@@ -661,18 +711,34 @@ class MigratorApp(App):
                 [replication]
                 publication_name = migrator_pub
                 subscription_name = migrator_sub
-                target_schema = public
+                target_schema = {target_schema}
                 databases = {databases}
-                loglevel = INFO
+                loglevel = {loglevel}
                 log_file = pg_migrator.log
             """)
             
             with open(filename, "w") as fh:
                 fh.write(content)
                 
+            try:
+                from src.config import Config
+                from src.db import DBChecker
+                from src.migrator import Migrator
+                from src.post_sync import PostSync
+                from src.validator import Validator
+                self.config = Config(filename)
+                self.checker = DBChecker(self.config)
+                self.migrator = Migrator(self.config)
+                self.post_sync = PostSync(self.config)
+                self.validator = Validator(self.config)
+                self.sub_title = f"Config: {self.config.config_path}"
+                reload_msg = f"\n[green]Config reloaded successfully from {filename}.[/green]"
+            except Exception as e:
+                reload_msg = f"\n[red]Failed to reload config from {filename}: {e}[/red]"
+                
             self.update_display(
                 Panel(
-                    f"Configuration successfully generated to: {filename}",
+                    f"Configuration successfully generated to: {filename}{reload_msg}",
                     title="Generate Config",
                     border_style="green"
                 ),

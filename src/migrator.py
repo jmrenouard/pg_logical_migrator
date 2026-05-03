@@ -12,6 +12,109 @@ class Migrator:
         self.dest_conn = config.get_dest_dict()
         self.replication_cfg = config.get_replication()
 
+    def drop_recreate_dest_db(self):
+        """Pre-cleanup target database by terminating active logical replication slots,
+        subscriptions, and recreating the database."""
+        src_db = self.source_conn['database']
+        src_user = self.source_conn['user']
+        src_host = self.source_conn['host']
+        src_port = self.source_conn['port']
+        src_pass = self.source_conn.get('password', '')
+
+        dst_db = self.dest_conn['database']
+        dst_user = self.dest_conn['user']
+        dst_host = self.dest_conn['host']
+        dst_port = self.dest_conn['port']
+        dst_pass = self.dest_conn.get('password', '')
+
+        logging.info(f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
+
+        executed_sqls = []
+        out_results = []
+
+        # Pre-cleanup target DB: terminate active logical replication slots
+        # and subscriptions
+        try:
+            tgt_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
+            tgt_client = PostgresClient(tgt_conn_str)
+            with tgt_client.get_conn(autocommit=True) as tgt_conn:
+                # Safely drop subscriptions
+                try:
+                    subs = tgt_conn.execute("SELECT subname FROM pg_subscription").fetchall()
+                    for (sub,) in subs:
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" DISABLE')
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
+                        tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
+                except Exception as e:
+                    logging.warning(f"[DEST] Error dropping subscriptions during pre-cleanup: {e}")
+
+                # Safely drop replication slots
+                try:
+                    slots = tgt_conn.execute(
+                        "SELECT slot_name, active_pid FROM pg_replication_slots "
+                        "WHERE database = current_database()").fetchall()
+                    for slot, pid in slots:
+                        if pid:
+                            tgt_conn.execute(f"SELECT pg_terminate_backend({pid})")
+                            import time
+                            time.sleep(1)
+                        try:
+                            tgt_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                        except Exception as e:
+                            logging.warning(f"[DEST] Could not drop slot {slot}: {e}")
+                except Exception as e:
+                    logging.warning(f"[DEST] Error dropping replication slots during pre-cleanup: {e}")
+        except Exception as e:
+            # If DB doesn't exist or is unreachable, the drop will likely
+            # pass or fail naturally
+            logging.info(f"[DEST] Pre-cleanup skip (DB might not exist or unreachable): {e}")
+
+        # Pre-cleanup source DB: drop the replication slot if it was
+        # orphaned
+        try:
+            src_conn_str = f"host={src_host} port={src_port} user={src_user} dbname={src_db} password={src_pass}"
+            src_client = PostgresClient(src_conn_str)
+            with src_client.get_conn(autocommit=True) as src_conn:
+                sub_name = self.replication_cfg.get('subscription_name', 'migrator_sub')
+                try:
+                    slots = src_conn.execute(
+                        "SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s",
+                        (sub_name,)).fetchall()
+                    for slot, pid in slots:
+                        if pid:
+                            src_conn.execute(f"SELECT pg_terminate_backend({pid})")
+                        src_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                        logging.info(f"[SOURCE] Dropped orphaned replication slot '{slot}' on source database.")
+                except Exception as e:
+                    logging.warning(f"[SOURCE] Error dropping replication slot on source: {e}")
+        except Exception as e:
+            logging.warning(f"[SOURCE] Source pre-cleanup skip (DB unreachable): {e}")
+
+        admin_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname=postgres password={dst_pass}"
+        try:
+            admin_client = PostgresClient(admin_conn_str)
+            with admin_client.get_conn(autocommit=True) as conn:
+                # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
+                try:
+                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
+                except Exception:
+                    # Fallback for PostgreSQL < 13
+                    conn.execute(
+                        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        f"WHERE datname = '{dst_db}' AND pid <> pg_backend_pid();")
+                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}";')
+
+                conn.execute(f'CREATE DATABASE "{dst_db}";')
+            logging.info(f"[DEST] Successfully dropped and recreated database '{dst_db}'.")
+            executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
+            out_results.append("OK")
+            return True, f"Successfully dropped and recreated database '{dst_db}'.", executed_sqls, out_results
+        except Exception as e:
+            logging.error(f"[DEST] Failed to drop/recreate DB: {e}")
+            executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
+            out_results.append(str(e))
+            return False, f"Failed to drop/recreate destination database: {e}", executed_sqls, out_results
+
     def step4a_migrate_schema_pre_data(self, drop_dest=False):
         """Step 4a: Copy schema PRE-DATA using pg_dump -s --section=pre-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema PRE-DATA migration...")
@@ -28,99 +131,9 @@ class Migrator:
         dst_pass = self.dest_conn.get('password', '')
 
         if drop_dest:
-            logging.info(
-                f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
-
-            # Pre-cleanup target DB: terminate active logical replication slots
-            # and subscriptions
-            try:
-                tgt_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
-                tgt_client = PostgresClient(tgt_conn_str)
-                with tgt_client.get_conn(autocommit=True) as tgt_conn:
-                    # Safely drop subscriptions
-                    try:
-                        subs = tgt_conn.execute(
-                            "SELECT subname FROM pg_subscription").fetchall()
-                        for (sub,) in subs:
-                            tgt_conn.execute(
-                                f'ALTER SUBSCRIPTION "{sub}" DISABLE')
-                            tgt_conn.execute(
-                                f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
-                            tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
-                    except Exception as e:
-                        logging.warning(
-                            f"[DEST] Error dropping subscriptions during pre-cleanup: {e}")
-
-                    # Safely drop replication slots
-                    try:
-                        slots = tgt_conn.execute(
-                            "SELECT slot_name, active_pid FROM pg_replication_slots "
-                            "WHERE database = current_database()").fetchall()
-                        for slot, pid in slots:
-                            if pid:
-                                tgt_conn.execute(
-                                    f"SELECT pg_terminate_backend({pid})")
-                            tgt_conn.execute(
-                                f"SELECT pg_drop_replication_slot('{slot}')")
-                    except Exception as e:
-                        logging.warning(
-                            f"[DEST] Error dropping replication slots during pre-cleanup: {e}")
-            except Exception as e:
-                # If DB doesn't exist or is unreachable, the drop will likely
-                # pass or fail naturally
-                logging.info(
-                    f"[DEST] Pre-cleanup skip (DB might not exist or unreachable): {e}")
-
-            # Pre-cleanup source DB: drop the replication slot if it was
-            # orphaned
-            try:
-                src_conn_str = f"host={src_host} port={src_port} user={src_user} dbname={src_db} password={src_pass}"
-                src_client = PostgresClient(src_conn_str)
-                with src_client.get_conn(autocommit=True) as src_conn:
-                    sub_name = self.replication_cfg.get(
-                        'subscription_name', 'migrator_sub')
-                    try:
-                        slots = src_conn.execute(
-                            "SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s",
-                            (sub_name,
-                             )).fetchall()
-                        for slot, pid in slots:
-                            if pid:
-                                src_conn.execute(
-                                    f"SELECT pg_terminate_backend({pid})")
-                            src_conn.execute(
-                                f"SELECT pg_drop_replication_slot('{slot}')")
-                            logging.info(
-                                f"[SOURCE] Dropped orphaned replication slot '{slot}' on source database.")
-                    except Exception as e:
-                        logging.warning(
-                            f"[SOURCE] Error dropping replication slot on source: {e}")
-            except Exception as e:
-                logging.warning(
-                    f"[SOURCE] Source pre-cleanup skip (DB unreachable): {e}")
-
-            admin_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname=postgres password={dst_pass}"
-            try:
-                admin_client = PostgresClient(admin_conn_str)
-                with admin_client.get_conn(autocommit=True) as conn:
-                    # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
-                    try:
-                        conn.execute(
-                            f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
-                    except Exception:
-                        # Fallback for PostgreSQL < 13
-                        conn.execute(
-                            f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                            f"WHERE datname = '{dst_db}' AND pid <> pg_backend_pid();")
-                        conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}";')
-
-                    conn.execute(f'CREATE DATABASE "{dst_db}";')
-                logging.info(
-                    f"[DEST] Successfully dropped and recreated database '{dst_db}'.")
-            except Exception as e:
-                logging.error(f"[DEST] Failed to drop/recreate DB: {e}")
-                return False, f"Failed to drop/recreate destination database: {e}", [], [
-                    str(e)]
+            success, msg, executed, outs = self.drop_recreate_dest_db()
+            if not success:
+                return success, msg, executed, outs
 
         schemas = self.config.get_target_schemas()
         schema_args = ""

@@ -24,8 +24,9 @@ Sequences are not automatically synchronized in real-time.
 - **Step 9/10**: We provide a explicit synchronization step to read current sequence values from the source and apply them to the destination just before cutover.
 
 ### 📉 Unlogged Tables
-Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be replicated.
-- **Behavior**: These tables will be created on the destination, but will remain empty.
+Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be natively replicated by PostgreSQL logical replication.
+- **Behavior**: These tables will be created on the destination, but will initially remain empty.
+- **Solution**: We provide a dedicated **`sync-unlogged`** step (Step 11b) to manually truncate and copy the data from the source to the destination before the final cutover.
 
 ### 🛡️ Triggers and Foreign Keys
 - **Triggers**: By default, triggers (like those for auditing or denormalization) are **not** executed on the subscriber to avoid duplicate actions.

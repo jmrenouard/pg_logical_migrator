@@ -9,7 +9,9 @@ from src.config import Config
 
 @pytest.fixture
 def config():
-    return Config("config_migrator.ini")
+    cfg = Config("tests/test_config.ini")
+    cfg.set_override_db("test_migration")
+    return cfg
 
 
 @pytest.fixture

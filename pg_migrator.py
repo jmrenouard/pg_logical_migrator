@@ -371,7 +371,8 @@ def main():
 
     # Setup logging with global options
     log_file = getattr(args, "log_file", None)
-    setup_logging(getattr(args, "loglevel", "INFO"), log_file)
+    is_tui = args.command == "tui"
+    setup_logging(getattr(args, "loglevel", "INFO"), log_file, tui_mode=is_tui)
 
     # Enable verbose diagnostic output
     if getattr(args, "verbose", False):
@@ -379,8 +380,38 @@ def main():
 
     # Dispatch to the selected subcommand
     try:
-        rc = args.func(args)
-        sys.exit(rc)
+        if args.command in ('tui', 'generate-config'):
+            rc = args.func(args)
+            sys.exit(rc)
+        
+        # Multi-DB execution logic
+        from src.config import Config
+        from src.db import PostgresClient
+        cfg = Config(getattr(args, "config", "config_migrator.ini"))
+        dbs = cfg.get_databases()
+        
+        if '*' in dbs:
+            # Discover all user databases via the admin (source) connection
+            sc = PostgresClient(cfg.get_source_conn())
+            res = sc.execute_query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+            dbs = [row['datname'] for row in res]
+            sc.close()
+            logging.info(f"Discovered {len(dbs)} user databases to migrate: {', '.join(dbs)}")
+
+        overall_rc = 0
+        for db in dbs:
+            print(f"\n" + "="*60)
+            print(f" Executing '{args.command}' for database: {db}")
+            print("="*60)
+            os.environ['PG_MIGRATOR_OVERRIDE_DB'] = db
+            rc = args.func(args)
+            if rc != 0:
+                print(f"\033[31m[ERROR] Command failed for database {db} with exit code {rc}\033[0m", file=sys.stderr)
+                overall_rc = rc
+                # We could break or continue. Let's continue to attempt the rest, but fail at the end.
+        
+        sys.exit(overall_rc)
+
     except FileNotFoundError as e:
         print(f"\033[31mError: {e}\033[0m", file=sys.stderr)
         print("  → Use 'pg_migrator.py generate-config' to create a sample config file.",

@@ -97,11 +97,11 @@ class TestPythonPackageWorkflow:
         assert "build-python-assets" in self.jobs
 
     def test_test_job_matrix_python_versions(self):
-        """CI tests must cover Python 3.9, 3.10, 3.11."""
+        """CI tests must cover Python 3.11, 3.12, 3.13."""
         matrix = self.jobs["test"]["strategy"]["matrix"]["python-version"]
-        assert "3.9" in matrix
-        assert "3.10" in matrix
         assert "3.11" in matrix
+        assert "3.12" in matrix
+        assert "3.13" in matrix
 
     def test_docker_job_needs_test(self):
         """Docker build must only run after tests pass."""
@@ -250,11 +250,12 @@ class TestPyInstallerPublishWorkflow:
         assert "macos-latest" in os_list
 
     def test_build_matrix_python_versions(self):
-        """Must build for Python 3.9 and 3.11."""
+        """Must build for Python 3.11, 3.12, 3.13."""
         strategy = self.jobs["build-binaries"]["strategy"]
         versions = strategy["matrix"]["python_version"]
-        assert "3.9" in versions
         assert "3.11" in versions
+        assert "3.12" in versions
+        assert "3.13" in versions
 
     def test_trigger_on_version_tags(self):
         """Must trigger on v* tags for stable releases."""
