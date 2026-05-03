@@ -30,9 +30,10 @@ pg_logical_migrator/
 │       ├── pipelines.py     # Orchestrated multi-step pipelines (init-replication, post-migration)
 │       └── helpers.py       # Shared CLI formatting and logging utilities
 ├── tests/                   # Test suite (Unit, Integration, E2E, Workflow)
-│   ├── unit/                # 279 unit tests — no Docker required (96% src/ coverage)
+│   ├── unit/                # 205 unit tests — no Docker required (96% src/ coverage)
 │   ├── integration/         # Database connectivity tests (requires Docker)
 │   └── e2e/                 # Full 17-step migration tests (requires Docker + Pagila)
+├── .flake8                  # Linting config (excludes venv/.venv)
 ├── .github/workflows/       # CI/CD pipelines
 │   ├── python-package.yml   # Lint, test, Docker GHCR, Python assets
 │   ├── pyinstaller-publish.yml  # Standalone binaries + DEB/RPM + GitHub Release
@@ -109,7 +110,7 @@ The project maintains **96% unit test coverage** across `src/`. See [DOCS/TESTIN
 
 | Target | Description |
 |---|---|
-| `make test-unit` | Run 279 unit tests (no Docker) |
+| `make test-unit` | Run 205 unit tests (no Docker) |
 | `make test-coverage` | Unit tests + coverage report (HTML + terminal) |
 | `make test-integration` | Integration tests (requires Docker) |
 | `make test-e2e` | End-to-end migration test (requires Docker) |

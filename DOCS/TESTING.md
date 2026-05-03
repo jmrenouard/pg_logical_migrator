@@ -14,7 +14,7 @@ tests/
 │   ├── test_cli_commands.py       # All CLI subcommands
 │   ├── test_cli_commands_extended.py  # Dry-run, error paths, edge branches
 │   ├── test_cli_pipelines.py      # init-replication / post-migration pipelines
-│   ├── test_github_workflows.py   # GitHub Actions YAML structure & contracts
+│   ├── test_github_workflows.py   # GitHub Actions YAML structure & contracts (requires: pyyaml)
 │   ├── test_helpers.py            # CLI helpers: logging, formatting, config
 │   ├── test_main.py               # Application entry point (TUI + CLI)
 │   ├── test_migrator.py           # Core migrator steps (basic cases)
@@ -41,6 +41,7 @@ tests/
 ```bash
 # Create virtualenv and install dependencies
 make install
+# Note: pyyaml is required by test_github_workflows.py and is listed in requirements.txt
 ```
 
 ### Unit Tests (no Docker required)
@@ -69,7 +70,7 @@ PYTHONPATH=. venv/bin/pytest tests/unit \
     --cov-report=html:RESULTS/coverage
 ```
 
-**Current coverage**: **96%** across `src/`
+**Current coverage**: **96%** across `src/` — **205 tests** collected in CI (Python 3.9 / 3.10 / 3.11)
 
 | Module | Coverage |
 |---|---|
