@@ -20,7 +20,8 @@
 8.  **Refresh Materialized Views (`refresh-matviews`)**: Manually refresh non-replicated data in matviews.
 9.  **Sync Sequences (`sync-sequences`)**: Align sequence values to prevent ID collisions after cutover.
 10. **Terminate & Post-Schema (`terminate-repl`)**: Stop replication and deploy indexes, foreign keys, and constraints.
-11. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
+11a. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
+11b. **UNLOGGED Table Sync (`sync-unlogged`)**: Manually synchronize UNLOGGED tables via COPY.
 12. **Enable Triggers (`enable-triggers`)**: Restore application-level trigger logic on the target.
 13. **Reassign Ownership (`reassign-owner`)**: Set correct role owners for all database objects.
 
@@ -81,7 +82,8 @@ Executes **Phase 3** and **Phase 4**:
 - `refresh-matviews` (Step 8)
 - `sync-sequences` (Step 9)
 - `terminate-repl` (Step 10: Terminate & Post-Schema)
-- `sync-lobs` (Step 11)
+- `sync-lobs` (Step 11a)
+- `sync-unlogged` (Step 11b)
 - `enable-triggers` (Step 12)
 - `reassign-owner` (Step 13)
 - `audit-objects` (Step 14)

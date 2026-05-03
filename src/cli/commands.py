@@ -329,6 +329,21 @@ def cmd_sync_lobs(args):
     return 0 if success else 1
 
 
+def cmd_sync_unlogged(args):
+    """Step 11b: Synchronize UNLOGGED tables from source to destination."""
+    cfg = Config(args.config)
+    migrator = Migrator(cfg)
+    if args.dry_run:
+        print(
+            "[DRY-RUN] Would synchronize UNLOGGED tables")
+        return 0
+    print("\n=== Step 11b — Synchronize UNLOGGED tables ===")
+    success, msg, cmds, outs = migrator.sync_unlogged_tables()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
 # -- Step 12 -----------------------------------------------------------------
 def cmd_enable_triggers(args):
     """Step 12: Enable all triggers on destination tables."""

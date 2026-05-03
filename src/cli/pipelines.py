@@ -363,10 +363,15 @@ def cmd_post_migration(args):
         if not s10_2:
             raise RuntimeError(f"Step 10 failed: {m10_2}")
 
-        # Step 11 — LOB Sync
-        print("[Step 11] Synchronize Large Objects (LOBs)...")
+        # Step 11a — LOB Sync
+        print("[Step 11a] Synchronize Large Objects (LOBs)...")
         sl, ml, cl, ol = migrator.sync_large_objects()
         print_status(sl, ml)
+
+        # Step 11b — UNLOGGED Tables Sync
+        print("[Step 11b] Synchronize UNLOGGED Tables...")
+        su, mu, cu, ou = migrator.sync_unlogged_tables()
+        print_status(su, mu)
 
         # Step 12 — Triggers
         print("[Step 12] Enable triggers...")

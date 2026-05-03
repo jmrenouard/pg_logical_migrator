@@ -24,9 +24,9 @@ jobs:
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -44,7 +44,7 @@ jobs:
         run: PYTHONPATH=. pytest tests/unit -v --tb=short --html=test-report.html --self-contained-html
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v3
         with:
           name: test-report-py${{ matrix.python-version }}
           path: test-report.html
@@ -55,10 +55,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v3
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -66,16 +66,16 @@ jobs:
             type=semver,pattern={{version}}
             type=sha,prefix=
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v2
       - name: Login to GitHub Container Registry
         if: github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v4
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
@@ -89,9 +89,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v3
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
@@ -108,7 +108,7 @@ jobs:
       - name: Build Python Assets
         run: python -m build
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v3
         with:
           name: python-assets-v${{ steps.version.outputs.VERSION }}
           path: dist/*

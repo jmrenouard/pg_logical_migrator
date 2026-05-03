@@ -449,8 +449,8 @@ class TestVersionExtractionLogic:
         return match.group(1) if match else "unknown"
 
     def test_extracts_standard_version(self):
-        content = '__version__ = "1.3.2"'
-        assert self._run_version_extraction(content) == "1.3.2"
+        content = '__version__ = "1.4.0"'
+        assert self._run_version_extraction(content) == "1.4.0"
 
     def test_extracts_prerelease_version(self):
         content = '__version__ = "1.4.0-alpha.1"'
@@ -483,7 +483,7 @@ class TestVersionExtractionLogic:
 
     def test_tag_mismatch_would_exit(self):
         """Simulate: if tag != f'v{version}' → would exit(1)."""
-        version = "1.3.2"
+        version = "1.4.0"
         wrong_tag = "v9.9.9"
         if wrong_tag != f"v{version}":
             assert True  # Would have called exit(1)

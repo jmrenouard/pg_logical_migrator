@@ -215,7 +215,8 @@ python pg_migrator.py progress         # Show progress (one-shot)
 | `refresh-matviews` | 8 | **DEST** | `REFRESH MATERIALIZED VIEW` for every materialized view on **DEST** |
 | `sync-sequences` | 9 | **SOURCE → DEST** | `SELECT last_value, is_called` on **SOURCE**, then `SELECT setval(…)` on **DEST** |
 | `terminate-repl` | 10 | **SOURCE → DEST** | Terminate replication and apply `post-data` schema (indexes, FKs) |
-| `sync-lobs` | 11 | **SOURCE → DEST** | Synchronize Large Objects (LOBs) manually via temporary files and update matching OIDs |
+| `sync-lobs` | 11a | **SOURCE → DEST** | Synchronize Large Objects (LOBs) manually via temporary files and update matching OIDs |
+| `sync-unlogged` | 11b | **SOURCE → DEST** | Synchronize UNLOGGED tables via COPY |
 | `enable-triggers` | 12 | **DEST** | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table on **DEST** |
 | `reassign-owner` | 13 | **DEST** | `REASSIGN OWNED BY ... TO ...` to ensure proper ownership matching source |
 
@@ -224,6 +225,7 @@ python pg_migrator.py refresh-matviews   # DEST
 python pg_migrator.py sync-sequences     # SOURCE → DEST
 python pg_migrator.py terminate-repl # SOURCE → DEST
 python pg_migrator.py sync-lobs          # SOURCE → DEST
+python pg_migrator.py sync-unlogged      # SOURCE → DEST
 python pg_migrator.py enable-triggers    # DEST
 python pg_migrator.py reassign-owner     # DEST
 ```
@@ -334,7 +336,8 @@ Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashbo
 | 8. Refresh MatViews | `refresh-matviews` | **DEST** | Refresh materialized views on DEST |
 | 9. Sync Sequences | `sync-sequences` | **SOURCE → DEST** | Read sequences from SOURCE, apply on DEST |
 | 10. Terminate & Post | `terminate-repl` | **SOURCE → DEST** | Stop replication and apply post-data schema |
-| 11. Sync LOBs | `sync-lobs` | **SOURCE → DEST** | Synchronize Large Objects (LOBs) |
+| 11a. Sync LOBs | `sync-lobs` | **SOURCE → DEST** | Synchronize Large Objects (LOBs) |
+| 11b. Sync UNLOGGED | `sync-unlogged` | **SOURCE → DEST** | Synchronize UNLOGGED tables |
 | 12. Enable Triggers | `enable-triggers` | **DEST** | Enable all triggers on DEST tables |
 | 13. Reassign Ownership | `reassign-owner` | **DEST** | Reassign object ownership |
 | 14. Object Audit | `audit-objects` | **SOURCE + DEST** | Compare object counts between databases |

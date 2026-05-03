@@ -10,17 +10,18 @@ echo "Extracted Version: $VERSION"
 PYTHON_VERSION="3.11"
 PLATFORM="linux-amd64"
 BINARY_NAME="pg_migrator-${PLATFORM}-python${PYTHON_VERSION}-v${VERSION}"
+export PYINSTALLER_OPTS="--collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml"
 
 # Clean dist
 rm -rf dist
 mkdir -p dist
 
 echo "1. Building Linux Binary inside almalinux:8..."
-docker run --rm -v $(pwd):/workspace -w /workspace almalinux:8 bash -c "
+docker run --rm -v $(pwd):/workspace -w /workspace -e PYINSTALLER_OPTS="${PYINSTALLER_OPTS}" almalinux:8 bash -c "
   dnf install -y python3.11 python3.11-pip python3.11-devel gcc &&
   pip3.11 install pyinstaller build &&
   pip3.11 install -r requirements.txt &&
-  python3.11 -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' --collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py &&
+  python3.11 -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' \$PYINSTALLER_OPTS pg_migrator.py &&
   python3.11 -m build &&
   chmod 777 dist/* &&
   chown -R $(id -u):$(id -g) dist

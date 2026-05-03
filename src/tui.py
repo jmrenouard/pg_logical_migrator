@@ -155,6 +155,7 @@ class MigratorApp(App):
                                 yield Button("Sequences", id="step_9", classes="btn-final")
                                 yield Button("Schema Post", id="step_10", classes="btn-final")
                                 yield Button("LOBs Sync", id="step_11", classes="btn-final")
+                                yield Button("UNLOGGED Sync", id="step_11b", classes="btn-final")
                                 yield Button("Triggers", id="step_12", classes="btn-final")
                                 yield Button("Ownership", id="step_13", classes="btn-final")
                         with TabPane("4. Audit"):
@@ -313,10 +314,15 @@ class MigratorApp(App):
                 s, m, c, o = self.migrator.sync_large_objects()
                 self.update_display(
                     Panel(
-                        m,
-                        title="LOBs Sync",
-                        border_style="green" if s else "red"),
-                    label)
+                        f"[b]Step 11a: Sync Large Objects[/b]\n\n{m}",
+                        style="green" if s else "red"))
+
+            elif btn_id == "step_11b":
+                s, m, c, o = self.migrator.sync_unlogged_tables()
+                self.update_display(
+                    Panel(
+                        f"[b]Step 11b: Sync UNLOGGED Tables[/b]\n\n{m}",
+                        style="green" if s else "red"))
 
             elif btn_id == "step_12":
                 s, m, c, o = self.post_sync.enable_triggers()
@@ -462,8 +468,12 @@ class MigratorApp(App):
             self.migrator.step4b_migrate_schema_post_data()
 
             self.call_from_thread(self.update_display, Panel(
-                "Step 11: Syncing Large Objects (LOBs)..."), label)
+                "Step 11a: Syncing Large Objects (LOBs)..."), label)
             self.migrator.sync_large_objects()
+
+            self.call_from_thread(self.update_display, Panel(
+                "Step 11b: Syncing UNLOGGED Tables..."), label)
+            self.migrator.sync_unlogged_tables()
 
             self.call_from_thread(self.update_display, Panel(
                 "Step 12: Enabling Triggers..."), label)

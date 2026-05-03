@@ -34,6 +34,13 @@ install: venv
 	$(PIP) install -r requirements.txt
 	$(PIP) install pyinstaller
 
+PYINSTALLER_OPTS = --collect-all textual \
+                   --collect-all rich \
+                   --collect-all psycopg \
+                   --collect-all docker \
+                   --collect-all jinja2 \
+                   --collect-all yaml
+
 build: install
 	@echo ">>> Bundling $(BIN_NAME) into a single executable..."
 	$(PYINSTALLER) \
@@ -41,7 +48,7 @@ build: install
 		--name $(BIN_NAME) \
 		--add-data "src:src" \
 		--add-data "config_migrator.sample.ini:."	\
-		--collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml \
+		$(PYINSTALLER_OPTS) \
 		pg_migrator.py
 	@echo ">>> Executable ready: dist/$(BIN_NAME)"
 

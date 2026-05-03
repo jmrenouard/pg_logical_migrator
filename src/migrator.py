@@ -876,3 +876,77 @@ class Migrator:
         except Exception as e:
             logging.error(f"Large Objects sync failed: {e}", exc_info=True)
             return False, f"LOB sync failed: {str(e)}", executed_sqls, out_results
+
+    def sync_unlogged_tables(self):
+        """
+        Identify UNLOGGED tables and manually sync their data because 
+        logical replication does not copy UNLOGGED tables.
+        """
+        logging.info("[BOTH] Starting UNLOGGED tables synchronization...")
+        executed_sqls = []
+        out_results = []
+        
+        try:
+            source_client = PostgresClient(
+                self.config.get_source_conn(), label="SOURCE")
+            
+            schemas = self.config.get_target_schemas()
+            schema_filter = ""
+            if schemas != ['all']:
+                schema_list = ", ".join([f"'{s}'" for s in schemas])
+                schema_filter = f"AND n.nspname IN ({schema_list})"
+                
+            query_unlogged = f"""
+            SELECT
+                n.nspname AS schema_name,
+                c.relname AS table_name
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r'
+              AND c.relpersistence = 'u'
+              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              {schema_filter};
+            """
+            
+            unlogged_tables = source_client.execute_query(query_unlogged)
+            if not unlogged_tables:
+                logging.info("[BOTH] No UNLOGGED tables found.")
+                return True, "No UNLOGGED tables to synchronize.", 0, []
+                
+            total_synced = 0
+            
+            s_client = PostgresClient(self.config.get_source_conn())
+            d_client = PostgresClient(self.config.get_dest_conn())
+            
+            with s_client.get_conn() as s_conn, d_client.get_conn() as d_conn:
+                for row in unlogged_tables:
+                    schema = row['schema_name']
+                    table = row['table_name']
+                    full_name = f'"{schema}"."{table}"'
+                    
+                    logging.info(f"[BOTH] Syncing UNLOGGED table: {full_name}...")
+                    
+                    try:
+                        with s_conn.cursor() as s_cur, d_conn.cursor() as d_cur:
+                            d_cur.execute(f"TRUNCATE TABLE {full_name};")
+                            with s_cur.copy(f"COPY {full_name} TO STDOUT") as copy_out:
+                                with d_cur.copy(f"COPY {full_name} FROM STDIN") as copy_in:
+                                    for data in copy_out:
+                                        copy_in.write(data)
+                        s_conn.commit()
+                        d_conn.commit()
+                        total_synced += 1
+                    except Exception as e:
+                        logging.error(f"[DEST] Failed to sync UNLOGGED table {full_name}: {e}")
+                        s_conn.rollback()
+                        d_conn.rollback()
+                        raise
+                        
+            msg = f"Successfully synced {total_synced} UNLOGGED tables."
+            logging.info(msg)
+            return True, msg, total_synced, []
+            
+        except Exception as e:
+            msg = f"Failed to sync UNLOGGED tables: {e}"
+            logging.error(f"[BOTH] {msg}")
+            return False, msg, 0, []

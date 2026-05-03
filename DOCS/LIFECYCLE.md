@@ -25,6 +25,7 @@ The most critical phase where application traffic is redirected.
 - **Object Synchronization**: Perform manual syncs that logical replication misses:
     - **Sequences**: Synchronize all sequence values (`sync-sequences`).
     - **Large Objects**: Manually migrate binary data (`sync-lobs`).
+    - **UNLOGGED Tables**: Manually migrate data for unlogged tables (`sync-unlogged`).
     - **Materialized Views**: Refresh data on the target (`refresh-matviews`).
 - **Post-Data Schema**: Create indexes and constraints (`terminate-repl`) once initial data is landed.
 - **Verification**: Perform final object audits and row count parity checks.

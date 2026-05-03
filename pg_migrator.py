@@ -12,7 +12,7 @@ from src.cli.commands import (
     cmd_sync_sequences, cmd_enable_triggers, cmd_refresh_matviews,
     cmd_reassign_owner, cmd_audit_objects,
     cmd_validate_rows, cmd_cleanup, cmd_setup_reverse, cmd_cleanup_reverse,
-    cmd_sync_lobs, cmd_tui, cmd_generate_config
+    cmd_sync_lobs, cmd_sync_unlogged, cmd_tui, cmd_generate_config
 )
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 import argparse
@@ -24,7 +24,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.3.2"
+__version__ = "1.4.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,9 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pg_migrator.py",
         description=textwrap.dedent("""\
-            ╔══════════════════════════════════════════════════════════╗
-            ║  pg_logical_migrator — PostgreSQL Logical Migrator CLI  ║
-            ╚══════════════════════════════════════════════════════════╝
+            ╔═══════════════════════════════════════════════════════════╗
+            ║   pg_logical_migrator — PostgreSQL Logical Migrator CLI   ║
+            ╚═══════════════════════════════════════════════════════════╝
 
             Automate PostgreSQL database migrations using logical
             replication.  Run individual steps or the full pipeline.
@@ -220,10 +220,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_lob = sub.add_parser(
         "sync-lobs",
         parents=[global_parser],
-        help="Step 11 — Synchronize Large Objects (LOBs)",
+        help="Step 11a — Synchronize Large Objects (LOBs)",
         description="Manually migrate binary data (OIDs) and update table references.",
     )
     p_lob.set_defaults(func=cmd_sync_lobs)
+
+    # Step 11b — sync-unlogged
+    p_unl = sub.add_parser(
+        "sync-unlogged",
+        parents=[global_parser],
+        help="Step 11b — Synchronize UNLOGGED tables",
+        description="Manually copy UNLOGGED tables using COPY.",
+    )
+    p_unl.set_defaults(func=cmd_sync_unlogged)
 
     # Step 12 — enable-triggers
     p_trig = sub.add_parser(

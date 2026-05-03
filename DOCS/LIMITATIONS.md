@@ -10,7 +10,7 @@ Logical replication **requires** a Primary Key or a unique, non-null index to re
 ### 🐘 Large Objects (LOBs / BLOBs)
 Standard logical replication **does not** support PostgreSQL "Large Objects" (stored in `pg_largeobject`).
 - **Detection**: Our `diagnose` command identifies if LOBs are present.
-- **Solution**: We provide a specialized **`sync-lobs`** command (Step 15b). This command manually exports LOBs from the source, imports them into the destination (generating new OIDs), and updates the referencing `OID` columns in your tables using Primary Key matching.
+- **Solution**: We provide specialized **`sync-lobs`** (Step 11a) and **`sync-unlogged`** (Step 11b) commands. The `sync-lobs` command manually exports LOBs from the source, imports them into the destination (generating new OIDs), and updates the referencing `OID` columns in your tables using Primary Key matching. The `sync-unlogged` command manually truncates and copies data for UNLOGGED tables that cannot be replicated.
 - **Requirement**: Target tables must have a Primary Key for the update to succeed.
 
 ### 🏗️ DDL (Data Definition Language)
