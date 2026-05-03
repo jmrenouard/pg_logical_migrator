@@ -209,13 +209,11 @@ class PostSync:
         try:
             tables = self.dest.execute_query(table_query) or []
             for row in tables:
-                sql = f'ALTER TABLE "{
-                    row["schema_name"]}"."{
-                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                obj = row['obj_name']
+                sql = f'ALTER TABLE "{sch}"."{obj}" OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"Table {
-                        row['schema_name']}.{
-                        row['obj_name']}", cmds, outs)
+                    sql, f"Table {sch}.{obj}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER TABLE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -233,13 +231,11 @@ class PostSync:
         try:
             views = self.dest.execute_query(view_query) or []
             for row in views:
-                sql = f'ALTER VIEW "{
-                    row["schema_name"]}"."{
-                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                obj = row['obj_name']
+                sql = f'ALTER VIEW "{sch}"."{obj}" OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"View {
-                        row['schema_name']}.{
-                        row['obj_name']}", cmds, outs)
+                    sql, f"View {sch}.{obj}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER VIEW ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -257,13 +253,11 @@ class PostSync:
         try:
             matviews = self.dest.execute_query(matview_query) or []
             for row in matviews:
-                sql = f'ALTER MATERIALIZED VIEW "{
-                    row["schema_name"]}"."{
-                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                obj = row['obj_name']
+                sql = f'ALTER MATERIALIZED VIEW "{sch}"."{obj}" OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"MatView {
-                        row['schema_name']}.{
-                        row['obj_name']}", cmds, outs)
+                    sql, f"MatView {sch}.{obj}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER MATERIALIZED VIEW ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -281,13 +275,11 @@ class PostSync:
         try:
             seqs = self.dest.execute_query(seq_query) or []
             for row in seqs:
-                sql = f'ALTER SEQUENCE "{
-                    row["schema_name"]}"."{
-                    row["obj_name"]}" OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                obj = row['obj_name']
+                sql = f'ALTER SEQUENCE "{sch}"."{obj}" OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"Sequence {
-                        row['schema_name']}.{
-                        row['obj_name']}", cmds, outs)
+                    sql, f"Sequence {sch}.{obj}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER SEQUENCE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -308,14 +300,12 @@ class PostSync:
             funcs = self.dest.execute_query(func_query) or []
             for row in funcs:
                 ftype = row['func_type']
-                sql = f'ALTER {ftype} "{
-                    row["schema_name"]}"."{
-                    row["func_name"]}"({
-                    row["func_args"]}) OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                fname = row['func_name']
+                fargs = row['func_args']
+                sql = f'ALTER {ftype} "{sch}"."{fname}"({fargs}) OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"{ftype} {
-                        row['schema_name']}.{
-                        row['func_name']}", cmds, outs)
+                    sql, f"{ftype} {sch}.{fname}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER FUNCTION/PROCEDURE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
@@ -334,13 +324,11 @@ class PostSync:
         try:
             types = self.dest.execute_query(type_query) or []
             for row in types:
-                sql = f'ALTER TYPE "{
-                    row["schema_name"]}"."{
-                    row["type_name"]}" OWNER TO "{target_owner}";'
+                sch = row['schema_name']
+                tname = row['type_name']
+                sql = f'ALTER TYPE "{sch}"."{tname}" OWNER TO "{target_owner}";'
                 errors += self._apply_reassign(
-                    sql, f"Type {
-                        row['schema_name']}.{
-                        row['type_name']}", cmds, outs)
+                    sql, f"Type {sch}.{tname}", cmds, outs)
         except Exception as e:
             cmds.append("[DEST] ALTER TYPE ... OWNER TO ...")
             outs.append(f"FAILED: {e}")
