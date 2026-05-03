@@ -46,7 +46,7 @@ Migration history is critical for post-mortem analysis and compliance:
 
 ### Technology Stack
 
-- **Language**: Python 3.10+
+- **Language**: Python 3.9+
 - **Database**: PostgreSQL 16+ (Source), 17/18+ (Destination)
 - **UI Framework**: Textual / Rich for TUI components.
 - **Test Infrastructure**: Docker-based orchestration with `pagila` dataset.

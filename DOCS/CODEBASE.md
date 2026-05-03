@@ -27,9 +27,17 @@ pg_logical_migrator/
 │   ├── main.py              # TUI entry point
 │   └── cli/                 # CLI-specific logic
 │       ├── commands.py      # Individual step command wrappers
-│       ├── pipelines.py     # Orchestrated multi-step pipelines
-│       └── helpers.py       # Shared CLI formatting and logging
-├── tests/                   # Test suite (Unit, Integration, E2E)
+│       ├── pipelines.py     # Orchestrated multi-step pipelines (init-replication, post-migration)
+│       └── helpers.py       # Shared CLI formatting and logging utilities
+├── tests/                   # Test suite (Unit, Integration, E2E, Workflow)
+│   ├── unit/                # 205 unit tests — no Docker required (96% src/ coverage)
+│   ├── integration/         # Database connectivity tests (requires Docker)
+│   └── e2e/                 # Full 17-step migration tests (requires Docker + Pagila)
+├── .flake8                  # Linting config (excludes venv/.venv)
+├── .github/workflows/       # CI/CD pipelines
+│   ├── python-package.yml   # Lint, test, Docker GHCR, Python assets
+│   ├── pyinstaller-publish.yml  # Standalone binaries + DEB/RPM + GitHub Release
+│   └── docker-publish.yml   # Docker Hub publish
 └── test_env/                # Docker Compose environment for testing
 ```
 
@@ -81,7 +89,7 @@ pg_logical_migrator/
   - `post-migration`: `wait_for_sync` + Step 16 (Stop) + Step 12 (Post-Data) + Post-sync + Validation.
 
 ### Terminal User Interface (TUI)
-- **`src/tui.py`**: A full-screen dashboard with a 16-step interactive sidebar.
+- **`src/tui.py`**: A full-screen dashboard with a 17-step interactive sidebar.
 - Features real-time progress widgets, size analysis tables, and toggleable options (Stats counting, Verbose mode).
 - Uses `rich` components (Panel, Table) for robust, styled rendering.
 
@@ -89,5 +97,25 @@ pg_logical_migrator/
 
 ## Error Handling and Logging
 
-- **Logging**: Centrally configured in `src/cli/helpers.py`.
+- **Logging**: Centrally configured in `src/cli/helpers.py` via `setup_logging()`. Both console and file handlers are supported.
 - **Pipeline Reliability**: Automated pipelines wrap critical steps in `try/except` blocks and generate `report_init_error.html` or `report_post_error.html` on fatal failures.
+
+---
+
+## Test Infrastructure
+
+The project maintains **96% unit test coverage** across `src/`. See [DOCS/TESTING.md](TESTING.md) for the full reference.
+
+### Makefile Targets
+
+| Target | Description |
+|---|---|
+| `make test-unit` | Run 205 unit tests (no Docker) |
+| `make test-coverage` | Unit tests + coverage report (HTML + terminal) |
+| `make test-integration` | Integration tests (requires Docker) |
+| `make test-e2e` | End-to-end migration test (requires Docker) |
+| `make test-packaging` | Binary + DEB/RPM + wheel packaging validation |
+| `make test-all` | All of the above in sequence |
+| `make test-report` | Unit tests + HTML report + full pipeline run |
+| `make env-up` | Start Docker test environment (PostgreSQL × 2 + Pagila) |
+| `make env-down` | Tear down Docker environment |

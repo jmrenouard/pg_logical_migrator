@@ -1,158 +1,91 @@
-![pg_logical_migrator](../pg_logical_migrator.jpg)
+# Standardized 17-Step Workflow
 
-# Migration Workflow — 16 Steps
+**pg_logical_migrator** follows a strictly defined sequential workflow. Each step is designed to be independent, repeatable, and verifiable.
 
-The `pg_logical_migrator` operates through a predefined **16-step sequence** to ensure data integrity and minimal downtime.
+### 🧪 Phase 1: Preparation (Pre-flight)
+
+1.  **Check Connectivity (`check`)**: Verify orchestrator reachability to both source and destination instances.
+2.  **Diagnostics (`diagnose`)**: Scan for Primary Key coverage, Large Objects (LOBs), and unowned sequences.
+3.  **Parameter Verification (`params`)**: Confirm mandatory settings (`wal_level=logical`, slots, workers).
+4.  **Schema (Pre-Data) (`migrate-schema-pre-data`)**: Deploy base structures (schemas, tables, types, views).
+
+### ⚡ Phase 2: Execution (Data Sync)
+
+5.  **Setup Publication (`setup-pub`)**: Define the replication scope on the source.
+6.  **Setup Subscription (`setup-sub`)**: Trigger initial data COPY and start logical change streaming.
+7.  **Monitor Progress (`repl-progress`)**: Track byte-level and table-level synchronization status.
+
+### 🏁 Phase 3: Finalization (Cutover Ready)
+
+8.  **Refresh Materialized Views (`refresh-matviews`)**: Manually refresh non-replicated data in matviews.
+9.  **Sync Sequences (`sync-sequences`)**: Align sequence values to prevent ID collisions after cutover.
+10. **Terminate & Post-Schema (`terminate-repl`)**: Stop replication and deploy indexes, foreign keys, and constraints.
+11. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
+12. **Enable Triggers (`enable-triggers`)**: Restore application-level trigger logic on the target.
+13. **Reassign Ownership (`reassign-owner`)**: Set correct role owners for all database objects.
+
+### 🛡️ Phase 4: Validation & Cleanup
+
+14. **Object Audit (`audit-objects`)**: Verify structural parity (counts of tables, indexes, views).
+15. **Row Count Parity (`validate-rows`)**: Final check of data consistency across all tables.
+16. **Cleanup (`cleanup`)**: Decommission replication slots and publication objects.
+17. **Reverse Replication (`setup-reverse`)**: (Optional) Prepare a rollback path to sync changes back to source.
 
 ---
 
-## High-Level Pipeline
-
+### 📊 Workflow Summary
 ```mermaid
 graph TD
-    subgraph "Phase 1: Pre-Flight"
-        S1[1. Connectivity] --> S2[2. Diagnostics & Size]
-        S2 --> S3[3. Verify Params]
-    end
-
-    subgraph "Phase 2: Replication Setup"
-        S3 --> S4a[4a. Schema Pre-Data]
-        S4a --> S5[5. Setup Publication]
-        S5 --> S6[6. Setup Subscription]
-        S6 --> S7[7. Monitor Status]
-        S7 --> WAIT[Wait for Initial Sync]
-    end
-
-    subgraph "Phase 3: Finalization"
-        WAIT --> S8[8. Refresh MatViews]
-        S8 --> S9[9/10. Sync Sequences]
-        S9 --> S11[11. Enable Triggers]
-        S11 --> S12[12. Schema Post-Data]
-        S12 --> S13[13. Reassign Owner]
-    end
-
-    subgraph "Phase 4: Validation & Cleanup"
-        S13 --> S14[14. Object Audit]
-        S14 --> S15[15. Row Parity]
-        S15 --> S16[16. STOP & Cleanup]
-        S16 -.-> S17[17. Setup Reverse Repl]
-    end
+    A[Phase 1: Prep] --> B[Phase 2: Sync]
+    B --> C[Phase 3: Finalize]
+    C --> D[Phase 4: Validate]
+    
+    A1(1. Check) --> A2(2. Diagnose)
+    A2 --> A3(3. Params)
+    A3 --> A4(4. Pre-Schema)
+    
+    B5(5. Pub) --> B6(6. Sub)
+    B6 --> B7(7. Progress)
+    
+    C8(8. MatViews) --> C9(9. Sequences)
+    C9 --> C10(10. Terminate & Post-Schema)
+    C10 --> C11(11. LOBs Sync)
+    C11 --> C12(12. Triggers)
+    C12 --> C13(13. Owners)
+    
+    D14(14. Audit) --> D15(15. Validation)
+    D15 --> D16(16. Cleanup)
+    D16 --> D17(17. Rollback Prep)
 ```
 
 ---
 
-## Detailed Step Reference
+### 🚀 Automated Pipelines
 
-### Phase 1 — Pre-Flight Checks
+Instead of running the 17 steps manually, `pg_logical_migrator` provides two macro-commands (pipelines) that bundle these steps for automated CI/CD workflows:
 
-#### 1. Connectivity Check
-- **Purpose**: Verify network and auth for both servers.
-- **CLI**: `pg_migrator.py check`
+#### 1. Initialization Pipeline (`init-replication`)
+Executes **Phase 1** and **Phase 2**:
+- `check` (Step 1)
+- `diagnose` (Step 2)
+- `params` (Step 3)
+- `migrate-schema-pre-data` (Step 4)
+- `setup-pub` (Step 5)
+- `setup-sub` (Step 6)
 
-#### 2. Diagnostics & Size Analysis
-- **Purpose**: Scan for blockers (missing PK, LOBs) and audit database/table sizes.
-- **CLI**: `pg_migrator.py diagnose`
+*Result: Replication is active and data is syncing in the background.*
 
-#### 3. Parameter Verification
-- **Purpose**: Ensure `wal_level = logical` and enough slots/workers.
-- **CLI**: `pg_migrator.py params`
+#### 2. Cutover Pipeline (`post-migration`)
+Executes **Phase 3** and **Phase 4**:
+- `wait-for-sync` (Internal Step 7)
+- `refresh-matviews` (Step 8)
+- `sync-sequences` (Step 9)
+- `terminate-repl` (Step 10: Terminate & Post-Schema)
+- `sync-lobs` (Step 11)
+- `enable-triggers` (Step 12)
+- `reassign-owner` (Step 13)
+- `audit-objects` (Step 14)
+- `validate-rows` (Step 15)
+- **Report Generation** (Final Audit)
 
----
-
-## Phase 2 — Replication Setup
-
-#### 4a. Schema Pre-Data Migration
-- **Purpose**: Create tables and structures on destination.
-- **CLI**: `pg_migrator.py migrate-schema-pre-data`
-
-#### 5. Source Replication Setup
-- **Purpose**: Create Publication. Handles `REPLICA IDENTITY FULL` for no-PK tables.
-- **CLI**: `pg_migrator.py setup-pub`
-
-#### 6. Destination Replication Setup
-- **Purpose**: Create Subscription and start background data copy.
-- **CLI**: `pg_migrator.py setup-sub`
-
-#### 7. Replication Monitoring
-- **Purpose**: Watch real-time sync status and byte-level progress.
-- **CLI**: `pg_migrator.py repl-status` or `repl-progress`
-
----
-
-## Phase 3 — Finalization
-
-#### 8. Materialized Views Refresh
-- **Purpose**: Sync non-replicated views.
-- **CLI**: `pg_migrator.py refresh-matviews`
-
-#### 9/10. Sequence Synchronization
-- **Purpose**: Apply current sequence values to avoid ID collisions.
-- **CLI**: `pg_migrator.py sync-sequences`
-
-#### 11. Trigger Activation
-- **Purpose**: Re-enable triggers on destination.
-- **CLI**: `pg_migrator.py enable-triggers`
-
-#### 12. Schema Post-Data Migration
-- **Purpose**: Create indexes and foreign keys after data is synced.
-- **CLI**: `pg_migrator.py migrate-schema-post-data`
-
-#### 13. Reassign Ownership
-- **Purpose**: Set correct owner for all migrated objects.
-- **CLI**: `pg_migrator.py reassign-owner`
-
----
-
-## Phase 4 — Validation & Cleanup
-
-#### 14. Object Audit
-- **Purpose**: Verify structural parity (counts of tables, views, etc.).
-- **CLI**: `pg_migrator.py audit-objects`
-
-#### 15. Data Validation (Row Parity)
-- **Purpose**: Confirm 100% data consistency.
-- **CLI**: `pg_migrator.py validate-rows [--use-stats]`
-
-#### 16. STOP / CLEANUP
-- **Purpose**: Finalize and free resources (Drop Sub/Pub).
-- **CLI**: `pg_migrator.py cleanup`
-
-#### 17. Setup Reverse Replication (Optional)
-- **Purpose**: Create a reverse logical replication stream (Destination -> Source) to allow immediate rollback after cutover.
-- **CLI**: `pg_migrator.py setup-reverse`
-
----
-
-## Automated Pipelines
-
-### A. Initialization (`init-replication`)
-Executes steps 1 to 6, waits for sync, then runs validation (14, 15).
-
-```mermaid
-listStream
-    Step 1 --> Step 2
-    Step 2 --> Step 3
-    Step 3 --> Step 4a
-    Step 4a --> Step 5
-    Step 5 --> Step 6
-    Step 6 --> Wait_Sync
-    Wait_Sync --> Step 14
-    Wait_Sync --> Step 15
-```
-
-### B. Post Migration (`post-migration`)
-Waits for final sync, then executes steps 16, 12, 8, 9/10, 11, 13 and final validation.
-
-```mermaid
-listStream
-    Wait_Sync --> Step 16
-    Step 16 --> Step 12
-    Step 12 --> Step 8
-    Step 8 --> Step 9/10
-    Step 9/10 --> Step 11
-    Step 11 --> Step 13
-    Step 13 --> Step 14
-    Step 13 --> Step 15
-```
-
-[Return to Documentation Index](README.md)
+*Result: The target database is fully independent, verified, and ready for production traffic.*

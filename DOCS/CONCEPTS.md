@@ -1,22 +1,27 @@
-![pg_logical_migrator](../pg_logical_migrator.jpg)
+# Core Concepts & Architecture
 
-# Core Concepts of Logical Replication
+**pg_logical_migrator** is built on the foundation of **PostgreSQL Logical Replication**, designed specifically for low-downtime migrations between heterogeneous infrastructures or major versions.
 
-Logical replication in PostgreSQL is a method of replicating data objects and their changes based on their replication identity (usually a primary key). It allows for cross-version migration, granular control, and minimal downtime.
+### 🛡️ Design Philosophy
 
-## Core Architecture
+- **Stability Over Speed**: Every step is validated. We prioritize data integrity and structural parity over the absolute speed of initial copy.
+- **Surgical Transparency**: Every SQL command is logged, and HTML reports are generated for post-migration audits.
+- **Stateless Orchestration**: The tool acts as a stateless orchestrator, maintaining all state within the source and destination PostgreSQL instances.
 
-Logical replication uses a **publish-and-subscribe** model:
+### 🔄 The Logical Flow
 
-- **Publication**: Defined on the **Source** database (Publisher). It specifies which tables' changes should be replicated.
-- **Subscription**: Defined on the **Destination** database (Subscriber). It connects to the publication and pulls changes.
-- **Replication Slot**: Created on the source server to ensure that WAL (Write-Ahead Log) files are not discarded until they have been successfully processed by the subscriber.
+Logical replication works by decoding the Write-Ahead Log (WAL) into a stream of logical changes (INSERT, UPDATE, DELETE). This allows for:
+1.  **Baseline Copy**: Initial snapshot of data is transferred using `COPY`.
+2.  **Streaming Delta**: Real-time changes are streamed and applied incrementally.
+3.  **Cross-Version Parity**: Moving data between different major PG versions (e.g., PG12 to PG17).
 
-## How it Works
+### 🏗️ Workflow Structure
 
-1.  **Logical Decoding**: The source server decodes the binary WAL into a logical format (insert, update, delete).
-2.  **Streaming**: The decoded changes are sent over a standard connection to the subscriber.
-3.  **Application**: The subscriber applies the changes to its local tables in the same order they occurred.
+The migration is divided into three logical phases:
+1.  **Preparation (Steps 1-4)**: Connectivity checks, compatibility diagnostics, and structural (schema) setup.
+2.  **Execution (Steps 5-7)**: Initial data synchronization and continuous delta streaming.
+3.  **Finalization (Steps 8-16)**: Final data audit, object parity checks, and sequence synchronization before application cutover.
 
----
-[Return to Documentation Index](README.md)
+### ⚖️ Reliability & Rollback
+
+We include a built-in **Reverse Replication** capability. Once the primary migration is complete, the tool can configure the new instance as a publisher and the old instance as a subscriber. This ensures a safe "exit strategy" (Rollback) with zero data loss in the event of an application-level failure after the cutover.

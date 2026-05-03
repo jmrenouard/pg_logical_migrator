@@ -1,6 +1,6 @@
 # pg_logical_migrator Makefile
 
-.PHONY: help venv install build build-clean test-unit test-integration test-e2e test-all env-up env-down clean run-pipeline
+.PHONY: help venv install build build-clean test-unit test-integration test-e2e test-packaging test-all env-up env-down clean run-pipeline
 
 VENV          := venv
 PYTHON        := $(VENV)/bin/python
@@ -18,7 +18,8 @@ help:
 	@echo "  test-unit        Run unit tests"
 	@echo "  test-integration Run integration tests (requires docker env)"
 	@echo "  test-e2e         Run full end-to-end migration test (requires docker env)"
-	@echo "  test-all         Run all tests"
+	@echo "  test-packaging   Run packaging end-to-end test (build and validate binaries/packages)"
+	@echo "  test-all         Run all tests (unit, integration, e2e, packaging)"
 	@echo "  test-report      Run tests and generate reports"
 	@echo "  env-up           Start the Docker test environment"
 	@echo "  env-down         Stop the Docker test environment"
@@ -65,7 +66,17 @@ test-integration:
 test-e2e:
 	PYTHONPATH=. $(PYTEST) tests/e2e
 
-test-all: test-unit test-integration test-e2e
+test-all: test-unit test-integration test-e2e test-packaging
+
+test-packaging:
+	./e2e_packaging_test.sh
+
+test-coverage: install
+	PYTHONPATH=. $(PYTEST) tests/unit \
+		--cov=src \
+		--cov-report=term-missing \
+		--cov-report=html:RESULTS/coverage \
+		--cov-fail-under=80
 
 test-report: install
 	@mkdir -p RESULTS/$(TIMESTAMP)

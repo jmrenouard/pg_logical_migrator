@@ -1,6 +1,7 @@
 import configparser
 import os
 
+
 class Config:
     def __init__(self, config_path):
         self.config_path = config_path
@@ -29,15 +30,16 @@ class Config:
     def get_replication(self):
         import re
         rep = dict(self.config['replication'])
-        
+
         source_db = self.config['source']['database'].lower()
         target_schema = rep.get('target_schema', 'public').lower()
-        
+
         safe_db = re.sub(r'[^a-z0-9_]', '_', source_db)
         safe_schema = re.sub(r'[^a-z0-9_]', '_', target_schema)
         suffix = f"_{safe_db}_{safe_schema}"
 
-        for key, default in [('publication_name', 'migrator_pub'), ('subscription_name', 'migrator_sub'), ('slot_name', 'migrator_slot')]:
+        for key, default in [('publication_name', 'migrator_pub'), (
+                'subscription_name', 'migrator_sub'), ('slot_name', 'migrator_slot')]:
             val = rep.get(key, default)
             if suffix not in val:
                 rep[key] = f"{val}{suffix}"
@@ -48,7 +50,8 @@ class Config:
 
     def get_target_schemas(self):
         """Return a list of target schemas or ['all']."""
-        target = self.config['replication'].get('target_schema', 'public').strip().lower()
+        target = self.config['replication'].get(
+            'target_schema', 'public').strip().lower()
         if target == 'all':
             return ['all']
         # Handle comma-separated list

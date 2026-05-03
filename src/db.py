@@ -18,6 +18,7 @@ def _verbose_print(label: str, content, file=sys.stderr):
     else:
         print(f"{prefix} {content}", file=file)
 
+
 class PostgresClient:
     def __init__(self, conn_uri, label="DB"):
         self.conn_uri = conn_uri
@@ -26,7 +27,10 @@ class PostgresClient:
     @contextmanager
     def get_conn(self, autocommit=False) -> psycopg.Connection:
         import psycopg.rows
-        conn = psycopg.connect(self.conn_uri, row_factory=psycopg.rows.dict_row, autocommit=autocommit)
+        conn = psycopg.connect(
+            self.conn_uri,
+            row_factory=psycopg.rows.dict_row,
+            autocommit=autocommit)
         try:
             yield conn
         finally:
@@ -41,9 +45,11 @@ class PostgresClient:
                 cur = conn.execute(query, params)
                 if fetch:
                     result = cur.fetchall()
-                    _verbose_print(f"{self.label}:RESULT", result if len(result) <= 20 else f"{len(result)} rows returned")
+                    _verbose_print(f"{self.label}:RESULT", result if len(
+                        result) <= 20 else f"{len(result)} rows returned")
                     return result
-                _verbose_print(f"{self.label}:RESULT", "(no fetch – statement executed)")
+                _verbose_print(f"{self.label}:RESULT",
+                               "(no fetch – statement executed)")
         except Exception as e:
             _verbose_print(f"{self.label}:ERROR", str(e))
             raise
@@ -55,10 +61,12 @@ class PostgresClient:
                 conn.execute(script)
                 if not autocommit:
                     conn.commit()
-                _verbose_print(f"{self.label}:RESULT", "(script executed successfully)")
+                _verbose_print(f"{self.label}:RESULT",
+                               "(script executed successfully)")
         except Exception as e:
             _verbose_print(f"{self.label}:ERROR", str(e))
             raise
+
 
 def pretty_size(bytes_size):
     """Convert bytes to human readable format."""
@@ -70,6 +78,7 @@ def pretty_size(bytes_size):
         bytes_size /= 1024.0
     return f"{bytes_size:3.1f} PB"
 
+
 def execute_shell_command(command, log_cmd=None):
     import subprocess
     import logging
@@ -78,8 +87,14 @@ def execute_shell_command(command, log_cmd=None):
     _verbose_print("CMD", display_cmd)
     try:
         logging.info(f"{prefix}Executing: {display_cmd}")
-        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-        _verbose_print("STDOUT", result.stdout.strip() if result.stdout.strip() else "(empty)")
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True)
+        _verbose_print("STDOUT", result.stdout.strip()
+                       if result.stdout.strip() else "(empty)")
         return True, result.stdout
     except subprocess.CalledProcessError as e:
         _verbose_print("ERROR", e.stderr.strip() if e.stderr else str(e))

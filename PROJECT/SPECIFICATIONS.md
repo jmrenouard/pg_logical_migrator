@@ -6,7 +6,7 @@
 
 `pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a Textual Terminal User Interface (TUI) for interactive step-by-step execution and incremental pipeline commands (`init-replication`, `post-migration`) for hands-off migrations.
 
-- **Language**: Python ≥ 3.10
+- **Language**: Python ≥ 3.9
 - **Key Libraries**: `textual`, `rich`, `psycopg` (v3), `psycopg-binary`
 - **PostgreSQL**: Source and destination must be PostgreSQL 10 or higher with `wal_level = logical`
 
@@ -79,33 +79,28 @@ Built with the [`textual`](https://textual.textualize.io/) framework. Launched v
 
 ## Incremental Pipeline Mode
 
-Executes the pipeline non-interactively in an incremental sequence via two commands:
-
 ### `init-replication`
 
-```text
-Step 1  (Connectivity Check)     → checker.check_connectivity()       [SOURCE + DEST]
-Step 2  (Diagnostics)            → checker.check_problematic_objects() [SOURCE]
-Step 3  (Parameter Verification) → checker.check_replication_params()  [SOURCE + DEST]
-Step 4  (Schema Migration)       → migrator.step4_migrate_schema()     [SOURCE → DEST]
-Step 5  (Setup Publication)      → migrator.step5_setup_source()       [SOURCE]
-Step 6  (Setup Subscription)     → migrator.step6_setup_destination()  [DEST]
-Sync    (Wait for Initial Sync)  → migrator.wait_for_sync()            [DEST — polls pg_subscription_rel]
-Step 13 (Object Audit)           → validator.audit_objects()           [SOURCE + DEST]
-Step 14 (Row Parity)             → validator.compare_row_counts()      [SOURCE + DEST]
-```
+Executes **Phase 1** and **Phase 2**:
+- `check` (Step 1)
+- `diagnose` (Step 2)
+- `params` (Step 3)
+- `migrate-schema-pre-data` (Step 4)
+- `setup-pub` (Step 5)
+- `setup-sub` (Step 6)
 
 ### `post-migration`
 
-```text
-Step 1  (Connectivity Check)     → checker.check_connectivity()              [SOURCE + DEST]
-Step 12 (Replication Cleanup)    → migrator.step12_terminate_replication()   [DEST + SOURCE]
-Step 11 (MatViews Refresh)       → post_sync.refresh_materialized_views()    [DEST]
-Steps 8/9 (Sequence Sync)        → post_sync.sync_sequences()               [SOURCE → DEST]
-Step 10 (Enable Triggers)        → post_sync.enable_triggers()               [DEST]
-Step 13 (Object Audit)           → validator.audit_objects()                 [SOURCE + DEST]
-Step 14 (Row Parity)             → validator.compare_row_counts()            [SOURCE + DEST]
-```
+Executes **Phase 3** and **Phase 4**:
+- `wait-for-sync` (Step 7: Monitoring)
+- `refresh-matviews` (Step 8)
+- `sync-sequences` (Step 9)
+- `terminate-repl` (Step 10: Terminate & Post-Schema)
+- `sync-lobs` (Step 11)
+- `enable-triggers` (Step 12)
+- `reassign-owner` (Step 13)
+- `audit-objects` (Step 14)
+- `validate-rows` (Step 15)
 
 All steps are wrapped in a `try/except` block. On any fatal exception, a partial error report is written to `RESULTS/<timestamp>/migration_report_error.html`.
 

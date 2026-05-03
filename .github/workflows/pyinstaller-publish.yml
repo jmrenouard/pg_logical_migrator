@@ -12,6 +12,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # 1. Build Binaries for Linux, Windows, macOS
   build-binaries:
@@ -19,23 +22,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        python_version: ["3.9", "3.11"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             platform: linux-amd64
-            artifact_name: pg_migrator-linux-amd64
           - os: windows-latest
             platform: win-amd64
-            artifact_name: pg_migrator-win-amd64
           - os: macos-latest
             platform: macos-arm64
-            artifact_name: pg_migrator-macos-arm64
 
     steps:
-      - uses: actions/checkout@v6
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python_version }}
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python_version }}
 
       - name: Extract Version
         id: get_version
@@ -62,12 +64,32 @@ jobs:
         run: |
           EXE_EXT=""
           if [ "${{ runner.os }}" == "Windows" ]; then EXE_EXT=".exe"; fi
-          
-          pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
-          
-          BINARY_NAME="pg_migrator-${{ matrix.platform }}-v${VERSION}${EXE_EXT}"
+
+          # Ensure clean dist directory
+          rm -rf dist
+          mkdir -p dist
+
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            echo "Building on Linux via registry.access.redhat.com/ubi8/ubi container for glibc backward compatibility"
+            docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace registry.access.redhat.com/ubi8/ubi bash -c "
+              dnf install -y python3.11 python3.11-pip python3.11-devel python39 python39-pip python39-devel gcc &&
+              if [ '${{ matrix.python_version }}' = '3.9' ]; then
+                PYTHON_CMD=python3.9
+                PIP_CMD=pip3.9
+              else
+                PYTHON_CMD=python3.11
+                PIP_CMD=pip3.11
+              fi &&
+              \$PIP_CMD install pyinstaller -r requirements.txt &&
+              \$PYTHON_CMD -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' pg_migrator.py
+            "
+          else
+            pyinstaller --onefile --name pg_migrator --add-data "src:src" --add-data "config_migrator.sample.ini:." pg_migrator.py
+          fi
+
+          BINARY_NAME="pg_migrator-${{ matrix.platform }}-python${{ matrix.python_version }}-v${VERSION}${EXE_EXT}"
           mv dist/pg_migrator${EXE_EXT} "dist/${BINARY_NAME}"
-          
+
           # Generate SHA256
           cd dist
           if [ "${{ runner.os }}" == "Windows" ]; then
@@ -77,23 +99,53 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
+          name: binary-${{ matrix.platform }}-python${{ matrix.python_version }}-v${{ env.VERSION }}
           path: dist/pg_migrator-*
+          if-no-files-found: error
+
+  # 1.5. Validate Linux Binaries on RHEL 8 (glibc backward compatibility check)
+  validate-linux-binary:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Version
+        id: info
+        run: |
+          VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
+          path: dist/
+
+      - name: Test Binary Execution in registry.access.redhat.com/ubi8/ubi container
+        run: |
+          bin_file="dist/pg_migrator-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}"
+          chmod +x "$bin_file"
+          # Run the binary inside an UBI 8 container to verify glibc 2.28 compatibility
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace registry.access.redhat.com/ubi8/ubi ./$bin_file --help
+          echo "Execution on registry.access.redhat.com/ubi8/ubi succeeded! glibc compatibility verified."
 
   # 2. Create DEB and RPM packages (using nfpm)
   package-os:
-    needs: build-binaries
+    needs: validate-linux-binary
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.9", "3.11"]
     steps:
-      - uses: actions/checkout@v6
-      
-      - name: Download Linux binary
-        uses: actions/download-artifact@v6
-        with:
-          name: pg_migrator-linux-amd64
-          path: dist/
+      - uses: actions/checkout@v4
 
       - name: Extract Version
         id: info
@@ -107,11 +159,28 @@ jobs:
                 version = match.group(1) if match else "unknown"
                 with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
                     out.write(f"VERSION={version}\n")
-            # Find the actual binary filename (not the sha256)
-            bin_files = [f for f in os.listdir("dist") if f.startswith("pg_migrator-linux-amd64-") and not f.endswith(".sha256")]
-            if bin_files:
-                with open(os.environ['GITHUB_OUTPUT'], 'a', encoding="utf-8") as out:
-                    out.write(f"BIN_FILE=dist/{bin_files[0]}\n")
+            print(f"Version: {version}")
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
+          path: dist/
+
+      - name: Locate binary
+        id: locate
+        run: |
+            echo "Listing dist/ directory:"
+            ls -la dist/ || echo "dist/ not found!"
+            # We know the exact name we uploaded
+            bin_file="dist/pg_migrator-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}"
+            if [ -f "$bin_file" ]; then
+                echo "BIN_FILE=$bin_file" >> $GITHUB_OUTPUT
+                echo "Found binary: $bin_file"
+            else
+                echo "Binary not found!"
+                exit 1
+            fi
 
       - name: Install nfpm
         run: |
@@ -121,7 +190,7 @@ jobs:
       - name: Create nfpm.yaml
         run: |
           cat <<EOF > nfpm.yaml
-          name: "pg-logical-migrator"
+          name: "pg-logical-migrator-python${{ matrix.python_version }}"
           arch: "amd64"
           platform: "linux"
           version: "${{ steps.info.outputs.VERSION }}"
@@ -133,7 +202,7 @@ jobs:
           homepage: "https://github.com/jmrenouard/pg_logical_migrator"
           license: "MIT"
           contents:
-            - src: "${{ steps.info.outputs.BIN_FILE }}"
+            - src: "${{ steps.locate.outputs.BIN_FILE }}"
               dst: "/usr/bin/pg_migrator"
           EOF
 
@@ -145,33 +214,54 @@ jobs:
           for f in *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
 
       - name: Upload OS packages
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: os-packages
+          name: os-packages-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: |
             dist/*.deb*
             dist/*.rpm*
 
   # 3. Build Python Wheel and Source Distribution
   package-python:
+    needs: [build-binaries]
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.9", "3.11"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python_version }}
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python_version }}
+
+      - name: Extract Version
+        id: info
+        run: |
+          VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' pg_migrator.py)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Install dependencies
         run: pip install build
+
       - name: Build Wheel and Sdist
         run: |
+          rm -rf dist
           python -m build
           cd dist
+          for f in *.whl; do
+            mv "$f" "${f%.whl}-python${{ matrix.python_version }}.whl"
+          done
+          for f in *.tar.gz; do
+            mv "$f" "${f%.tar.gz}-python${{ matrix.python_version }}.tar.gz"
+          done
           for f in *; do sha256sum "$f" > "$f.sha256"; done
+
       - name: Upload Python assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: python-assets
+          name: python-assets-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/*
 
   # 4. Create GitHub Release
@@ -179,17 +269,7 @@ jobs:
     needs: [build-binaries, package-os, package-python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - name: Download all artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: all-artifacts/
-
-      - name: Prepare Release folder
-        run: |
-          mkdir release-dist
-          find all-artifacts/ -type f -exec cp {} release-dist/ \;
-          ls -R release-dist/
+      - uses: actions/checkout@v4
 
       - name: Set Release Info
         id: rel_info
@@ -201,9 +281,7 @@ jobs:
                 content = f.read()
                 match = re.search(r'__version__ = "([^"]+)"', content)
                 version = match.group(1) if match else "unknown"
-                with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
-                    env.write(f"VERSION={version}\n")
-            
+
             ref = os.environ['GITHUB_REF']
             if ref.startswith('refs/tags/'):
                 tag_name = ref.replace('refs/tags/', '')
@@ -211,10 +289,28 @@ jobs:
             else:
                 tag_name = ref.replace('refs/heads/', '')
                 is_prerelease = 'true'
-            
+
+            # Verify version matches tag if tag push
+            if ref.startswith('refs/tags/') and tag_name != f"v{version}":
+                print(f"::error::Tag {tag_name} does not match script version v{version}")
+                exit(1)
+
             with open(os.environ['GITHUB_ENV'], 'a', encoding="utf-8") as env:
+                env.write(f"VERSION={version}\n")
                 env.write(f"TAG_NAME={tag_name}\n")
                 env.write(f"IS_PRERELEASE={is_prerelease}\n")
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts/
+
+      - name: Prepare Release folder
+        run: |
+          mkdir release-dist
+          # Only pick files that match the CURRENT version to avoid leftovers from other runs
+          find all-artifacts/ -type f \( -name "*${{ env.VERSION }}*" -o -name "*.sha256" \) -exec cp {} release-dist/ \;
+          ls -R release-dist/
 
       - name: Generate Beautiful Release Notes
         run: |
@@ -224,7 +320,7 @@ jobs:
           else
             echo "# Release ${{ env.TAG_NAME }}" > release_body.md
           fi
-          
+
           # 2. Add Deliverables Section
           {
             echo ""
@@ -234,19 +330,24 @@ jobs:
             echo "### Standalone Binaries"
             echo "| Platform | Architecture | Asset | Checksum |"
             echo "|---|---|---|---|"
-            echo "| Linux | amd64 | \`pg_migrator-linux-amd64-v${{ env.VERSION }}\` | [sha256] |"
-            echo "| Windows | amd64 | \`pg_migrator-win-amd64-v${{ env.VERSION }}.exe\` | [sha256] |"
-            echo "| macOS | arm64 | \`pg_migrator-macos-arm64-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Linux (Python 3.9) | amd64 | \`pg_migrator-linux-amd64-python3.9-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Linux (Python 3.11) | amd64 | \`pg_migrator-linux-amd64-python3.11-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Windows (Python 3.9) | amd64 | \`pg_migrator-win-amd64-python3.9-v${{ env.VERSION }}.exe\` | [sha256] |"
+            echo "| Windows (Python 3.11) | amd64 | \`pg_migrator-win-amd64-python3.11-v${{ env.VERSION }}.exe\` | [sha256] |"
+            echo "| macOS (Python 3.9) | arm64 | \`pg_migrator-macos-arm64-python3.9-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| macOS (Python 3.11) | arm64 | \`pg_migrator-macos-arm64-python3.11-v${{ env.VERSION }}\` | [sha256] |"
             echo ""
             echo "### OS Packages"
-            echo "| Format | Architecture | Asset |"
-            echo "|---|---|---|"
-            echo "| Debian/Ubuntu | amd64 | \`pg-logical-migrator_${{ env.VERSION }}_amd64.deb\` |"
-            echo "| RHEL/CentOS | amd64 | \`pg-logical-migrator-${{ env.VERSION }}-1.x86_64.rpm\` |"
+            echo "| Format | Architecture | Python 3.9 | Python 3.11 |"
+            echo "|---|---|---|---|"
+            echo "| Debian/Ubuntu | amd64 | \`pg-logical-migrator-python3.9_${{ env.VERSION }}_amd64.deb\` | \`pg-logical-migrator-python3.11_${{ env.VERSION }}_amd64.deb\` |"
+            echo "| RHEL/CentOS | amd64 | \`pg-logical-migrator-python3.9-${{ env.VERSION }}-1.x86_64.rpm\` | \`pg-logical-migrator-python3.11-${{ env.VERSION }}-1.x86_64.rpm\` |"
             echo ""
             echo "### Python Packages"
-            echo "- **Wheel**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any.whl\`"
-            echo "- **Source**: \`pg_logical_migrator-${{ env.VERSION }}.tar.gz\`"
+            echo "- **Wheel (3.9)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.9.whl\`"
+            echo "- **Wheel (3.11)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.11.whl\`"
+            echo "- **Source (3.9)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.9.tar.gz\`"
+            echo "- **Source (3.11)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.11.tar.gz\`"
             echo ""
             echo "### Docker Images"
             echo "\`\`\`bash"
@@ -258,13 +359,22 @@ jobs:
             echo "*Checksums (.sha256) are available in the assets list below.*"
           } >> release_body.md
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: "${{ env.TAG_NAME }}"
-          body_path: release_body.md
-          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
-          generate_release_notes: false
-          files: |
-            release-dist/*
+      - name: Update GitHub Release and Upload Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create or update the release
+          if ! gh release view "${{ env.TAG_NAME }}"; then
+            gh release create "${{ env.TAG_NAME }}" \
+              --title "${{ env.TAG_NAME }}" \
+              --notes-file release_body.md \
+              $(if [ "${{ env.IS_PRERELEASE }}" = "true" ]; then echo "--prerelease"; fi)
+          else
+            gh release edit "${{ env.TAG_NAME }}" \
+              --title "${{ env.TAG_NAME }}" \
+              --notes-file release_body.md \
+              $(if [ "${{ env.IS_PRERELEASE }}" = "true" ]; then echo "--prerelease"; fi)
+          fi
+
+          # Upload all files, clobbering existing ones
+          gh release upload "${{ env.TAG_NAME }}" release-dist/* --clobber

@@ -3,132 +3,147 @@
 # pg_logical_migrator
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v10+-blue.svg)](https://www.postgresql.org/)
-[![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.9+-green.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
-[![GitHub Container Registry](https://img.shields.io/badge/GHCR-jmrenouard%2Fpg__logical__migrator-blue?logo=github)](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/jmrenouard)
 
-**pg_logical_migrator** is a Python tool designed to simplify and automate PostgreSQL database migrations using **logical replication**. It provides a feature-rich CLI (`pg_migrator.py`) with individual step commands, a full-screen Terminal UI (TUI) for supervised migrations, and a multi-phase automated pipeline for integration.
+**pg_logical_migrator** is a Python-based orchestrator designed to automate PostgreSQL database migrations using **logical replication**. It provides a standardized **17-step sequential workflow**, a refactored **centralized TUI dashboard**, and automated pipelines for complex infrastructure migrations.
+
+---
+
+## 🎥 Lifecycle Demonstration
+
+Watch how **pg_logical_migrator** orchestrates an end-to-end database migration, including **Large Object (LOB) synchronization** and real-time parity audits.
+
+[![asciicast](https://asciinema.org/a/2XCuo1WYnRZZfo5o.svg)](https://asciinema.org/a/2XCuo1WYnRZZfo5o)
 
 ---
 
 ## Key Features
 
-- **Standardized 16-Step Workflow**: A robust, sequential process ensuring data integrity and minimal downtime.
-- **Guided TUI Interface**: A step-by-step terminal dashboard (built with [Textual](https://textual.textualize.io/)) to supervise the migration process interactively.
-- **Automated Pipelines**: One-command migration via `init-replication` and `post-migration` for non-interactive environments.
-- **Deep Diagnostics**: Pre-flight checks for Primary Key coverage, Large Objects (LOBs), Identity columns, and unowned sequences.
-- **Size Analysis**: Real-time database and table size breakdown (Data vs. Index) with % DB footprint.
-- **Replication Progress**: Real-time byte-level and table-count tracking of the data synchronization.
-- **Rollback Capability**: Optional reverse replication setup (`setup-reverse`) to sync changes back to the source after migration.
-- **Validation Suite**: Structural parity audit and fast row count comparison (using statistics or exact count).
-- **Audit-Ready HTML Reports**: Visual reports containing every executed command and its raw output.
+- **Standardized 17-Step Workflow**: A strictly defined, repeatable process ensuring maximum data integrity.
+- **Refactored TUI Dashboard**: A modern, result-centric interface with action tabs and an **interactive action history**.
+- **Large Object (LOB) Synchronization**: Manually migrates binary data (OIDs) and restores table references.
+- **Deep Pre-flight Diagnostics**: Scans for Primary Key coverage, LOBs, and unowned sequences.
+- **Replication Byte-level Tracking**: Real-time progress monitoring of the initial data copy.
+- **Post-Migration Parity Audits**: Structural parity checks and exhaustive row count comparison.
+- **Automated Rollback Path**: Integrated setup for reverse replication to sync changes back to the source.
+- **Audit-Ready HTML Reports**: Detailed visual reports containing every executed SQL command and its output.
 
 ---
 
 ## Architecture at a Glance
 
-```text
-pg_migrator.py              # CLI entry point with 16 subcommands
-src/
-├── config.py               # Multi-schema INI configuration management
-├── db.py                   # psycopg v3 connection wrapper & pretty-size utilities
-├── checker.py              # Steps 1–3: Connectivity, diagnostics, size analysis
-├── migrator.py             # Steps 4–7, 12, 16: Schema, pub/sub, sync wait, cleanup
-├── post_sync.py            # Steps 8–11, 13: MatViews, sequences, triggers, ownership
-├── validation.py           # Steps 14–15: Object audit, row parity (stats supported)
-├── report_generator.py     # HTML report engine
-└── tui.py                  # TUI Application logic (Textual + Rich)
+```mermaid
+graph LR
+    subgraph UI [User Interfaces]
+        CLI([fa:fa-terminal CLI]):::ui
+        TUI([fa:fa-desktop TUI]):::ui
+    end
+
+    subgraph Engine [Migration Engine]
+        direction TB
+        CMD{fa:fa-cog Orchestrator}:::core
+        
+        subgraph Logic [Migration Steps]
+            direction LR
+            CHK(fa:fa-clipboard-check Checker)
+            MIG(fa:fa-exchange-alt Migrator)
+            PSY(fa:fa-sync Post-Sync)
+            VAL(fa:fa-shield-alt Validation)
+        end
+        
+        RPT(fa:fa-file-alt HTML Report):::util
+    end
+
+    subgraph Data [Infrastructure]
+        SRC[(fa:fa-database Source DB)]:::db
+        DST[(fa:fa-database Target DB)]:::db
+    end
+
+    %% Flow
+    CLI & TUI --> CMD
+    CMD --> Logic
+    Logic --> SRC
+    Logic --> DST
+    Logic -.-> RPT
+
+    %% Styling
+    classDef ui fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#01579b
+    classDef core fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100
+    classDef logic fill:#f1f8e9,stroke:#33691e,stroke-width:1px,color:#33691e
+    classDef db fill:#eceff1,stroke:#455a64,stroke-width:2px,color:#455a64
+    classDef util fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px,color:#7b1fa2
 ```
 
 ---
 
-## Installation
+## Deployment Options
 
 ### Option A — Docker (Recommended)
-
-The Docker image ships with all dependencies pre-installed and requires **zero local setup**.
+The official image ships with all dependencies pre-installed. No local Python configuration is required.
 
 ```bash
-# Pull from Docker Hub
 docker pull jmrenouard/pg_logical_migrator:latest
-
-# Or from GitHub Container Registry (GHCR)
-docker pull ghcr.io/jmrenouard/pg_logical_migrator:latest
 ```
 
-| Registry | Link |
-| :--- | :--- |
-| **Docker Hub** | [hub.docker.com/r/jmrenouard/pg_logical_migrator](https://hub.docker.com/r/jmrenouard/pg_logical_migrator) |
-| **GHCR** | [github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator](https://github.com/jmrenouard/pg_logical_migrator/pkgs/container/pg_logical_migrator) |
-
-### Option B — Standalone Binaries
-
-Native standalone binaries for **Linux (amd64)**, **Windows (exe)**, and **macOS (arm64)** are available on the [Releases Page](https://github.com/jmrenouard/pg_logical_migrator/releases).
-
-### Option C — OS Packages (DEB / RPM)
-
-Native packages for **Debian/Ubuntu** (`.deb`) and **RHEL/CentOS/Fedora** (`.rpm`) are provided for easy system-wide installation.
-
-### Option D — Python Package (pip)
-
-Install the wheel directly or from source:
+### Option B — Local Python Setup
+For local development, ensure you have Python 3.9+ and the required drivers.
 
 ```bash
-# From local wheel
-pip install pg_logical_migrator-1.3.1-py3-none-any.whl
-
-# From source
-git clone https://github.com/jmrenouard/pg_logical_migrator.git
-cd pg_logical_migrator
-make install
+git clone https://github.com/jmrenouard/pg_logical_migrator
+pip install -r requirements.txt
 ```
 
 ---
 
-## Quick Start
+## Quick Start (3 Steps)
 
-1. **Configure**: `cp config_migrator.sample.ini config_migrator.ini`
-2. **Diagnose**: `python pg_migrator.py diagnose`
-3. **Replicate**: `python pg_migrator.py init-replication --drop-dest`
-4. **Finalize**: `python pg_migrator.py post-migration`
+### 1. Configure Connection Parameters
+Create a `config_migrator.ini` file based on the provided sample. Ensure both databases are reachable and have `wal_level = logical`.
 
----
+### 2. Initialize Replication
+Start the initial data copy and streaming delta.
+```bash
+python pg_migrator.py init-replication --drop-dest
+```
 
-## CLI Reference (17-Step Workflow)
-
-| Command | Step | Description |
-| :--- | :---: | :--- |
-| `check` | 1 | Test connectivity |
-| `diagnose` | 2 | Pre-migration diagnostics & size audit |
-| `params` | 3 | Verify replication parameters |
-| `migrate-schema-pre-data` | 4 | Copy schema structure (pre-data) |
-| `setup-pub` | 5 | Create publication on source |
-| `setup-sub` | 6 | Create subscription on destination |
-| `repl-status` | 7 | Show replication status (Forward/Reverse) |
-| `repl-progress` | — | Real-time byte-level copy progress |
-| `refresh-matviews` | 8 | Refresh materialized views |
-| `sync-sequences` | 9/10 | Synchronize sequence values |
-| `enable-triggers` | 11 | Enable triggers on destination |
-| `migrate-schema-post-data` | 12 | Copy indexes and constraints (post-data) |
-| `reassign-owner` | 13 | Set correct object ownership |
-| `audit-objects` | 14 | Compare object counts |
-| `validate-rows` | 15 | Compare row counts (`--use-stats` available) |
-| `cleanup` | 16 | Stop replication & free resources |
-| `setup-reverse` | 17 | (Optional) Setup reverse sync for rollback |
+### 3. Finalize Cutover
+Once synchronization is complete, finalize the schema, sequences, and triggers.
+```bash
+python pg_migrator.py post-migration
+```
 
 ---
 
 ## Documentation Index
 
-| Document | Description |
+| Resource | Description |
 | :--- | :--- |
-| **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | **Standardized 16-Step Sequence** with Mermaid diagrams |
-| **[DOCS/CODEBASE.md](DOCS/CODEBASE.md)** | Technical reference and module responsibilities |
-| **[HOWTO.md](HOWTO.md)** | Comprehensive testing and execution guide |
-| **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | `config_migrator.ini` reference and PG parameters |
-| **[DOCS/DOCKER.md](DOCS/DOCKER.md)** | Running within isolated Docker containers |
-| **[DOCS/VALIDATION.md](DOCS/VALIDATION.md)** | Checklists for schema and data verification |
+| **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | **Standardized 17-Step Workflow** with technical deep-dives. |
+| **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | `config_migrator.ini` reference and PG parameters. |
+| **[DOCS/LIMITATIONS.md](DOCS/LIMITATIONS.md)** | Critical constraints (PK, LOBs, DDL restrictions). |
+| **[DOCS/DOCKER.md](DOCS/DOCKER.md)** | Running within isolated containerized environments. |
+| **[DOCS/README.md](DOCS/README.md)** | **Complete Documentation Hub**. |
+
+---
+
+## 🔒 Security & Support
+
+- **Vulnerability Reporting**: Please refer to [SECURITY.md](SECURITY.md) for our responsible disclosure policy.
+- **Contributions**: Guidelines for submitting PRs and bug reports are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## 📬 Contact Me
+
+| Channel | Link |
+| :--- | :--- |
+| 🌐 Website | [www.jmrenouard.fr](https://www.jmrenouard.fr) |
+| 💼 LinkedIn | [jmrenouard](https://www.linkedin.com/in/jmrenouard) |
+| 🐦 X (Twitter) | [@jmrenouard](https://x.com/jmrenouard) |
+| 🐙 GitHub | [jmrenouard](https://github.com/jmrenouard) |
 
 ---
 

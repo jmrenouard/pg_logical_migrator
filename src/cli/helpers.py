@@ -7,6 +7,7 @@ import textwrap
 from src.config import Config
 from src.db import PostgresClient
 
+
 def setup_logging(level: str = "INFO", log_file: str = None):
     """Configure root logger with console + optional file handler."""
     numeric_level = getattr(logging, level.upper(), logging.INFO)
@@ -80,7 +81,7 @@ def print_verbose_execution(args, cmds, outs=None):
             lines = out_str.split("\n")
             if len(lines) > 10:
                 print(f"    OUT: {lines[0]}")
-                print(f"         ... ({len(lines)-2} lines hidden) ...")
+                print(f"         ... ({len(lines) - 2} lines hidden) ...")
                 print(f"         {lines[-1]}")
             else:
                 for idx, line in enumerate(lines):

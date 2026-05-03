@@ -7,7 +7,7 @@ This guide explains how to test the `pg_logical_migrator` in various modes, from
 ## 1. Prerequisites
 
 - **Docker & docker compose**: For running the test databases.
-- **Python 3.10+**: With a virtual environment.
+- **Python 3.9+**: With a virtual environment.
 - **PostgreSQL Client Tools**: `pg_dump` and `psql` must be in your PATH.
 
 ---
@@ -63,7 +63,7 @@ PYTHONPATH=. venv/bin/python pg_migrator.py tui
 - Use the **"Initial Copy Progress"** button to monitor data sync in real-time.
 
 ### C. Manual Step-by-Step (CLI)
-You can run any of the 14 steps individually for granular control.
+You can run any of the 17 steps individually for granular control.
 
 ```bash
 # Example: Just run diagnostics
