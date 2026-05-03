@@ -9,6 +9,7 @@ def mock_config():
     with patch("src.tui.Config") as mock:
         mock_instance = mock.return_value
         mock_instance.get_target_schemas.return_value = ["public"]
+        mock_instance.get_databases.return_value = ["test_db"]
         yield mock
 
 
@@ -237,11 +238,12 @@ def test_main(mock_run, mock_parse_args):
     mock_args.config = "dummy.ini"
     mock_parse_args.return_value = mock_args
 
-    with patch("src.tui.Config"), \
+    with patch("src.tui.Config") as mock_conf, \
             patch("src.tui.PostgresClient"), \
             patch("src.tui.DBChecker"), \
             patch("src.tui.Migrator"), \
             patch("src.tui.PostSync"), \
             patch("src.tui.Validator"):
+        mock_conf.return_value.get_databases.return_value = ["test_db"]
         main()
         mock_run.assert_called_once()

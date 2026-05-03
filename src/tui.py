@@ -91,13 +91,21 @@ class MigratorApp(App):
     .btn-auto { background: #16a085; }
     
     #config_form {
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
-        grid-rows: auto;
         padding: 1;
+        height: auto;
     }
-    #config_form Input {
-        margin: 1;
+    .form_row {
+        layout: horizontal;
+        height: 3;
+        margin-bottom: 1;
+    }
+    .form_row Label {
+        width: 10;
+        content-align: left middle;
+    }
+    .form_row Input {
+        width: 1fr;
+        margin-right: 1;
     }
 
     ListView {
@@ -135,12 +143,6 @@ class MigratorApp(App):
             os.environ['PG_MIGRATOR_OVERRIDE_DB'] = db_name
             self.config.set_override_db(db_name)
         
-        # Cleanup old connections if they exist
-        if hasattr(self, 'source_client') and self.source_client:
-            self.source_client.close()
-        if hasattr(self, 'dest_client') and self.dest_client:
-            self.dest_client.close()
-            
         self.source_client = PostgresClient(
             self.config.get_source_conn(db_name), label=f"SOURCE {db_name}")
         self.dest_client = PostgresClient(
@@ -208,19 +210,25 @@ class MigratorApp(App):
                         with TabPane("⚙️ Config Gen"):
                             with VerticalScroll():
                                 yield Label("Generate an environment-specific config file", classes="pane_header")
-                                with Grid(id="config_form"):
-                                    yield Input(placeholder="Source Host (e.g. localhost)", value="localhost", id="gen_src_host")
-                                    yield Input(placeholder="Source Port (e.g. 5432)", value="5432", id="gen_src_port")
-                                    yield Input(placeholder="Source User", value="postgres", id="gen_src_user")
-                                    yield Input(placeholder="Source Password", password=True, id="gen_src_pass")
+                                with Vertical(id="config_form"):
+                                    with Horizontal(classes="form_row"):
+                                        yield Label("Source:")
+                                        yield Input(placeholder="Host", value="localhost", id="gen_src_host")
+                                        yield Input(placeholder="Port", value="5432", id="gen_src_port")
+                                        yield Input(placeholder="User", value="postgres", id="gen_src_user")
+                                        yield Input(placeholder="Password", password=True, id="gen_src_pass")
                                     
-                                    yield Input(placeholder="Dest Host", value="localhost", id="gen_dest_host")
-                                    yield Input(placeholder="Dest Port", value="5433", id="gen_dest_port")
-                                    yield Input(placeholder="Dest User", value="postgres", id="gen_dest_user")
-                                    yield Input(placeholder="Dest Password", password=True, id="gen_dest_pass")
+                                    with Horizontal(classes="form_row"):
+                                        yield Label("Dest:")
+                                        yield Input(placeholder="Host", value="localhost", id="gen_dest_host")
+                                        yield Input(placeholder="Port", value="5433", id="gen_dest_port")
+                                        yield Input(placeholder="User", value="postgres", id="gen_dest_user")
+                                        yield Input(placeholder="Password", password=True, id="gen_dest_pass")
                                     
-                                    yield Input(placeholder="Databases (comma separated or *)", value="*", id="gen_databases")
-                                    yield Input(placeholder="Output Filename", value="config_custom.ini", id="gen_filename")
+                                    with Horizontal(classes="form_row"):
+                                        yield Label("Misc:")
+                                        yield Input(placeholder="Databases (* or comma-separated)", value="*", id="gen_databases")
+                                        yield Input(placeholder="Output Filename", value="config_custom.ini", id="gen_filename")
                                 with Horizontal(classes="btn_group"):
                                     yield Button("Generate Config", id="cmd_generate_config", classes="btn-auto")
 
@@ -278,198 +286,198 @@ class MigratorApp(App):
                 self._init_backend_for_db(db)
                 
                 if btn_id == "step_1":
-                res = self.checker.check_connectivity()
-                src_ok = '[green]OK[/]' if res['source'] else '[red]FAIL[/]'
-                dst_ok = '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'
-                status = f"Source: {src_ok}\nDest: {dst_ok}"
-                self.update_display(
-                    Panel(
-                        Text.from_markup(status),
-                        title="Connectivity"),
-                    label)
-
-            elif btn_id == "step_2":
-                res = self.checker.check_problematic_objects()
-                # Basic diagnostic table
-                table = Table(title="Diagnostics Summary")
-                table.add_column("Object Type", style="cyan")
-                table.add_column("Count", justify="right")
-                table.add_row("Tables without PK", str(len(res['no_pk'])))
-                table.add_row(
-                    "Large Objects (LOBs)", str(
-                        res['large_objects']))
-                table.add_row("Unowned Sequences", str(
-                    len(res['unowned_seqs'])))
-                table.add_row("Unlogged Tables", str(
-                    len(res.get('unlogged_tables', []))))
-                self.update_display(table, label)
-
-            elif btn_id == "step_3":
-                res = self.checker.check_replication_params()
-                table = Table(title="PostgreSQL Parameters")
-                table.add_column("Instance")
-                table.add_column("Parameter")
-                table.add_column("Value")
-                table.add_column("Status")
-                for side in ["source", "dest"]:
-                    for p in res.get(side, []):
-                        color = "green" if p['status'] == "OK" else "red"
-                        table.add_row(side.upper(),
-                                      p['parameter'],
-                                      p['actual'],
-                                      f"[{color}]{p['status']}[/]")
-                self.update_display(table, label)
-
-            elif btn_id == "step_4":
-                drop = self.query_one("#opt_drop_dest", Checkbox).value
-                s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(
-                    drop_dest=drop)
-                self.update_display(
-                    Panel(
-                        m,
-                        title="Schema Pre-Data",
-                        border_style="green" if s else "red"),
-                    label)
-
-            elif btn_id == "step_5":
-                s, m, c, o = self.migrator.step5_setup_source()
-                self.update_display(Panel(m, title="Setup Publication"), label)
-
-            elif btn_id == "step_6":
-                self.update_display(
-                    Panel(
-                        "Starting subscription creation in background...",
-                        title="Subscription"),
-                    label)
-                self._run_sub_async()
-
-            elif btn_id == "cmd_progress":
-                progress = self.migrator.get_initial_copy_progress()
-                if not progress:
+                    res = self.checker.check_connectivity()
+                    src_ok = '[green]OK[/]' if res['source'] else '[red]FAIL[/]'
+                    dst_ok = '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'
+                    status = f"Source: {src_ok}\nDest: {dst_ok}"
                     self.update_display(
                         Panel(
-                            "No active replication progress found.",
-                            border_style="yellow"),
+                            Text.from_markup(status),
+                            title="Connectivity"),
                         label)
-                else:
-                    table = Table(title="Sync Progress")
-                    table.add_column("Table")
-                    table.add_column("State")
-                    table.add_column("Progress")
-                    for t in progress['tables']:
-                        table.add_row(t['table_name'],
-                                      t['state'], f"{t['percent']}%")
+
+                elif btn_id == "step_2":
+                    res = self.checker.check_problematic_objects()
+                    # Basic diagnostic table
+                    table = Table(title="Diagnostics Summary")
+                    table.add_column("Object Type", style="cyan")
+                    table.add_column("Count", justify="right")
+                    table.add_row("Tables without PK", str(len(res['no_pk'])))
+                    table.add_row(
+                        "Large Objects (LOBs)", str(
+                            res['large_objects']))
+                    table.add_row("Unowned Sequences", str(
+                        len(res['unowned_seqs'])))
+                    table.add_row("Unlogged Tables", str(
+                        len(res.get('unlogged_tables', []))))
                     self.update_display(table, label)
 
-            elif btn_id == "step_8":
-                s, m, c, o = self.post_sync.refresh_materialized_views()
-                self.update_display(Panel(m, title="MatViews Refresh"), label)
+                elif btn_id == "step_3":
+                    res = self.checker.check_replication_params()
+                    table = Table(title="PostgreSQL Parameters")
+                    table.add_column("Instance")
+                    table.add_column("Parameter")
+                    table.add_column("Value")
+                    table.add_column("Status")
+                    for side in ["source", "dest"]:
+                        for p in res.get(side, []):
+                            color = "green" if p['status'] == "OK" else "red"
+                            table.add_row(side.upper(),
+                                          p['parameter'],
+                                          p['actual'],
+                                          f"[{color}]{p['status']}[/]")
+                    self.update_display(table, label)
 
-            elif btn_id == "step_9":
-                s, m, c, o = self.post_sync.sync_sequences()
-                self.update_display(Panel(m, title="Sequences Sync"), label)
+                elif btn_id == "step_4":
+                    drop = self.query_one("#opt_drop_dest", Checkbox).value
+                    s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(
+                        drop_dest=drop)
+                    self.update_display(
+                        Panel(
+                            m,
+                            title="Schema Pre-Data",
+                            border_style="green" if s else "red"),
+                        label)
 
-            elif btn_id == "step_10":
-                s, m, c, o = self.migrator.step10_terminate_replication()
-                self.update_display(
-                    Panel(
-                        m,
-                        title="Terminate Replication"),
-                    label)
-                s2, m2, c2, o2 = self.migrator.step4b_migrate_schema_post_data()
-                self.update_display(Panel(m2, title="Schema Post-Data"), label)
+                elif btn_id == "step_5":
+                    s, m, c, o = self.migrator.step5_setup_source()
+                    self.update_display(Panel(m, title="Setup Publication"), label)
 
-            elif btn_id == "step_11":
-                s, m, c, o = self.migrator.sync_large_objects()
-                self.update_display(
-                    Panel(
-                        f"[b]Step 11a: Sync Large Objects[/b]\n\n{m}",
-                        style="green" if s else "red"))
+                elif btn_id == "step_6":
+                    self.update_display(
+                        Panel(
+                            "Starting subscription creation in background...",
+                            title="Subscription"),
+                        label)
+                    self._run_sub_async()
 
-            elif btn_id == "step_11b":
-                s, m, c, o = self.migrator.sync_unlogged_tables()
-                self.update_display(
-                    Panel(
-                        f"[b]Step 11b: Sync UNLOGGED Tables[/b]\n\n{m}",
-                        style="green" if s else "red"))
+                elif btn_id == "cmd_progress":
+                    progress = self.migrator.get_initial_copy_progress()
+                    if not progress:
+                        self.update_display(
+                            Panel(
+                                "No active replication progress found.",
+                                border_style="yellow"),
+                            label)
+                    else:
+                        table = Table(title="Sync Progress")
+                        table.add_column("Table")
+                        table.add_column("State")
+                        table.add_column("Progress")
+                        for t in progress['tables']:
+                            table.add_row(t['table_name'],
+                                          t['state'], f"{t['percent']}%")
+                        self.update_display(table, label)
 
-            elif btn_id == "step_12":
-                s, m, c, o = self.post_sync.enable_triggers()
-                self.update_display(Panel(m, title="Enable Triggers"), label)
+                elif btn_id == "step_8":
+                    s, m, c, o = self.post_sync.refresh_materialized_views()
+                    self.update_display(Panel(m, title="MatViews Refresh"), label)
 
-            elif btn_id == "step_13":
-                s, m, c, o = self.post_sync.reassign_ownership()
-                self.update_display(
-                    Panel(
-                        m,
-                        title="Reassign Ownership"),
-                    label)
+                elif btn_id == "step_9":
+                    s, m, c, o = self.post_sync.sync_sequences()
+                    self.update_display(Panel(m, title="Sequences Sync"), label)
 
-            elif btn_id == "step_14":
-                s, m, c, o, rep = self.validator.audit_objects()
-                table = Table(title="Object Audit")
-                table.add_column("Type")
-                table.add_column("Source")
-                table.add_column("Dest")
-                table.add_column("Status")
-                for r in rep:
-                    table.add_row(
-                        r['type'], str(
-                            r['source']), str(
-                            r['dest']), r['status'])
-                self.update_display(table, label)
+                elif btn_id == "step_10":
+                    s, m, c, o = self.migrator.step10_terminate_replication()
+                    self.update_display(
+                        Panel(
+                            m,
+                            title="Terminate Replication"),
+                        label)
+                    s2, m2, c2, o2 = self.migrator.step4b_migrate_schema_post_data()
+                    self.update_display(Panel(m2, title="Schema Post-Data"), label)
 
-            elif btn_id == "step_15":
-                use_stats = self.query_one("#opt_use_stats", Checkbox).value
-                s, m, c, o, rep = self.validator.compare_row_counts(
-                    use_stats=use_stats)
-                table = Table(title="Row Count Parity")
-                table.add_column("Table")
-                table.add_column("Diff")
-                table.add_column("Status")
-                for r in rep[:40]:
-                    color = "green" if r['status'] == "OK" else "red"
-                    table.add_row(r['table'], str(r['diff']),
-                                  f"[{color}]{r['status']}[/]")
-                self.update_display(table, label)
+                elif btn_id == "step_11":
+                    s, m, c, o = self.migrator.sync_large_objects()
+                    self.update_display(
+                        Panel(
+                            f"[b]Step 11a: Sync Large Objects[/b]\n\n{m}",
+                            style="green" if s else "red"))
 
-            elif btn_id == "step_16":
-                s, m, c, o = self.migrator.cleanup_reverse_replication()
-                self.update_display(
-                    Panel(
-                        m,
-                        title="Cleanup Reverse Replication",
-                        border_style="green" if s else "red"),
-                    label)
+                elif btn_id == "step_11b":
+                    s, m, c, o = self.migrator.sync_unlogged_tables()
+                    self.update_display(
+                        Panel(
+                            f"[b]Step 11b: Sync UNLOGGED Tables[/b]\n\n{m}",
+                            style="green" if s else "red"))
 
-            elif btn_id == "step_17":
-                s, m, c, o = self.migrator.setup_reverse_replication()
-                self.update_display(
-                    Panel(
-                        m,
-                        title="Setup Reverse Replication",
-                        border_style="green" if s else "red"),
-                    label)
+                elif btn_id == "step_12":
+                    s, m, c, o = self.post_sync.enable_triggers()
+                    self.update_display(Panel(m, title="Enable Triggers"), label)
 
-            elif btn_id == "cmd_init":
-                self._run_init_pipeline(dbs_to_run)
-                return  # Skip the rest of the loop since the worker handles it
+                elif btn_id == "step_13":
+                    s, m, c, o = self.post_sync.reassign_ownership()
+                    self.update_display(
+                        Panel(
+                            m,
+                            title="Reassign Ownership"),
+                        label)
 
-            elif btn_id == "cmd_post":
-                self._run_post_pipeline(dbs_to_run)
-                return  # Skip the rest of the loop since the worker handles it
+                elif btn_id == "step_14":
+                    s, m, c, o, rep = self.validator.audit_objects()
+                    table = Table(title="Object Audit")
+                    table.add_column("Type")
+                    table.add_column("Source")
+                    table.add_column("Dest")
+                    table.add_column("Status")
+                    for r in rep:
+                        table.add_row(
+                            r['type'], str(
+                                r['source']), str(
+                                r['dest']), r['status'])
+                    self.update_display(table, label)
 
-            elif btn_id == "cmd_generate_config":
-                self._generate_config_file()
-                return
+                elif btn_id == "step_15":
+                    use_stats = self.query_one("#opt_use_stats", Checkbox).value
+                    s, m, c, o, rep = self.validator.compare_row_counts(
+                        use_stats=use_stats)
+                    table = Table(title="Row Count Parity")
+                    table.add_column("Table")
+                    table.add_column("Diff")
+                    table.add_column("Status")
+                    for r in rep[:40]:
+                        color = "green" if r['status'] == "OK" else "red"
+                        table.add_row(r['table'], str(r['diff']),
+                                      f"[{color}]{r['status']}[/]")
+                    self.update_display(table, label)
 
-            # (Generic handler for other steps)
-            elif btn_id.startswith("step_") or btn_id.startswith("cmd_"):
-                self.update_display(
-                    Panel(
-                        f"Action '{label}' executed for DB {db}. (Check logs for details)",
-                        title="Action"),
-                    label)
+                elif btn_id == "step_16":
+                    s, m, c, o = self.migrator.cleanup_reverse_replication()
+                    self.update_display(
+                        Panel(
+                            m,
+                            title="Cleanup Reverse Replication",
+                            border_style="green" if s else "red"),
+                        label)
+
+                elif btn_id == "step_17":
+                    s, m, c, o = self.migrator.setup_reverse_replication()
+                    self.update_display(
+                        Panel(
+                            m,
+                            title="Setup Reverse Replication",
+                            border_style="green" if s else "red"),
+                        label)
+
+                elif btn_id == "cmd_init":
+                    self._run_init_pipeline(dbs_to_run)
+                    return  # Skip the rest of the loop since the worker handles it
+
+                elif btn_id == "cmd_post":
+                    self._run_post_pipeline(dbs_to_run)
+                    return  # Skip the rest of the loop since the worker handles it
+
+                elif btn_id == "cmd_generate_config":
+                    self._generate_config_file()
+                    return
+
+                # (Generic handler for other steps)
+                elif btn_id.startswith("step_") or btn_id.startswith("cmd_"):
+                    self.update_display(
+                        Panel(
+                            f"Action '{label}' executed for DB {db}. (Check logs for details)",
+                            title="Action"),
+                        label)
                     
         except Exception as e:
             self.update_display(
