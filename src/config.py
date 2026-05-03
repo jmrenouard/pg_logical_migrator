@@ -16,9 +16,13 @@ class Config:
         self.override_db = db_name
 
     def get_source_dict(self):
+        if 'source' not in self.config:
+            return {}
         return dict(self.config['source'])
 
     def get_dest_dict(self):
+        if 'destination' not in self.config:
+            return {}
         return dict(self.config['destination'])
 
     def _get_conn_string(self, section, db_name=None):
