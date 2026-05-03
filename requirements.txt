@@ -7,3 +7,4 @@ pytest
 jinja2
 pytest-html
 pytest-asyncio
+pyyaml
