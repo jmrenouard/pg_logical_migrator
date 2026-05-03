@@ -13,9 +13,9 @@ def test_full_migration_e2e(tmp_path):
     os.makedirs(results_root, exist_ok=True)
 
     # We'll use the existing test_migration config or create a temporary one
-    config_path = "config_migrator.ini"
+    config_path = "tests/test_config.ini"
     if not os.path.exists(config_path):
-        pytest.skip("config_migrator.ini not found. Run 'make env-up' first.")
+        pytest.skip("tests/test_config.ini not found. Run 'make env-up' first.")
 
     # Run the automated migration
     results_dir = str(tmp_path / "e2e_run")
