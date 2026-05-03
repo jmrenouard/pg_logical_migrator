@@ -31,3 +31,8 @@ Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be repl
 - **Triggers**: By default, triggers (like those for auditing or denormalization) are **not** executed on the subscriber to avoid duplicate actions.
 - **Foreign Keys**: These are checked only when data is initially copied, or when the `REPLICA IDENTITY` is set.
 - **Strategy**: We recommend disabling triggers and foreign key checks during the initial copy (handled in Step 4a/12) and re-enabling them after the data is fully synchronized (Step 11).
+
+### 🌐 Multi-Database Migration Architecture
+- **Capability**: The tool now supports cross-database batch execution. By defining multiple databases (or `*` for auto-discovery) in `config_migrator.ini`, `pg_logical_migrator` iterates through them efficiently in a single pass.
+- **Complexity**: Setting up replication for multiple databases sequentially requires one publication/subscription pair per database.
+- **Constraint**: Migrating a large number of databases may temporarily increase memory footprint and connection overhead. Monitoring both source and destination connection limits is required during wide-scale automated initialization pipelines.

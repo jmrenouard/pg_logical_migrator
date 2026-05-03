@@ -4,8 +4,8 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual import work, on
-from textual.widgets import Header, Footer, Button, Label, Static, Checkbox, TabbedContent, TabPane, ListView, ListItem
-from textual.containers import Horizontal, Vertical, VerticalScroll, Container
+from textual.widgets import Header, Footer, Button, Label, Static, Checkbox, TabbedContent, TabPane, ListView, ListItem, Select, Input
+from textual.containers import Horizontal, Vertical, VerticalScroll, Container, Grid
 
 from src.config import Config
 from src.db import PostgresClient
@@ -89,6 +89,16 @@ class MigratorApp(App):
     .btn-valid { background: #f39c12; color: black; }
     .btn-clean { background: #c0392b; }
     .btn-auto { background: #16a085; }
+    
+    #config_form {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-rows: auto;
+        padding: 1;
+    }
+    #config_form Input {
+        margin: 1;
+    }
 
     ListView {
         background: #2c3e50;
@@ -105,10 +115,36 @@ class MigratorApp(App):
     def __init__(self, config_path):
         super().__init__()
         self.config = Config(config_path)
+        self.databases = self.config.get_databases()
+        if '*' in self.databases:
+            import os
+            # Determine actual DBs from the source connection
+            sc = PostgresClient(self.config.get_source_conn())
+            res = sc.execute_query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+            self.databases = [row['datname'] for row in res]
+            sc.close()
+            
+        # Default to first DB
+        self.current_db = self.databases[0] if self.databases else None
+        self._init_backend_for_db(self.current_db)
+        self.history_data = []
+
+    def _init_backend_for_db(self, db_name):
+        import os
+        if db_name:
+            os.environ['PG_MIGRATOR_OVERRIDE_DB'] = db_name
+            self.config.set_override_db(db_name)
+        
+        # Cleanup old connections if they exist
+        if hasattr(self, 'source_client') and self.source_client:
+            self.source_client.close()
+        if hasattr(self, 'dest_client') and self.dest_client:
+            self.dest_client.close()
+            
         self.source_client = PostgresClient(
-            self.config.get_source_conn(), label="SOURCE")
+            self.config.get_source_conn(db_name), label=f"SOURCE {db_name}")
         self.dest_client = PostgresClient(
-            self.config.get_dest_conn(), label="DESTINATION")
+            self.config.get_dest_conn(db_name), label=f"DESTINATION {db_name}")
         self.checker = DBChecker(
             self.source_client,
             self.dest_client,
@@ -122,13 +158,14 @@ class MigratorApp(App):
             self.source_client,
             self.dest_client,
             self.config)
-        self.history_data = []
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main_layout"):
             with Vertical(id="center_pane"):
                 with Horizontal(id="options_bar"):
+                    db_options = [("ALL DATABASES", "ALL")] + [(db, db) for db in self.databases]
+                    yield Select(db_options, value="ALL" if len(self.databases) > 1 else self.databases[0], id="opt_database")
                     yield Checkbox("Drop Dest", id="opt_drop_dest")
                     yield Checkbox("Use Stats", id="opt_use_stats")
                     yield Checkbox("Verbose", id="opt_verbose")
@@ -168,6 +205,24 @@ class MigratorApp(App):
                             with Horizontal(classes="btn_group"):
                                 yield Button("INIT PIPELINE", id="cmd_init", classes="btn-auto")
                                 yield Button("POST PIPELINE", id="cmd_post", classes="btn-auto")
+                        with TabPane("⚙️ Config Gen"):
+                            with VerticalScroll():
+                                yield Label("Generate an environment-specific config file", classes="pane_header")
+                                with Grid(id="config_form"):
+                                    yield Input(placeholder="Source Host (e.g. localhost)", value="localhost", id="gen_src_host")
+                                    yield Input(placeholder="Source Port (e.g. 5432)", value="5432", id="gen_src_port")
+                                    yield Input(placeholder="Source User", value="postgres", id="gen_src_user")
+                                    yield Input(placeholder="Source Password", password=True, id="gen_src_pass")
+                                    
+                                    yield Input(placeholder="Dest Host", value="localhost", id="gen_dest_host")
+                                    yield Input(placeholder="Dest Port", value="5433", id="gen_dest_port")
+                                    yield Input(placeholder="Dest User", value="postgres", id="gen_dest_user")
+                                    yield Input(placeholder="Dest Password", password=True, id="gen_dest_pass")
+                                    
+                                    yield Input(placeholder="Databases (comma separated or *)", value="*", id="gen_databases")
+                                    yield Input(placeholder="Output Filename", value="config_custom.ini", id="gen_filename")
+                                with Horizontal(classes="btn_group"):
+                                    yield Button("Generate Config", id="cmd_generate_config", classes="btn-auto")
 
                 with VerticalScroll(id="display_area"):
                     yield Static(id="main_display")
@@ -206,9 +261,23 @@ class MigratorApp(App):
     def handle_buttons(self, event: Button.Pressed):
         btn_id = event.button.id
         label = str(event.button.label)
-
+        
         try:
-            if btn_id == "step_1":
+            selected_db = self.query_one("#opt_database", Select).value
+            dbs_to_run = self.databases if selected_db == "ALL" else [selected_db]
+            
+            # Use threads for ALL runs to avoid blocking TUI or refactor into single action
+            # For simplicity, we loop synchronously for fast steps, async for pipelines
+            
+            # Since many methods return UI components, if ALL is selected we might just show the last one,
+            # or a summary. For now, we update display per DB.
+            if len(dbs_to_run) > 1 and btn_id not in ("cmd_init", "cmd_post", "cmd_progress"):
+                self.update_display(Panel(f"Running '{label}' on {len(dbs_to_run)} databases sequentially... Check terminal logs for detailed progress.", title="Multi-DB Execution", border_style="yellow"), label)
+                
+            for db in dbs_to_run:
+                self._init_backend_for_db(db)
+                
+                if btn_id == "step_1":
                 res = self.checker.check_connectivity()
                 src_ok = '[green]OK[/]' if res['source'] else '[red]FAIL[/]'
                 dst_ok = '[green]OK[/]' if res['dest'] else '[red]FAIL[/]'
@@ -383,23 +452,29 @@ class MigratorApp(App):
                     label)
 
             elif btn_id == "cmd_init":
-                self._run_init_pipeline()
+                self._run_init_pipeline(dbs_to_run)
+                return  # Skip the rest of the loop since the worker handles it
 
             elif btn_id == "cmd_post":
-                self._run_post_pipeline()
+                self._run_post_pipeline(dbs_to_run)
+                return  # Skip the rest of the loop since the worker handles it
+
+            elif btn_id == "cmd_generate_config":
+                self._generate_config_file()
+                return
 
             # (Generic handler for other steps)
             elif btn_id.startswith("step_") or btn_id.startswith("cmd_"):
                 self.update_display(
                     Panel(
-                        f"Action '{label}' executed. (Check logs for details)",
+                        f"Action '{label}' executed for DB {db}. (Check logs for details)",
                         title="Action"),
                     label)
-
+                    
         except Exception as e:
             self.update_display(
                 Panel(
-                    f"[bold red]Error:[/] {e}",
+                    f"[bold red]Error on {db}:[/] {e}",
                     title="Exception"),
                 label)
 
@@ -425,24 +500,28 @@ class MigratorApp(App):
                 label)
 
     @work(exclusive=True, thread=True)
-    def _run_init_pipeline(self):
+    def _run_init_pipeline(self, dbs_to_run):
         label = "INIT PIPELINE"
         self.call_from_thread(
             self.update_display,
             Panel(
-                "Starting Automated Init Pipeline...",
+                f"Starting Automated Init Pipeline on {len(dbs_to_run)} DBs...",
                 border_style="blue"),
             label)
         try:
             drop = self.query_one("#opt_drop_dest", Checkbox).value
-            self.migrator.step4a_migrate_schema_pre_data(drop_dest=drop)
-            self.migrator.step5_setup_source()
-            self.migrator.step6_setup_destination()
-            self.migrator.wait_for_sync(show_progress=False)
+            for db in dbs_to_run:
+                self.call_from_thread(self._init_backend_for_db, db)
+                self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Init)"), label)
+                self.migrator.step4a_migrate_schema_pre_data(drop_dest=drop)
+                self.migrator.step5_setup_source()
+                self.migrator.step6_setup_destination()
+                self.migrator.wait_for_sync(show_progress=False)
+                
             self.call_from_thread(
                 self.update_display,
                 Panel(
-                    "Pipeline Completed Successfully",
+                    "Pipeline Completed Successfully for all DBs",
                     title=label,
                     border_style="green"),
                 label)
@@ -450,79 +529,83 @@ class MigratorApp(App):
             self.call_from_thread(
                 self.update_display,
                 Panel(
-                    f"Pipeline Failed: {e}",
+                    f"Pipeline Failed on DB {db}: {e}",
                     title=label,
                     border_style="red"),
                 label)
 
     @work(exclusive=True, thread=True)
-    def _run_post_pipeline(self):
+    def _run_post_pipeline(self, dbs_to_run):
         label = "POST PIPELINE"
         self.call_from_thread(
             self.update_display,
             Panel(
-                "Starting Automated Post-Migration Pipeline (Phase 3 & 4)...",
+                f"Starting Automated Post-Migration Pipeline (Phase 3 & 4) on {len(dbs_to_run)} DBs...",
                 border_style="blue"),
             label)
         try:
-            # Phase 3: Finalize
-            self.call_from_thread(self.update_display, Panel(
-                "Step 7: Waiting for final sync..."), label)
-            self.migrator.wait_for_sync(show_progress=False)
+            for db in dbs_to_run:
+                self.call_from_thread(self._init_backend_for_db, db)
+                self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Post-Migration)"), label)
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 8: Refreshing MatViews..."), label)
-            self.post_sync.refresh_materialized_views()
+                # Phase 3: Finalize
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 7: Waiting for final sync..."), label)
+                self.migrator.wait_for_sync(show_progress=False)
 
-            self.call_from_thread(
-                self.update_display,
-                Panel("Step 9: Syncing Sequences..."),
-                label)
-            self.post_sync.sync_sequences()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 8: Refreshing MatViews..."), label)
+                self.post_sync.refresh_materialized_views()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 10: Terminating Replication & Schema Post-Data..."), label)
-            self.migrator.step10_terminate_replication()
-            self.migrator.step4b_migrate_schema_post_data()
+                self.call_from_thread(
+                    self.update_display,
+                    Panel(f"[{db}] Step 9: Syncing Sequences..."),
+                    label)
+                self.post_sync.sync_sequences()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 11a: Syncing Large Objects (LOBs)..."), label)
-            self.migrator.sync_large_objects()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 10: Terminating Replication & Schema Post-Data..."), label)
+                self.migrator.step10_terminate_replication()
+                self.migrator.step4b_migrate_schema_post_data()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 11b: Syncing UNLOGGED Tables..."), label)
-            self.migrator.sync_unlogged_tables()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 11a: Syncing Large Objects (LOBs)..."), label)
+                self.migrator.sync_large_objects()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 12: Enabling Triggers..."), label)
-            self.post_sync.enable_triggers()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 11b: Syncing UNLOGGED Tables..."), label)
+                self.migrator.sync_unlogged_tables()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 13: Reassigning Ownership..."), label)
-            self.post_sync.reassign_ownership()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 12: Enabling Triggers..."), label)
+                self.post_sync.enable_triggers()
 
-            # Phase 4: Validate
-            self.call_from_thread(
-                self.update_display,
-                Panel("Step 14: Auditing Objects..."),
-                label)
-            self.validator.audit_objects()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 13: Reassigning Ownership..."), label)
+                self.post_sync.reassign_ownership()
 
-            self.call_from_thread(self.update_display, Panel(
-                "Step 15: Comparing Row Parity..."), label)
-            self.validator.compare_row_counts()
+                # Phase 4: Validate
+                self.call_from_thread(
+                    self.update_display,
+                    Panel(f"[{db}] Step 14: Auditing Objects..."),
+                    label)
+                self.validator.audit_objects()
 
-            from src.report import ReportGenerator
-            self.call_from_thread(
-                self.update_display,
-                Panel("Generating Final Report..."),
-                label)
-            ReportGenerator(self.config).generate_html_report()
+                self.call_from_thread(self.update_display, Panel(
+                    f"[{db}] Step 15: Comparing Row Parity..."), label)
+                self.validator.compare_row_counts()
+
+                from src.report import ReportGenerator
+                self.call_from_thread(
+                    self.update_display,
+                    Panel(f"[{db}] Generating Final Report..."),
+                    label)
+                ReportGenerator(self.config).generate_html_report()
 
             self.call_from_thread(
                 self.update_display,
                 Panel(
-                    "Post-Migration Pipeline Completed Successfully",
+                    "Post-Migration Pipeline Completed Successfully for all DBs",
                     title=label,
                     border_style="green"),
                 label)
@@ -530,10 +613,72 @@ class MigratorApp(App):
             self.call_from_thread(
                 self.update_display,
                 Panel(
-                    f"Pipeline Failed: {e}",
+                    f"Pipeline Failed on DB {db}: {e}",
                     title=label,
                     border_style="red"),
                 label)
+
+    def _generate_config_file(self):
+        import textwrap
+        try:
+            src_host = self.query_one("#gen_src_host", Input).value
+            src_port = self.query_one("#gen_src_port", Input).value
+            src_user = self.query_one("#gen_src_user", Input).value
+            src_pass = self.query_one("#gen_src_pass", Input).value
+            
+            dest_host = self.query_one("#gen_dest_host", Input).value
+            dest_port = self.query_one("#gen_dest_port", Input).value
+            dest_user = self.query_one("#gen_dest_user", Input).value
+            dest_pass = self.query_one("#gen_dest_pass", Input).value
+            
+            databases = self.query_one("#gen_databases", Input).value
+            filename = self.query_one("#gen_filename", Input).value
+            
+            if not filename:
+                filename = "config_custom.ini"
+                
+            content = textwrap.dedent(f"""\
+                [source]
+                host = {src_host}
+                port = {src_port}
+                user = {src_user}
+                password = {src_pass}
+
+                [destination]
+                host = {dest_host}
+                port = {dest_port}
+                user = {dest_user}
+                password = {dest_pass}
+
+                [replication]
+                publication_name = migrator_pub
+                subscription_name = migrator_sub
+                target_schema = public
+                databases = {databases}
+                loglevel = INFO
+                log_file = pg_migrator.log
+            """)
+            
+            with open(filename, "w") as fh:
+                fh.write(content)
+                
+            self.update_display(
+                Panel(
+                    f"Configuration successfully generated to: {filename}",
+                    title="Generate Config",
+                    border_style="green"
+                ),
+                "Generate Config"
+            )
+        except Exception as e:
+            self.update_display(
+                Panel(
+                    f"Failed to generate config: {e}",
+                    title="Generate Config Error",
+                    border_style="red"
+                ),
+                "Generate Config"
+            )
 
 
 def main():

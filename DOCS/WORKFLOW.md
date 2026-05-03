@@ -91,3 +91,8 @@ Executes **Phase 3** and **Phase 4**:
 - **Report Generation** (Final Audit)
 
 *Result: The target database is fully independent, verified, and ready for production traffic.*
+
+#### 3. Multi-Database Iteration
+When the `databases = *` (or a comma-separated list of databases) is defined in your configuration, the TUI macro-commands and CLI pipelines automatically loop over the specified databases sequentially. 
+- The **INIT PIPELINE** prepares schema, source, and destination and starts replication for each database.
+- The **POST PIPELINE** stops replication, finalizes metadata, and validates data for each database in one seamless run.
