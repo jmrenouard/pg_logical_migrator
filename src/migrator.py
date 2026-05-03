@@ -813,6 +813,7 @@ class Migrator:
                     s_conn.autocommit = False
                     d_conn.autocommit = False
 
+                    batch_size = 100
                     for row in rows:
                         pk_val = row[pk_col]
                         old_oid = row[column]
@@ -856,15 +857,20 @@ class Migrator:
                                 )
                                 d_cur.execute(update_sql, (new_oid, pk_val))
 
-                            s_conn.commit()
-                            d_conn.commit()
                             total_synced += 1
+                            if total_synced % batch_size == 0:
+                                s_conn.commit()
+                                d_conn.commit()
                         except Exception as e:
                             s_conn.rollback()
                             d_conn.rollback()
                             logging.error(
                                 f"[BOTH] Failed to sync LOB for {schema}.{table} PK={pk_val}: {e}")
                             out_results.append(f"Error PK={pk_val}: {e}")
+                    
+                    if total_synced % batch_size != 0:
+                        s_conn.commit()
+                        d_conn.commit()
 
             executed_sqls.append(
                 f"LOB SYNC: {total_synced} objects processed.")

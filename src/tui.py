@@ -364,6 +364,24 @@ class MigratorApp(App):
                                   f"[{color}]{r['status']}[/]")
                 self.update_display(table, label)
 
+            elif btn_id == "step_16":
+                s, m, c, o = self.migrator.cleanup_reverse_replication()
+                self.update_display(
+                    Panel(
+                        m,
+                        title="Cleanup Reverse Replication",
+                        border_style="green" if s else "red"),
+                    label)
+
+            elif btn_id == "step_17":
+                s, m, c, o = self.migrator.setup_reverse_replication()
+                self.update_display(
+                    Panel(
+                        m,
+                        title="Setup Reverse Replication",
+                        border_style="green" if s else "red"),
+                    label)
+
             elif btn_id == "cmd_init":
                 self._run_init_pipeline()
 
