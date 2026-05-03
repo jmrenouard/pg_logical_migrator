@@ -658,6 +658,7 @@ class TestSyncLargeObjectsExtended:
         source_client = MagicMock()
         # lob_columns has one entry
         source_client.execute_query.side_effect = [
+            [],
             [{"schema_name": "public", "table_name": "t1", "column_name": "data"}],
             [{"attname": "id"}],   # pk result
             [],                     # data_query → empty rows → continue

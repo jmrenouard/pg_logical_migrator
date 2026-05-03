@@ -147,9 +147,7 @@ class MigratorApp(App):
         self.history_data = []
 
     def _init_backend_for_db(self, db_name):
-        import os
         if db_name:
-            os.environ['PG_MIGRATOR_OVERRIDE_DB'] = db_name
             self.config.set_override_db(db_name)
         
         self.source_client = PostgresClient(
@@ -329,7 +327,7 @@ class MigratorApp(App):
                     
                     table.add_row("Config File", str(self.config.config_path))
                     table.add_row("Databases", str(self.config.get_databases()))
-                    table.add_row("Target Schemas", str(self.config.get_target_schemas()))
+                    table.add_row("Target Schemas", str(self.config.get_target_schemas(db)))
                     table.add_row("Log Level", str(self.config.config.get('replication', 'loglevel', fallback='INFO')))
                     
                     src_dict = self.config.get_source_dict()
@@ -550,7 +548,7 @@ class MigratorApp(App):
             label)
         try:
             for db in dbs_to_run:
-                self.call_from_thread(self._init_backend_for_db, db)
+                self._init_backend_for_db(db)
                 self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Init)"), None)
                 
                 s, m, c, o = self.migrator.step4a_migrate_schema_pre_data(drop_dest=False)
@@ -596,7 +594,7 @@ class MigratorApp(App):
         try:
             db = "Unknown"
             for db in dbs_to_run:
-                self.call_from_thread(self._init_backend_for_db, db)
+                self._init_backend_for_db(db)
                 self.call_from_thread(self.update_display, Panel(f"Processing DB: {db} (Post-Migration)"), label)
 
                 # Phase 3: Finalize
@@ -730,15 +728,7 @@ class MigratorApp(App):
                 
             try:
                 from src.config import Config
-                from src.db import DBChecker
-                from src.migrator import Migrator
-                from src.post_sync import PostSync
-                from src.validator import Validator
                 self.config = Config(filename)
-                self.checker = DBChecker(self.config)
-                self.migrator = Migrator(self.config)
-                self.post_sync = PostSync(self.config)
-                self.validator = Validator(self.config)
                 self.sub_title = f"Config: {self.config.config_path}"
                 reload_msg = f"\n[green]Config reloaded successfully from {filename}.[/green]"
             except Exception as e:

@@ -3,10 +3,10 @@ import os
 
 
 class Config:
-    def __init__(self, config_path):
+    def __init__(self, config_path, override_db=None):
         self.config_path = config_path
         self.config = configparser.ConfigParser()
-        self.override_db = os.environ.get('PG_MIGRATOR_OVERRIDE_DB')
+        self.override_db = override_db
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Config file not found: {config_path}")
         self.config.read(config_path)
@@ -15,22 +15,50 @@ class Config:
         """Override the database name for multi-database migration."""
         self.override_db = db_name
 
-    def get_source_dict(self):
+    def get_source_dict(self, db_name=None):
+        if not db_name:
+            db_name = self.override_db
         if 'source' not in self.config:
-            return {}
-        return dict(self.config['source'])
+            base = {}
+        else:
+            base = dict(self.config['source'])
+            
+        if db_name and f"database:{db_name}" in self.config:
+            db_sec = self.config[f"database:{db_name}"]
+            for k, v in db_sec.items():
+                if k.startswith('source_'):
+                    base[k[7:]] = v
+        return base
 
-    def get_dest_dict(self):
+    def get_dest_dict(self, db_name=None):
+        if not db_name:
+            db_name = self.override_db
         if 'destination' not in self.config:
-            return {}
-        return dict(self.config['destination'])
+            base = {}
+        else:
+            base = dict(self.config['destination'])
+            
+        if db_name and f"database:{db_name}" in self.config:
+            db_sec = self.config[f"database:{db_name}"]
+            for k, v in db_sec.items():
+                if k.startswith('dest_'):
+                    base[k[5:]] = v
+        return base
 
     def _get_conn_string(self, section, db_name=None):
-        if section not in self.config:
-            # Return a dummy string or handle appropriately
-            return f"postgresql://user:pass@localhost:5432/postgres"
-        s = self.config[section]
-        db = db_name if db_name else (self.override_db if self.override_db else s.get('database', 'postgres'))
+        if not db_name:
+            db_name = self.override_db
+            
+        if section == 'source':
+            s = self.get_source_dict(db_name)
+        elif section == 'destination':
+            s = self.get_dest_dict(db_name)
+        else:
+            if section not in self.config:
+                return f"postgresql://user:pass@localhost:5432/postgres"
+            s = dict(self.config[section])
+            
+        db = db_name if db_name else s.get('database', 'postgres')
         user = s.get('user', 'postgres')
         password = s.get('password', '')
         host = s.get('host', 'localhost')
@@ -70,6 +98,8 @@ class Config:
 
     def get_replication(self, db_name=None):
         import re
+        import hashlib
+        
         if 'replication' not in self.config:
             rep = {}
         else:
@@ -84,10 +114,19 @@ class Config:
             source_db = 'postgres'
         source_db = source_db.lower()
         
-        target_schema = rep.get('target_schema', 'public').lower()
+        schemas = self.get_target_schemas(source_db)
 
         safe_db = re.sub(r'[^a-z0-9_]', '_', source_db)
-        safe_schema = re.sub(r'[^a-z0-9_]', '_', target_schema)
+        
+        if schemas == ['all']:
+            safe_schema = 'all'
+        elif len(schemas) == 1:
+            safe_schema = re.sub(r'[^a-z0-9_]', '_', schemas[0])
+        else:
+            schemas_str = ",".join(sorted(schemas))
+            hash_str = hashlib.md5(schemas_str.encode()).hexdigest()[:8]
+            safe_schema = f"multi_{hash_str}"
+
         suffix = f"_{safe_db}_{safe_schema}"
 
         for key, default in [('publication_name', 'migrator_pub'), (
@@ -100,13 +139,23 @@ class Config:
 
         return rep
 
-    def get_target_schemas(self):
+    def get_target_schemas(self, db_name=None):
         """Return a list of target schemas or ['all']."""
-        if 'replication' not in self.config:
-            return ['public']
-        target = self.config['replication'].get(
-            'target_schema', 'public').strip().lower()
-        if target == 'all':
+        if not db_name:
+            db_name = self.override_db
+            
+        target = None
+        if db_name and f"database:{db_name}" in self.config:
+            target = self.config[f"database:{db_name}"].get('target_schema')
+            
+        if not target:
+            if 'replication' in self.config:
+                target = self.config['replication'].get('target_schema', 'public')
+            else:
+                target = 'public'
+                
+        target = target.strip().lower()
+        if target == 'all' or target == '*':
             return ['all']
         # Handle comma-separated list
         return [s.strip() for s in target.split(',') if s.strip()]

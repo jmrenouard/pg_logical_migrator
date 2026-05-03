@@ -32,7 +32,7 @@ def cmd_init_replication(args):
     log_file = os.path.join(results_dir, "pg_migrator.log")
     setup_logging(args.loglevel, log_file)
 
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     migrator = Migrator(cfg)
@@ -285,7 +285,7 @@ def cmd_post_migration(args):
     log_file = os.path.join(results_dir, "pg_migrator.log")
     setup_logging(args.loglevel, log_file)
 
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     migrator = Migrator(cfg)

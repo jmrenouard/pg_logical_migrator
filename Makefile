@@ -66,13 +66,13 @@ env-down:
 	cd test_env && docker compose down -v --remove-orphans
 
 test-unit:
-	PYTHONPATH=. $(PYTEST) tests/unit
+	PYTHONPATH=. $(PYTEST) -vv tests/unit
 
 test-integration:
-	PYTHONPATH=. $(PYTEST) tests/integration
+	PYTHONPATH=. $(PYTEST) -vv tests/integration
 
 test-e2e:
-	PYTHONPATH=. $(PYTEST) tests/e2e
+	PYTHONPATH=. $(PYTEST) -vv tests/e2e
 
 test-all: test-unit test-integration test-e2e test-packaging
 
@@ -80,7 +80,8 @@ test-packaging:
 	./e2e_packaging_test.sh
 
 test-coverage: install
-	PYTHONPATH=. $(PYTEST) tests/unit \
+	$(PIP) install pytest-cov
+	PYTHONPATH=. $(PYTEST) -vv tests/unit \
 		--cov=src \
 		--cov-report=term-missing \
 		--cov-report=html:RESULTS/coverage \
@@ -88,7 +89,7 @@ test-coverage: install
 
 test-report: install
 	@mkdir -p RESULTS/$(TIMESTAMP)
-	PYTHONPATH=. $(PYTEST) tests/unit --html=RESULTS/$(TIMESTAMP)/unit_tests.html --self-contained-html
+	PYTHONPATH=. $(PYTEST) -vv tests/unit --html=RESULTS/$(TIMESTAMP)/unit_tests.html --self-contained-html
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest --results-dir RESULTS/$(TIMESTAMP)
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration --results-dir RESULTS/$(TIMESTAMP)
 	@echo "Reports generated in RESULTS/$(TIMESTAMP)/"
@@ -98,7 +99,7 @@ run-pipeline:
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration
 
 clean: build-clean
-	rm -rf RESULTS/*
+	rm -rf RESULTS/* *.log
 	rm -f pg_migrator.log
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete

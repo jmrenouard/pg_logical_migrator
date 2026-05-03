@@ -44,6 +44,7 @@ def test_sync_large_objects_success():
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
+            [], # resolve_target_schemas
             [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
             [{"attname": "id"}],
             [{"id": 1, "c1": 12345}]
@@ -113,6 +114,7 @@ def test_sync_large_objects_failure():
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
+            [], # resolve_target_schemas
             [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
             [{"attname": "id"}],
             [{"id": 1, "c1": 12345}]
@@ -142,6 +144,7 @@ def test_sync_large_objects_connection_failure():
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = "host=h1"
     mock_config.get_dest_conn.return_value = "host=h2"
+    mock_config.get_target_schemas.return_value = ["all"]
 
     m = Migrator(mock_config)
 
@@ -149,6 +152,7 @@ def test_sync_large_objects_connection_failure():
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
+            [], # resolve_target_schemas
             [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
             [{"attname": "id"}],
             [{"id": 1, "c1": 12345}]
@@ -182,6 +186,7 @@ def test_sync_large_objects_no_data():
     with patch("src.migrator.PostgresClient") as mock_pc:
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
+            [], # resolve_target_schemas
             [{"schema_name": "public", "table_name": "t1", "column_name": "c1"}],
             [{"attname": "id"}],
             [] # No data returned

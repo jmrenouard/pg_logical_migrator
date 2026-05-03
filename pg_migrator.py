@@ -403,7 +403,7 @@ def main():
             print(f"\n" + "="*60)
             print(f" Executing '{args.command}' for database: {db}")
             print("="*60)
-            os.environ['PG_MIGRATOR_OVERRIDE_DB'] = db
+            args.database = db
             rc = args.func(args)
             if rc != 0:
                 print(f"\033[31m[ERROR] Command failed for database {db} with exit code {rc}\033[0m", file=sys.stderr)

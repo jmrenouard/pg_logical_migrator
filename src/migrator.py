@@ -135,7 +135,9 @@ class Migrator:
             if not success:
                 return success, msg, executed, outs
 
-        schemas = self.config.get_target_schemas()
+        source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_args = ""
         if schemas != ['all']:
             schema_args = " ".join([f"--schema='{s}'" for s in schemas])
@@ -180,7 +182,9 @@ class Migrator:
         dst_port = self.dest_conn['port']
         dst_pass = self.dest_conn.get('password', '')
 
-        schemas = self.config.get_target_schemas()
+        source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_args = ""
         if schemas != ['all']:
             schema_args = " ".join([f"--schema='{s}'" for s in schemas])
@@ -213,7 +217,8 @@ class Migrator:
         source_client = PostgresClient(
             self.config.get_source_conn(), label="SOURCE")
 
-        schemas = self.config.get_target_schemas()
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_filter = ""
         if schemas != ['all']:
             schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -249,7 +254,8 @@ class Migrator:
 
             sql1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
 
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
             if schemas == ['all']:
                 sql2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
             else:
@@ -749,7 +755,8 @@ class Migrator:
             source_client = PostgresClient(
                 self.config.get_source_conn(), label="SOURCE")
 
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
             schema_filter = ""
             if schemas != ['all']:
                 schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -909,7 +916,8 @@ class Migrator:
             source_client = PostgresClient(
                 self.config.get_source_conn(), label="SOURCE")
             
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
             schema_filter = ""
             if schemas != ['all']:
                 schema_list = ", ".join([f"'{s}'" for s in schemas])

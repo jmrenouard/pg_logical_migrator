@@ -100,3 +100,35 @@ def execute_shell_command(command, log_cmd=None):
         _verbose_print("ERROR", e.stderr.strip() if e.stderr else str(e))
         logging.error(f"{prefix}Command failed: {e.stderr}")
         return False, e.stderr
+
+
+def resolve_target_schemas(client, config, db_name=None):
+    """
+    Returns actual schema names from the database, excluding system 
+    and known extension schemas (e.g. postgis) when requested schemas is ['all'].
+    """
+    schemas = config.get_target_schemas(db_name)
+    if schemas != ['all']:
+        return schemas
+        
+    query = """
+    SELECT schema_name 
+    FROM information_schema.schemata 
+    WHERE schema_name NOT IN (
+        'information_schema', 'pg_catalog', 'postgis', 
+        'topology', 'tiger', 'tiger_data', 'pg_stat_statements'
+    )
+    AND schema_name NOT LIKE 'pg_temp_%' 
+    AND schema_name NOT LIKE 'pg_toast%'
+    """
+    try:
+        res = client.execute_query(query)
+        if isinstance(res, list):
+            resolved = [r['schema_name'] for r in res]
+            if resolved:
+                return resolved
+        return ['all']
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to resolve schemas: {e}")
+        return ['all']

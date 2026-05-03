@@ -10,7 +10,8 @@ class DBChecker:
     def _get_schema_filter(self, nspname_col="n.nspname"):
         if not self.config:
             return ""
-        schemas = self.config.get_target_schemas()
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
         if schemas == ['all']:
             return ""
         schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -67,7 +68,8 @@ class DBChecker:
         # Tables with Identity Columns
         schema_filter_identity = ""
         if self.config:
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None))
             if schemas != ['all']:
                 schema_list = ", ".join([f"'{s}'" for s in schemas])
                 schema_filter_identity = f"AND table_schema IN ({schema_list})"
