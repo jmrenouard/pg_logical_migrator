@@ -76,14 +76,15 @@ jobs:
           if [ "${{ runner.os }}" == "Linux" ]; then
             echo "Building on Linux via registry.access.redhat.com/ubi8/ubi container for glibc backward compatibility"
             docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace registry.access.redhat.com/ubi8/ubi bash -c "
-              dnf install -y python3.11 python3.11-pip python3.11-devel python39 python39-pip python39-devel gcc &&
-              if [ '${{ matrix.python_version }}' = '3.9' ]; then
-                PYTHON_CMD=python3.9
-                PIP_CMD=pip3.9
-              else
+              dnf install -y python3.11 python3.11-pip python3.11-devel python3.12 python3.12-pip python3.12-devel gcc || true &&
+              PYTHON_CMD=python${{ matrix.python_version }}
+              PIP_CMD=pip${{ matrix.python_version }}
+              # Fallback if specific version is not available in UBI8
+              if ! command -v \$PYTHON_CMD &> /dev/null; then
                 PYTHON_CMD=python3.11
                 PIP_CMD=pip3.11
-              fi &&
+                echo \"Warning: Requested Python not found, falling back to Python 3.11 for pyinstaller build.\"
+              fi
               \$PIP_CMD install pyinstaller -r requirements.txt &&
               \$PYTHON_CMD -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' $PYINSTALLER_OPTS pg_migrator.py
             "
@@ -116,7 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.9", "3.11"]
+        python_version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v3
 
@@ -147,7 +148,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.9", "3.11"]
+        python_version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v3
 
@@ -231,7 +232,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.9", "3.11"]
+        python_version: ["3.11", "3.12", "3.13"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -334,24 +335,29 @@ jobs:
             echo "### Standalone Binaries"
             echo "| Platform | Architecture | Asset | Checksum |"
             echo "|---|---|---|---|"
-            echo "| Linux (Python 3.9) | amd64 | \`pg_migrator-linux-amd64-python3.9-v${{ env.VERSION }}\` | [sha256] |"
             echo "| Linux (Python 3.11) | amd64 | \`pg_migrator-linux-amd64-python3.11-v${{ env.VERSION }}\` | [sha256] |"
-            echo "| Windows (Python 3.9) | amd64 | \`pg_migrator-win-amd64-python3.9-v${{ env.VERSION }}.exe\` | [sha256] |"
+            echo "| Linux (Python 3.12) | amd64 | \`pg_migrator-linux-amd64-python3.12-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Linux (Python 3.13) | amd64 | \`pg_migrator-linux-amd64-python3.13-v${{ env.VERSION }}\` | [sha256] |"
             echo "| Windows (Python 3.11) | amd64 | \`pg_migrator-win-amd64-python3.11-v${{ env.VERSION }}.exe\` | [sha256] |"
-            echo "| macOS (Python 3.9) | arm64 | \`pg_migrator-macos-arm64-python3.9-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| Windows (Python 3.12) | amd64 | \`pg_migrator-win-amd64-python3.12-v${{ env.VERSION }}.exe\` | [sha256] |"
+            echo "| Windows (Python 3.13) | amd64 | \`pg_migrator-win-amd64-python3.13-v${{ env.VERSION }}.exe\` | [sha256] |"
             echo "| macOS (Python 3.11) | arm64 | \`pg_migrator-macos-arm64-python3.11-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| macOS (Python 3.12) | arm64 | \`pg_migrator-macos-arm64-python3.12-v${{ env.VERSION }}\` | [sha256] |"
+            echo "| macOS (Python 3.13) | arm64 | \`pg_migrator-macos-arm64-python3.13-v${{ env.VERSION }}\` | [sha256] |"
             echo ""
             echo "### OS Packages"
-            echo "| Format | Architecture | Python 3.9 | Python 3.11 |"
-            echo "|---|---|---|---|"
-            echo "| Debian/Ubuntu | amd64 | \`pg-logical-migrator-python3.9_${{ env.VERSION }}_amd64.deb\` | \`pg-logical-migrator-python3.11_${{ env.VERSION }}_amd64.deb\` |"
-            echo "| RHEL/CentOS | amd64 | \`pg-logical-migrator-python3.9-${{ env.VERSION }}-1.x86_64.rpm\` | \`pg-logical-migrator-python3.11-${{ env.VERSION }}-1.x86_64.rpm\` |"
+            echo "| Format | Architecture | Python 3.11 | Python 3.12 | Python 3.13 |"
+            echo "|---|---|---|---|---|"
+            echo "| Debian/Ubuntu | amd64 | \`pg-logical-migrator-python3.11_${{ env.VERSION }}_amd64.deb\` | \`pg-logical-migrator-python3.12_${{ env.VERSION }}_amd64.deb\` | \`pg-logical-migrator-python3.13_${{ env.VERSION }}_amd64.deb\` |"
+            echo "| RHEL/CentOS | amd64 | \`pg-logical-migrator-python3.11-${{ env.VERSION }}-1.x86_64.rpm\` | \`pg-logical-migrator-python3.12-${{ env.VERSION }}-1.x86_64.rpm\` | \`pg-logical-migrator-python3.13-${{ env.VERSION }}-1.x86_64.rpm\` |"
             echo ""
             echo "### Python Packages"
-            echo "- **Wheel (3.9)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.9.whl\`"
             echo "- **Wheel (3.11)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.11.whl\`"
-            echo "- **Source (3.9)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.9.tar.gz\`"
+            echo "- **Wheel (3.12)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.12.whl\`"
+            echo "- **Wheel (3.13)**: \`pg_logical_migrator-${{ env.VERSION }}-py3-none-any-python3.13.whl\`"
             echo "- **Source (3.11)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.11.tar.gz\`"
+            echo "- **Source (3.12)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.12.tar.gz\`"
+            echo "- **Source (3.13)**: \`pg_logical_migrator-${{ env.VERSION }}-python3.13.tar.gz\`"
             echo ""
             echo "### Docker Images"
             echo "\`\`\`bash"
