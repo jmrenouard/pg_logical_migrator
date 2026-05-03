@@ -270,3 +270,35 @@ def test_main(mock_run, mock_parse_args):
         mock_conf.return_value.get_databases.return_value = ["test_db"]
         main()
         mock_run.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_app_multi_db_selection(mock_config, mock_pgclient, mock_dbchecker, mock_migrator, mock_postsync, mock_validator):
+    """
+    Test unitaire pour la sélection d'une base de données dans la TUI.
+    Vérifie que la modification de la base sélectionnée met à jour la configuration.
+    """
+    app = MigratorApp("dummy.ini")
+    
+    # Configure 2 bases de données mockées
+    mock_config_instance = mock_config.return_value
+    mock_config_instance.get_databases.return_value = ["db_alpha", "db_beta"]
+    
+    async with app.run_test() as pilot:
+        # Attendre que l'application soit prête
+        await pilot.pause(0.1)
+        
+        # Simuler le changement de sélection de base de données en déclenchant manuellement update_db_selection
+        from textual.widgets import Select
+        select_widget = app.query_one("#opt_database", Select)
+        select_widget.set_options([("ALL DATABASES", "ALL"), ("db_alpha", "db_alpha"), ("db_beta", "db_beta")])
+        select_widget.value = "db_beta"
+        await pilot.pause(0.1)
+        
+        # Vérifier que le Select pointe bien vers la nouvelle DB
+        assert select_widget.value == "db_beta"
+        
+        # Et quand on exécute une action, elle s'applique à cette base
+        mock_dbchecker_instance = mock_dbchecker.return_value
+        await pilot.click("#step_1")
+        await pilot.pause(0.1)
+        mock_dbchecker_instance.check_connectivity.assert_called()

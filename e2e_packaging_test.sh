@@ -29,9 +29,9 @@ for PYTHON_VERSION in "3.11" "3.12" "3.13"; do
     "
     mv dist/pg_migrator "dist/${BINARY_NAME}"
 
-    echo "2. Validating Linux Binary in ubuntu:22.04..."
+    echo "2. Validating Linux Binary in ubuntu:24.04..."
     chmod +x "dist/${BINARY_NAME}"
-    docker run --rm -v $(pwd):/workspace -w /workspace ubuntu:22.04 bash -c "
+    docker run --rm -v $(pwd):/workspace -w /workspace ubuntu:24.04 bash -c "
       ./dist/${BINARY_NAME} --help
     "
     echo "Linux binary execution successful."
@@ -61,8 +61,8 @@ EOF
     RPM_FILE=$(ls dist/*.rpm)
     echo "Created $DEB_FILE and $RPM_FILE"
 
-    echo "4. Testing DEB installation in ubuntu:22.04..."
-    docker run --rm -v $(pwd):/workspace -w /workspace ubuntu:22.04 bash -c "
+    echo "4. Testing DEB installation in ubuntu:24.04..."
+    docker run --rm -v $(pwd):/workspace -w /workspace ubuntu:24.04 bash -c "
       apt-get update && apt-get install -y ./$DEB_FILE &&
       pg_migrator --help
     "

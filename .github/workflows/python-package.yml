@@ -33,18 +33,34 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio pytest-cov
       - name: Prepare test config
         run: cp config_migrator.sample.ini config_migrator.ini
-      - name: Run Tests
+      - name: Start Docker Test Environment
+        run: make env-up
+      - name: Run Tests with Coverage
         run: |
-          PYTHONPATH=. pytest tests/unit/
+          PYTHONPATH=. pytest tests/unit/ tests/integration/test_tui_e2e.py \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=term \
+            --cov-report=html:RESULTS/coverage
+      - name: Stop Docker Test Environment
+        if: always()
+        run: make env-down
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.python-version }}
           path: .pytest_cache/
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            RESULTS/coverage/
 
   # 2. Build & Push Docker Image (ghcr.io)
   docker:
