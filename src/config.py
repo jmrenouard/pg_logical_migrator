@@ -23,7 +23,7 @@ class Config:
 
     def _get_conn_string(self, section, db_name=None):
         s = self.config[section]
-        db = db_name if db_name else (self.override_db if self.override_db else s['database'])
+        db = db_name if db_name else (self.override_db if self.override_db else s.get('database', 'postgres'))
         # For psycopg, a dict is better, but this handles URI too
         return f"postgresql://{s['user']}:{s['password']}@{s['host']}:{s['port']}/{db}"
 
