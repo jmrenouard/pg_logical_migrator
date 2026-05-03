@@ -103,7 +103,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.platform }}-python${{ matrix.python_version }}-v${{ env.VERSION }}
           path: dist/pg_migrator-*
@@ -127,7 +127,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download Linux binary
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: binary-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/
@@ -166,7 +166,7 @@ jobs:
             print(f"Version: {version}")
 
       - name: Download Linux binary
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: binary-linux-amd64-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/
@@ -218,7 +218,7 @@ jobs:
           for f in *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
 
       - name: Upload OS packages
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: os-packages-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: |
@@ -263,7 +263,7 @@ jobs:
           for f in *; do sha256sum "$f" > "$f.sha256"; done
 
       - name: Upload Python assets
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: python-assets-python${{ matrix.python_version }}-v${{ steps.info.outputs.VERSION }}
           path: dist/*
@@ -305,7 +305,7 @@ jobs:
                 env.write(f"IS_PRERELEASE={is_prerelease}\n")
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: all-artifacts/
 
