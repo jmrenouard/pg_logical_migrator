@@ -177,3 +177,15 @@ class Config:
             return ['all']
         # Handle comma-separated list
         return [s.strip() for s in target.split(',') if s.strip()]
+
+    def update_section(self, section, data):
+        """Update a section with new key-value pairs."""
+        if section not in self.config:
+            self.config[section] = {}
+        for k, v in data.items():
+            self.config[section][k] = str(v)
+
+    def save(self):
+        """Save the current configuration to the .ini file."""
+        with open(self.config_path, 'w') as f:
+            self.config.write(f)
