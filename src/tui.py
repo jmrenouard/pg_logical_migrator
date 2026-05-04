@@ -107,12 +107,12 @@ class MigratorApp(App):
     }
     .form_row Input {
         width: 1fr;
-        min-width: 10;
+        min-width: 20;
         margin-right: 1;
     }
     .form_row Select {
         width: 1fr;
-        min-width: 20;
+        min-width: 30;
         margin-right: 1;
     }
 
@@ -521,7 +521,9 @@ class MigratorApp(App):
                     return
 
                 elif btn_id == "cmd_execute_sql":
-                    self._execute_sql_shell(dbs_to_run)
+                    target = self.query_one("#sql_target_select", Select).value
+                    query = self.query_one("#sql_query_input", Input).value
+                    self._execute_sql_shell(dbs_to_run, target, query)
                     return
 
                 # (Generic handler for other steps)
@@ -773,19 +775,16 @@ class MigratorApp(App):
             )
 
     @work(exclusive=True, thread=True)
-    def _execute_sql_shell(self, dbs_to_run):
+    def _execute_sql_shell(self, dbs_to_run, target, query):
         label = "Execute SQL"
+        print(f"DEBUG TUI: _execute_sql_shell started for dbs={dbs_to_run}, target={target}, query={query}")
         try:
-            target = self.query_one("#sql_target_select", Select).value
-            query = self.query_one("#sql_query_input", Input).value
-            
             if not query:
                 self.call_from_thread(self.update_display, Panel("No query provided.", title=label, border_style="red"), label)
                 return
                 
             self.call_from_thread(self.update_display, Panel(f"Executing on {target}: {query}\n", title=label, border_style="blue"), label)
             
-            import psycopg2
             from rich.table import Table
             from rich.panel import Panel
             from rich.console import Group
@@ -793,23 +792,28 @@ class MigratorApp(App):
             results = []
             
             for db in dbs_to_run:
+                print(f"DEBUG TUI: Executing query on DB {db}...")
                 self._init_backend_for_db(db)
                 try:
-                    conn_dict = self.migrator.source_conn if target == "source" else self.migrator.dest_conn
-                    with psycopg2.connect(**conn_dict) as conn:
-                        with conn.cursor() as cur:
-                            cur.execute(query)
-                            if cur.description:
-                                columns = [desc[0] for desc in cur.description]
-                                table = Table(title=f"[{db}] Result ({target})")
-                                for col in columns:
-                                    table.add_column(col)
-                                rows = cur.fetchall()
-                                for row in rows:
-                                    table.add_row(*[str(val) for val in row])
-                                results.append(table)
-                            else:
-                                results.append(Panel(f"Query executed successfully. Rows affected: {cur.rowcount}", title=f"[{db}] Result ({target})"))
+                    client = self.source_client if target == "source" else self.dest_client
+                    # PostgresClient.execute_query returns a list of dicts (dict_row)
+                    rows = client.execute_query(query)
+                    print(f"DEBUG TUI: Query executed, rows={len(rows) if rows else 'None'}")
+                    
+                    if rows is not None:
+                        if len(rows) > 0:
+                            columns = list(rows[0].keys())
+                            table = Table(title=f"[{db}] Result ({target})")
+                            for col in columns:
+                                table.add_column(str(col))
+                            for row in rows:
+                                table.add_row(*[str(row[col]) for col in columns])
+                            results.append(table)
+                        else:
+                            results.append(Panel("Query executed successfully. 0 rows returned.", title=f"[{db}] Result ({target})", border_style="green"))
+                    else:
+                        # Statement executed but no fetch (e.g. INSERT/UPDATE without RETURNING)
+                        results.append(Panel("Query executed successfully.", title=f"[{db}] Result ({target})", border_style="green"))
                 except Exception as e:
                     results.append(Panel(f"Error: {e}", title=f"[{db}] Error ({target})", border_style="red"))
                     

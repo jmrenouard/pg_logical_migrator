@@ -28,6 +28,10 @@ class Config:
             for k, v in db_sec.items():
                 if k.startswith('source_'):
                     base[k[7:]] = v
+        
+        if db_name:
+            base['database'] = db_name
+            
         return base
 
     def get_dest_dict(self, db_name=None):
@@ -43,6 +47,10 @@ class Config:
             for k, v in db_sec.items():
                 if k.startswith('dest_'):
                     base[k[5:]] = v
+
+        if db_name:
+            base['database'] = db_name
+
         return base
 
     def _get_conn_string(self, section, db_name=None):
@@ -72,22 +80,32 @@ class Config:
         return self._get_conn_string('destination', db_name)
 
     def get_databases(self):
-        """Return a list of databases to migrate, or ['*'] for all."""
-        # First check replication section
+        """Return a list of databases to migrate."""
+        dbs_str = None
         if 'replication' in self.config and 'databases' in self.config['replication']:
-            dbs = self.config['replication']['databases'].strip()
-            if dbs == '*':
-                return ['*']
-            return [d.strip() for d in dbs.split(',') if d.strip()]
+            dbs_str = self.config['replication']['databases'].strip()
+        elif 'general' in self.config and 'databases' in self.config['general']:
+            dbs_str = self.config['general']['databases'].strip()
+
+        if dbs_str and dbs_str.lower() in ('*', 'all'):
+            try:
+                from src.db import PostgresClient
+                # Temporarily override dbname to postgres to run the query
+                conn_uri = self.get_source_conn(db_name='postgres')
+                client = PostgresClient(conn_uri)
+                query = "SELECT datname FROM pg_database WHERE datistemplate = false AND datallowconn = true AND datname NOT IN ('postgres', 'rdsadmin');"
+                res = client.execute_query(query)
+                if res:
+                    return [r['datname'] for r in res]
+                return []
+            except Exception as e:
+                import logging
+                logging.error(f"Could not discover databases dynamically: {e}")
+                return []
         
-        # Fallback to general section
-        if 'general' in self.config and 'databases' in self.config['general']:
-            dbs = self.config['general']['databases'].strip()
-            if dbs == '*':
-                return ['*']
-            return [d.strip() for d in dbs.split(',') if d.strip()]
+        if dbs_str:
+            return [d.strip() for d in dbs_str.split(',') if d.strip()]
             
-        # Fallback to single db in source or override
         if self.override_db:
             return [self.override_db]
             

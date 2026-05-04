@@ -15,7 +15,8 @@ This document covers all the ways to invoke and operate `pg_logical_migrator`, f
 5. [Global Options](#5-global-options)
 6. [Available Commands](#6-available-commands)
 7. [Interactive TUI Mode](#7-interactive-tui-mode)
-8. [Incremental Pipeline Mode](#8-incremental-pipeline-mode)
+8. [Interactive Wizard Mode](#8-interactive-wizard-mode)
+9. [Incremental Pipeline Mode](#9-incremental-pipeline-mode)
 9. [Output Artifacts](#9-output-artifacts)
 10. [Building a Standalone Executable](#10-building-a-standalone-executable)
 
@@ -369,7 +370,27 @@ Step 6 (Setup Subscription), Init Replication, and Post Migration run **asynchro
 
 ---
 
-## 8. Incremental Pipeline Mode
+## 8. Interactive Wizard Mode
+
+Launched via `python pg_migrator.py wizard`. The **Wizard** is a guided, step-by-step assistant for users who prefer a conversational interface with clear instructions and checkpoints.
+
+```bash
+python pg_migrator.py wizard
+```
+
+### Key Wizard Features
+- **Smart State Detection**: The wizard automatically scans both databases to determine which steps are already completed (e.g., connectivity, publication created, subscription active).
+- **Next Logical Step**: Always proposes the most sensible next action based on current state.
+- **Interactive Menu**:
+    - `next`: Execute the proposed logical step.
+    - `run`: Jump to any specific step by ID (1-17).
+    - `status`: Show a detailed health check of the migration.
+    - `pipeline`: Access high-level automated pipelines (INIT/POST).
+    - `exit`: Safely exit the wizard.
+
+---
+
+## 9. Incremental Pipeline Mode
 
 Runs the migration pipeline non-interactively in an incremental sequence via two commands: `init-replication` and `post-migration`.
 

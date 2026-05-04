@@ -215,7 +215,7 @@ def cmd_init_replication(args):
         print_status(s, m)
 
         # Wait for sync (Step 7)
-        if not getattr(args, "no_wait", False):
+        if getattr(args, "wait", False):
             print("[Step  7] Waiting for initial table sync to complete...")
             success_sync, msg_sync, _, _ = migrator.wait_for_sync(
                 timeout=args.sync_delay, show_progress=True)
@@ -226,7 +226,7 @@ def cmd_init_replication(args):
                 msg_sync)
             print_status(success_sync, msg_sync)
         else:
-            print("[  skip ] Skipping wait for initial synchronization (--no-wait).")
+            print("[  skip ] Skipping wait for initial synchronization (use --wait to block).")
 
         # Step 14 — Object Audit
         print("[Step 14] Object audit...")
@@ -236,7 +236,7 @@ def cmd_init_replication(args):
         audit_detail_lines.append("-" * 47)
         for row in r1:
             audit_detail_lines.append(
-                f"{row['type']:<15} {str(row['source']):>10} {str(row['dest']):>10} {row['status']:>8}"
+                f"{row['type']:<15} {row['source']:>10} {row['dest']:>10} {row['status']:>8}"
             )
         audit_details = "\n".join(audit_detail_lines)
         reporter.add_step("14", "Object Audit", "OK" if s1 else "FAIL", m1,
@@ -244,21 +244,24 @@ def cmd_init_replication(args):
         print_status(s1, m1)
 
         # Step 15 — Row Parity
-        print("[Step 15] Row count parity...")
-        s2, m2, c2, o2, r2 = validator.compare_row_counts(
-            use_stats=args.use_stats)
-        parity_detail_lines = [
-            f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
-        parity_detail_lines.append("-" * 85)
-        for row in r2:
-            parity_detail_lines.append(
-                f"{row['table']:<45} {str(row['source']):>10} {str(row['dest']):>10} "
-                f"{str(row['diff']):>8} {row['status']:>8}"
-            )
-        parity_details = "\n".join(parity_detail_lines)
-        reporter.add_step("15", "Row Parity", "OK" if s2 else "FAIL", m2,
-                          details=parity_details, commands=c2, outputs=o2)
-        print_status(s2, m2)
+        if getattr(args, "wait", False):
+            print("[Step 15] Row count parity...")
+            s2, m2, c2, o2, r2 = validator.compare_row_counts(
+                use_stats=args.use_stats)
+            parity_detail_lines = [
+                f"{'Table':<45} {'Source':>10} {'Dest':>10} {'Diff':>8} {'Status':>8}"]
+            parity_detail_lines.append("-" * 85)
+            for row in r2:
+                parity_detail_lines.append(
+                    f"{row['table']:<45} {row['source']:>10} {row['dest']:>10} "
+                    f"{row['diff']:>8} {row['status']:>8}"
+                )
+            parity_details = "\n".join(parity_detail_lines)
+            reporter.add_step("15", "Row Parity", "OK" if s2 else "FAIL", m2,
+                              details=parity_details, commands=c2, outputs=o2)
+            print_status(s2, m2)
+        else:
+            print("[  skip ] Skipping row count parity check (sync not complete).")
 
         # Generate report
         report_path = os.path.join(results_dir, "report_init.html")

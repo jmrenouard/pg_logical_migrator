@@ -54,7 +54,7 @@ async def test_tui_monkey_run(mock_backend):
     config_path = "dummy_config.ini"
     app = MigratorApp(config_path)
     
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause(0.5)
         
         iterations = 200

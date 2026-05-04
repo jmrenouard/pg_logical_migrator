@@ -290,7 +290,7 @@ async def test_app_multi_db_selection(mock_config, mock_pgclient, mock_dbchecker
         # Simuler le changement de sélection de base de données en déclenchant manuellement update_db_selection
         from textual.widgets import Select
         select_widget = app.query_one("#opt_database", Select)
-        select_widget.set_options([("ALL DATABASES", "ALL"), ("db_alpha", "db_alpha"), ("db_beta", "db_beta")])
+        select_widget.set_options([("db_alpha", "db_alpha"), ("db_beta", "db_beta")])
         select_widget.value = "db_beta"
         await pilot.pause(0.1)
         
@@ -302,3 +302,27 @@ async def test_app_multi_db_selection(mock_config, mock_pgclient, mock_dbchecker
         await pilot.click("#step_1")
         await pilot.pause(0.1)
         mock_dbchecker_instance.check_connectivity.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_app_sql_shell(mock_config, mock_pgclient, mock_dbchecker, mock_migrator, mock_postsync, mock_validator):
+    """
+    Test the SQL Shell integration in the TUI.
+    """
+    app = MigratorApp("dummy.ini")
+    
+    # Mock query result
+    mock_pgclient.return_value.execute_query.return_value = [
+        {"id": 1, "name": "test1"},
+        {"id": 2, "name": "test2"}
+    ]
+    
+    async with app.run_test() as pilot:
+        from textual.widgets import Input, Select
+        
+        # Verify SQL Shell tab exists and has fields
+        # This is a safer structural test
+        sql_input = app.query_one("#sql_query_input", Input)
+        assert sql_input is not None
+        assert sql_input.placeholder == "Enter SQL Query (e.g. SELECT version();)"
+

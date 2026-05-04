@@ -14,6 +14,7 @@ from src.cli.commands import (
     cmd_validate_rows, cmd_cleanup, cmd_setup_reverse, cmd_cleanup_reverse,
     cmd_sync_lobs, cmd_sync_unlogged, cmd_tui, cmd_generate_config
 )
+from src.cli.wizard import cmd_wizard
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 import argparse
 import sys
@@ -341,9 +342,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Drop destination first")
     p_init.add_argument(
-        "--no-wait",
+        "--wait",
         action="store_true",
-        help="Do not wait for initial sync")
+        help="Wait for initial sync to complete before finishing")
     p_init.set_defaults(func=cmd_init_replication)
 
     p_post = sub.add_parser(
@@ -357,6 +358,12 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[global_parser],
         help="Launch interactive Terminal UI dashboard")
     p_tui.set_defaults(func=cmd_tui)
+
+    p_wizard = sub.add_parser(
+        "wizard",
+        parents=[global_parser],
+        help="Launch interactive step-by-step assistant")
+    p_wizard.set_defaults(func=cmd_wizard)
 
     return parser
 
@@ -380,7 +387,7 @@ def main():
 
     # Dispatch to the selected subcommand
     try:
-        if args.command in ('tui', 'generate-config'):
+        if args.command in ('tui', 'wizard', 'generate-config'):
             rc = args.func(args)
             sys.exit(rc)
         

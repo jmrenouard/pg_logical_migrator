@@ -18,6 +18,7 @@ help:
 	@echo "  test-unit        Run unit tests"
 	@echo "  test-integration Run integration tests (requires docker env)"
 	@echo "  test-tui         Run TUI end-to-end tests (requires docker env)"
+	@echo "  test-wizard      Run Wizard integration tests"
 	@echo "  test-e2e         Run full end-to-end migration test (requires docker env)"
 	@echo "  test-packaging   Run packaging end-to-end test (build and validate binaries/packages)"
 	@echo "  test-all         Run all tests (unit, integration, tui, e2e, packaging)"
@@ -75,6 +76,9 @@ test-integration:
 test-tui:
 	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_tui_e2e.py
 
+test-wizard:
+	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_wizard.py
+
 test-e2e:
 	PYTHONPATH=. $(PYTEST) -vv tests/e2e
 
@@ -96,7 +100,7 @@ test-report: install
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration --results-dir RESULTS/$(TIMESTAMP)
 	@echo "Reports generated in RESULTS/$(TIMESTAMP)/"
 
-test-all: test-unit test-integration test-tui test-e2e test-packaging test-coverage test-report
+test-all: test-unit test-integration test-tui test-wizard test-e2e test-packaging test-coverage test-report
 
 run-pipeline:
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest

@@ -98,6 +98,22 @@ pip install -r requirements.txt
 
 ---
 
+## 🎮 Interactive Modes
+
+**Terminal UI (TUI)**
+Launch the modern dashboard for a centralized view of the migration:
+```bash
+python pg_migrator.py tui
+```
+
+**Step-by-Step Wizard**
+Launch the interactive assistant for a guided experience:
+```bash
+python pg_migrator.py wizard
+```
+
+---
+
 ## Quick Start (3 Steps)
 
 ### 1. Configure Connection Parameters

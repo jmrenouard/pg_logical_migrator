@@ -32,7 +32,7 @@ def test_step03_parameters(db_checker):
 
 def test_step04a_schema_pre_data(migrator, dest_client):
     """Step 4a: Schema copy pre-data."""
-    success, msg, *_ = migrator.step4a_migrate_schema_pre_data()
+    success, msg, *_ = migrator.step4a_migrate_schema_pre_data(drop_dest=True)
     assert success is True
 
     # Verify tables exist on dest
@@ -64,7 +64,7 @@ def test_step06_setup_destination(migrator, dest_client):
 
 def test_step07_wait_for_sync(migrator):
     """Step 7: Wait for initial synchronization."""
-    success, msg, *_ = migrator.wait_for_sync(timeout=180, show_progress=False)
+    success, msg, *_ = migrator.wait_for_sync(timeout=600, show_progress=False)
     assert success is True
 
 

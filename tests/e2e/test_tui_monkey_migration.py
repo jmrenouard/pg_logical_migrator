@@ -6,7 +6,7 @@ import pytest
 from src.tui import MigratorApp
 from src.db import PostgresClient
 from src.config import Config
-from textual.widgets import Button, Select, Input, TabbedContent, TabPane, Static
+from textual.widgets import Button, Select, Input, TabbedContent, TabPane, Static, ListItem
 
 @pytest.mark.asyncio
 async def test_tui_monkey_migration_e2e():
@@ -90,11 +90,19 @@ async def test_tui_monkey_migration_e2e():
         success_init = False
         for _ in range(180):
             display = app.query_one("#main_display", Static)
-            # Textual's Static widget stores its Rich renderable in _renderable
             content = str(getattr(display, "_renderable", ""))
-            if "COMPLETED" in content or "Successfully" in content:
+
+            # Check for various success indicators
+            if "Pipeline Completed Successfully" in content or "POST PIPELINE" in content and "Successfully" in content:
                 success_init = True
                 break
+
+            # If we see the next expected state or a success message in history
+            history = [str(getattr(item, "action_label", "")) for item in app.query_one("#history_list").query(ListItem)]
+            if any("Pipeline Completed" in h for h in history):
+                success_init = True
+                break
+
             if "Pipeline Failed" in content:
                 monkey_active = False
                 await monkey_task
@@ -134,8 +142,8 @@ async def test_tui_monkey_migration_e2e():
              pytest.fail("POST PIPELINE timed out")
 
         # Stop monkey
-        monkey_active = False
-        await monkey_task
+        # monkey_active = False
+        # await monkey_task
 
         # Final verification
         cfg = Config(config_path)

@@ -15,16 +15,16 @@ class Migrator:
     def drop_recreate_dest_db(self):
         """Pre-cleanup target database by terminating active logical replication slots,
         subscriptions, and recreating the database."""
-        src_db = self.source_conn['database']
-        src_user = self.source_conn['user']
-        src_host = self.source_conn['host']
-        src_port = self.source_conn['port']
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
         src_pass = self.source_conn.get('password', '')
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         logging.info(f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
@@ -41,7 +41,8 @@ class Migrator:
                 # Safely drop subscriptions
                 try:
                     subs = tgt_conn.execute("SELECT subname FROM pg_subscription").fetchall()
-                    for (sub,) in subs:
+                    for row in subs:
+                        sub = row['subname']
                         tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" DISABLE')
                         tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
                         tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
@@ -53,7 +54,9 @@ class Migrator:
                     slots = tgt_conn.execute(
                         "SELECT slot_name, active_pid FROM pg_replication_slots "
                         "WHERE database = current_database()").fetchall()
-                    for slot, pid in slots:
+                    for row in slots:
+                        slot = row['slot_name']
+                        pid = row['active_pid']
                         if pid:
                             tgt_conn.execute(f"SELECT pg_terminate_backend({pid})")
                             import time
@@ -80,7 +83,9 @@ class Migrator:
                     slots = src_conn.execute(
                         "SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s",
                         (sub_name,)).fetchall()
-                    for slot, pid in slots:
+                    for row in slots:
+                        slot = row['slot_name']
+                        pid = row['active_pid']
                         if pid:
                             src_conn.execute(f"SELECT pg_terminate_backend({pid})")
                         src_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
@@ -118,16 +123,16 @@ class Migrator:
     def step4a_migrate_schema_pre_data(self, drop_dest=False):
         """Step 4a: Copy schema PRE-DATA using pg_dump -s --section=pre-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema PRE-DATA migration...")
-        src_db = self.source_conn['database']
-        src_user = self.source_conn['user']
-        src_host = self.source_conn['host']
-        src_port = self.source_conn['port']
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
         src_pass = self.source_conn.get('password', '')
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         if drop_dest:
@@ -170,16 +175,16 @@ class Migrator:
     def step4b_migrate_schema_post_data(self):
         """Step 4b: Copy schema POST-DATA using pg_dump -s --section=post-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema POST-DATA migration...")
-        src_db = self.source_conn['database']
-        src_user = self.source_conn['user']
-        src_host = self.source_conn['host']
-        src_port = self.source_conn['port']
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
         src_pass = self.source_conn.get('password', '')
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
@@ -286,15 +291,15 @@ class Migrator:
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
 
-        src_user = self.source_conn['user']
-        src_pass = self.source_conn['password']
-        src_db = self.source_conn['database']
+        src_user = self.source_conn.get('user', 'postgres')
+        src_pass = self.source_conn.get('password', '')
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
 
         # In Docker/NAT setups, the target DB might need a different host/port
         # to reach the source DB than the host machine running pg_migrator.
         rep_config = self.config.get_replication()
-        sub_host = rep_config.get('source_host', self.source_conn['host'])
-        sub_port = rep_config.get('source_port', self.source_conn['port'])
+        sub_host = rep_config.get('source_host', self.source_conn.get('host', 'localhost'))
+        sub_port = rep_config.get('source_port', self.source_conn.get('port', '5432'))
 
         conn_str = f"host={sub_host} port={sub_port} user={src_user} password={src_pass} dbname={src_db}"
 
@@ -316,12 +321,14 @@ class Migrator:
     def wait_for_sync(self, timeout=60, poll_interval=5, show_progress=False):
         """Wait until all tables in the subscription are synchronized."""
         import time
+        if show_progress:
+            print("\n")
         logging.info("[DEST] Waiting for initial data sync to complete...")
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         tgt_conn_uri = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
@@ -329,26 +336,45 @@ class Migrator:
 
         start_time = time.time()
         while time.time() - start_time < timeout:
-            query = "SELECT count(*) AS pending FROM pg_subscription_rel WHERE srsubstate NOT IN ('s', 'r');"
+            query = """
+            SELECT count(*) AS total, 
+                   COALESCE(SUM(CASE WHEN srsubstate NOT IN ('s', 'r') THEN 1 ELSE 0 END), 0) AS pending 
+            FROM pg_subscription_rel;
+            """
             try:
                 result = client.execute_query(query, fetch=True)
                 if result is not None and len(result) > 0:
+                    total = result[0]['total']
                     pending = result[0]['pending']
-                    if pending == 0:
+                    
+                    if total > 0 and pending == 0:
                         if show_progress:
-                            print("\n  [OK] All tables synchronized.")
+                            print("\r  [OK] All tables synchronized.                                        ")
                         return True, "Sync completed. All tables synchronized.", [
                             "[DEST] [POLL pg_subscription_rel]"], ["Sync finished"]
-
-                    if show_progress:
-                        elapsed = int(time.time() - start_time)
-                        # Try to get byte progress if possible
-                        progress = self.get_initial_copy_progress()
-                        pct = progress['summary']['percent_bytes'] if progress else 0
-                        print(
-                            f"\r  [wait] Syncing... {pending} tables remaining ({pct}% bytes) - {elapsed}s elapsed",
-                            end="",
-                            flush=True)
+                    elif total == 0:
+                        if show_progress:
+                            elapsed = int(time.time() - start_time)
+                            print(f"\r  [wait] Subscription initializing ({elapsed}s)... waiting for metadata", end="", flush=True)
+                        logging.debug("[DEST] No tables found in pg_subscription_rel yet.")
+                    else:
+                        if show_progress:
+                            elapsed = int(time.time() - start_time)
+                            # Try to get byte progress if possible
+                            progress = self.get_initial_copy_progress()
+                            if progress:
+                                pct = progress['summary']['percent_bytes']
+                                copied = progress['summary']['bytes_copied_pretty']
+                                total_size = progress['summary']['total_source_pretty']
+                                print(
+                                    f"\r  [sync] {pct:>5}% | {copied:>10} / {total_size:<10} | {pending:>3} tables left | {elapsed:>4}s",
+                                    end="",
+                                    flush=True)
+                            else:
+                                print(
+                                    f"\r  [sync] {pending:>3} tables remaining... | {elapsed:>4}s elapsed",
+                                    end="",
+                                    flush=True)
 
                 logging.debug(
                     "[DEST] Syncing... Waiting for tables to finish initial copy.")
@@ -593,9 +619,9 @@ class Migrator:
 
         rep_config = self.config.get_replication()
         dst_host_for_src = rep_config.get(
-            'dest_host_for_src', dst_conn['host'])
+            'dest_host', dst_conn['host'])
         dst_port_for_src = rep_config.get(
-            'dest_port_for_src', dst_conn['port'])
+            'dest_port', dst_conn['port'])
         dst_user = dst_conn['user']
         dst_password = dst_conn['password']
         dst_database = dst_conn['database']
