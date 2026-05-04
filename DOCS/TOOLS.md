@@ -381,11 +381,15 @@ python pg_migrator.py wizard
 ### Key Wizard Features
 - **Smart State Detection**: The wizard automatically scans both databases to determine which steps are already completed (e.g., connectivity, publication created, subscription active).
 - **Next Logical Step**: Always proposes the most sensible next action based on current state.
-- **Interactive Menu**:
+- **Full CLI Command Support**: Run any step by its ID (e.g. `10`) or its CLI command name (e.g. `terminate-repl`) via the `run` menu.
+- **Interactive Configuration**: Generate a default config or interactively set up Source/Destination database access and replication settings.
+- **Pipeline Shortcuts**: Access automated pipelines like `init-replication` and `post-migration` with interactive parameter selection (e.g. `--drop-dest`, `--wait`).
+- **Interactive Menus**:
     - `next`: Execute the proposed logical step.
-    - `run`: Jump to any specific step by ID (1-17).
+    - `run`: Jump to any specific step or CLI command.
     - `status`: Show a detailed health check of the migration.
-    - `pipeline`: Access high-level automated pipelines (INIT/POST).
+    - `config`: Manage connection credentials and settings.
+    - `pipeline`: Access high-level automated pipelines.
     - `exit`: Safely exit the wizard.
 
 ---
