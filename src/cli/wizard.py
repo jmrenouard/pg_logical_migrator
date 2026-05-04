@@ -33,6 +33,16 @@ class MigrationWizard:
         self.validator = Validator(self.sc, self.dc, self.cfg)
         self.reporter = ReportGenerator()
         
+        self.command_to_id = {
+            'check': '1', 'diagnose': '2', 'params': '3', 
+            'migrate-schema-pre-data': '4', 'setup-pub': '5', 
+            'setup-sub': '6', 'repl-progress': '7', 'progress': '7', 'wait-sync': '7',
+            'refresh-matviews': '8', 'sync-sequences': '9', 'terminate-repl': '10', 
+            'sync-lobs': '11a', 'sync-unlogged': '11b', 'enable-triggers': '12', 
+            'reassign-owner': '13', 'audit-objects': '14', 'validate-rows': '15', 
+            'cleanup': '16', 'cleanup-reverse': '16', 'setup-reverse': '17'
+        }
+
         self.steps = [
             {"id": "1", "name": "Check Connectivity", "phase": "Preparation"},
             {"id": "2", "name": "Diagnose problematic objects", "phase": "Preparation"},
@@ -104,12 +114,13 @@ class MigrationWizard:
                 else:
                     console.print("[green]All steps completed![/green]")
             elif choice == "run":
-                step_id = Prompt.ask("Enter step ID to run (e.g. 1, 5, 11a)")
+                cmd_or_id = Prompt.ask("Enter step ID or CLI command name (e.g. 5, setup-pub)")
+                step_id = self.command_to_id.get(cmd_or_id, cmd_or_id)
                 step = next((s for s in self.steps if s['id'] == step_id), None)
                 if step:
                     self._run_step(step)
                 else:
-                    console.print(f"[red]Step {step_id} not found.[/red]")
+                    console.print(f"[red]Step/Command '{cmd_or_id}' not found.[/red]")
             elif choice == "status":
                 self._display_detailed_status(state)
             elif choice == "config":
