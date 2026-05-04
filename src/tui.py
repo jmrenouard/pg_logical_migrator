@@ -107,6 +107,12 @@ class MigratorApp(App):
     }
     .form_row Input {
         width: 1fr;
+        min-width: 10;
+        margin-right: 1;
+    }
+    .form_row Select {
+        width: 1fr;
+        min-width: 20;
         margin-right: 1;
     }
 
@@ -173,8 +179,12 @@ class MigratorApp(App):
         with Horizontal(id="main_layout"):
             with Vertical(id="center_pane"):
                 with Horizontal(id="options_bar"):
-                    db_options = [("ALL DATABASES", "ALL")] + [(db, db) for db in self.databases]
-                    db_val = "ALL" if len(self.databases) != 1 else self.databases[0]
+                    if self.databases:
+                        db_options = [(db, db) for db in self.databases]
+                        db_val = self.databases[0]
+                    else:
+                        db_options = [("None", "")]
+                        db_val = ""
                     yield Select(db_options, value=db_val, id="opt_database")
                     yield Checkbox("Use Stats", id="opt_use_stats")
                     target_list = ", ".join(self.config.get_target_schemas())
@@ -246,6 +256,16 @@ class MigratorApp(App):
                                 with Horizontal(classes="btn_group"):
                                     yield Button("Generate Config", id="cmd_generate_config", classes="btn-auto")
 
+                        with TabPane("💻 SQL Shell"):
+                            with VerticalScroll():
+                                yield Label("Execute SQL Queries on Source or Destination", classes="pane_header")
+                                with Horizontal(classes="form_row"):
+                                    yield Label("Target:")
+                                    yield Select([("Source", "source"), ("Destination", "dest")], value="source", id="sql_target_select")
+                                yield Input(placeholder="Enter SQL Query (e.g. SELECT version();)", id="sql_query_input")
+                                with Horizontal(classes="btn_group"):
+                                    yield Button("Execute SQL", id="cmd_execute_sql", classes="btn-auto")
+
                 with VerticalScroll(id="display_area"):
                     yield Static(id="main_display")
 
@@ -307,15 +327,11 @@ class MigratorApp(App):
         
         try:
             selected_db = self.query_one("#opt_database", Select).value
-            dbs_to_run = self.databases if selected_db == "ALL" else [selected_db]
+            dbs_to_run = [selected_db] if selected_db else []
             
-            # Use threads for ALL runs to avoid blocking TUI or refactor into single action
-            # For simplicity, we loop synchronously for fast steps, async for pipelines
-            
-            # Since many methods return UI components, if ALL is selected we might just show the last one,
-            # or a summary. For now, we update display per DB.
-            if len(dbs_to_run) > 1 and btn_id not in ("cmd_init", "cmd_post", "cmd_progress"):
-                self.update_display(Panel(f"Running '{label}' on {len(dbs_to_run)} databases sequentially... Check terminal logs for detailed progress.", title="Multi-DB Execution", border_style="yellow"), label)
+            if not dbs_to_run:
+                self.update_display(Panel("No database selected.", border_style="red"), label)
+                return
                 
             for db in dbs_to_run:
                 self._init_backend_for_db(db)
@@ -502,6 +518,10 @@ class MigratorApp(App):
 
                 elif btn_id == "cmd_generate_config":
                     self._generate_config_file()
+                    return
+
+                elif btn_id == "cmd_execute_sql":
+                    self._execute_sql_shell(dbs_to_run)
                     return
 
                 # (Generic handler for other steps)
@@ -751,6 +771,52 @@ class MigratorApp(App):
                 ),
                 "Generate Config"
             )
+
+    @work(exclusive=True, thread=True)
+    def _execute_sql_shell(self, dbs_to_run):
+        label = "Execute SQL"
+        try:
+            target = self.query_one("#sql_target_select", Select).value
+            query = self.query_one("#sql_query_input", Input).value
+            
+            if not query:
+                self.call_from_thread(self.update_display, Panel("No query provided.", title=label, border_style="red"), label)
+                return
+                
+            self.call_from_thread(self.update_display, Panel(f"Executing on {target}: {query}\n", title=label, border_style="blue"), label)
+            
+            import psycopg2
+            from rich.table import Table
+            from rich.panel import Panel
+            from rich.console import Group
+            
+            results = []
+            
+            for db in dbs_to_run:
+                self._init_backend_for_db(db)
+                try:
+                    conn_dict = self.migrator.source_conn if target == "source" else self.migrator.dest_conn
+                    with psycopg2.connect(**conn_dict) as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(query)
+                            if cur.description:
+                                columns = [desc[0] for desc in cur.description]
+                                table = Table(title=f"[{db}] Result ({target})")
+                                for col in columns:
+                                    table.add_column(col)
+                                rows = cur.fetchall()
+                                for row in rows:
+                                    table.add_row(*[str(val) for val in row])
+                                results.append(table)
+                            else:
+                                results.append(Panel(f"Query executed successfully. Rows affected: {cur.rowcount}", title=f"[{db}] Result ({target})"))
+                except Exception as e:
+                    results.append(Panel(f"Error: {e}", title=f"[{db}] Error ({target})", border_style="red"))
+                    
+            self.call_from_thread(self.update_display, Group(*results), label)
+            
+        except Exception as e:
+            self.call_from_thread(self.update_display, Panel(f"Error in SQL Shell: {e}", title=label, border_style="red"), label)
 
 
 def main():
