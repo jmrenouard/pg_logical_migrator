@@ -133,6 +133,17 @@ class MigrationWizard:
     def _menu_configure_access(self):
         console.print(Panel("Configuration Assistant", style="bold cyan"))
         
+        if not os.path.exists(self.config_path):
+            if Confirm.ask("Configuration file not found. Generate a default one?"):
+                from src.cli.commands import cmd_generate_config
+                import argparse
+                out = Prompt.ask("Output path", default=self.config_path)
+                args = argparse.Namespace(output=out)
+                cmd_generate_config(args)
+                self.config_path = out
+                self.cfg = Config(out)
+                console.print(f"[green]Generated {out}[/green]")
+
         if Confirm.ask("Configure Source Database?"):
             src_data = self._prompt_db_details("Source")
             self.cfg.update_section("source", src_data)
@@ -392,17 +403,36 @@ class MigrationWizard:
             console.print(f"[bold red]Error:[/bold red] {e}")
 
     def _run_pipeline_menu(self):
-        console.print(Panel("Shortcut Pipelines"))
-        choice = Prompt.ask("Choose pipeline", choices=["init", "post", "back"], default="init")
-        if choice == "init":
+        console.print(Panel("Shortcut Pipelines", style="bold magenta"))
+        choice = Prompt.ask("Choose pipeline", choices=["init-replication", "post-migration", "back"], default="init-replication")
+        
+        import argparse
+        if choice == "init-replication":
             from src.cli.pipelines import cmd_init_replication
-            import argparse
-            args = argparse.Namespace(config=self.config_path, database=self.database, results_dir=self.results_dir, loglevel="INFO", dry_run=False, drop_dest=False, wait=True, sync_delay=3600)
+            drop = Confirm.ask("Drop destination database if it exists? (--drop-dest)", default=False)
+            wait = Confirm.ask("Wait for initial synchronization to complete? (--wait)", default=True)
+            args = argparse.Namespace(
+                config=self.config_path, 
+                database=self.database, 
+                results_dir=self.results_dir, 
+                loglevel="INFO", 
+                dry_run=False, 
+                drop_dest=drop, 
+                wait=wait, 
+                sync_delay=3600
+            )
+            console.print("[yellow]Starting init-replication pipeline...[/yellow]")
             cmd_init_replication(args)
-        elif choice == "post":
+        elif choice == "post-migration":
             from src.cli.pipelines import cmd_post_migration
-            import argparse
-            args = argparse.Namespace(config=self.config_path, database=self.database, results_dir=self.results_dir, loglevel="INFO", dry_run=False)
+            args = argparse.Namespace(
+                config=self.config_path, 
+                database=self.database, 
+                results_dir=self.results_dir, 
+                loglevel="INFO", 
+                dry_run=False
+            )
+            console.print("[yellow]Starting post-migration pipeline...[/yellow]")
             cmd_post_migration(args)
 
 def cmd_wizard(args):
