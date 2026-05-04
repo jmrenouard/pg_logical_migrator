@@ -7,9 +7,8 @@ class Config:
         self.config_path = config_path
         self.config = configparser.ConfigParser()
         self.override_db = override_db
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-        self.config.read(config_path)
+        if os.path.exists(config_path):
+            self.config.read(config_path)
 
     def set_override_db(self, db_name):
         """Override the database name for multi-database migration."""

@@ -93,7 +93,7 @@ class MigrationWizard:
             
             choice = Prompt.ask(
                 "\n[bold yellow]What would you like to do?[/bold yellow]",
-                choices=["next", "run", "status", "pipeline", "exit"],
+                choices=["next", "run", "status", "config", "pipeline", "exit"],
                 default="next"
             )
             
@@ -112,10 +112,61 @@ class MigrationWizard:
                     console.print(f"[red]Step {step_id} not found.[/red]")
             elif choice == "status":
                 self._display_detailed_status(state)
+            elif choice == "config":
+                self._menu_configure_access()
             elif choice == "pipeline":
                 self._run_pipeline_menu()
             elif choice == "exit":
                 break
+
+    def _menu_configure_access(self):
+        console.print(Panel("Configuration Assistant", style="bold cyan"))
+        
+        if Confirm.ask("Configure Source Database?"):
+            src_data = self._prompt_db_details("Source")
+            self.cfg.update_section("source", src_data)
+            
+        if Confirm.ask("Configure Destination Database?"):
+            dst_data = self._prompt_db_details("Destination")
+            self.cfg.update_section("destination", dst_data)
+            
+        if Confirm.ask("Configure Replication Settings?"):
+            rep_data = self._prompt_replication_details()
+            self.cfg.update_section("replication", rep_data)
+            
+        if Confirm.ask(f"Save configuration to {self.config_path}?"):
+            # Ensure parent directories exist
+            os.makedirs(os.path.dirname(os.path.abspath(self.config_path)), exist_ok=True)
+            self.cfg.save()
+            console.print("[green]Configuration saved![/green]")
+            # Re-init clients and state
+            try:
+                self.sc, self.dc = build_clients(self.cfg)
+                self.checker = DBChecker(self.sc, self.dc, self.cfg)
+                self.migrator = Migrator(self.cfg)
+            except Exception as e:
+                console.print(f"[yellow]Note: Could not immediately reconnect: {e}[/yellow]")
+
+    def _prompt_db_details(self, label):
+        data = {}
+        # Get existing values as defaults
+        existing = self.cfg.get_source_dict() if label == "Source" else self.cfg.get_dest_dict()
+        
+        data['host'] = Prompt.ask(f"{label} Host", default=existing.get('host', 'localhost'))
+        data['port'] = Prompt.ask(f"{label} Port", default=existing.get('port', '5432'))
+        data['user'] = Prompt.ask(f"{label} User", default=existing.get('user', 'postgres'))
+        data['password'] = Prompt.ask(f"{label} Password", password=True, default=existing.get('password', ''))
+        data['database'] = Prompt.ask(f"{label} Database", default=existing.get('database', 'postgres'))
+        return data
+
+    def _prompt_replication_details(self):
+        data = {}
+        existing = self.cfg.get_replication()
+        
+        data['target_schema'] = Prompt.ask("Target Schema(s) (comma-separated)", default=existing.get('target_schema', 'public'))
+        data['publication_name'] = Prompt.ask("Publication Name", default=existing.get('publication_name', 'migrator_pub'))
+        data['subscription_name'] = Prompt.ask("Subscription Name", default=existing.get('subscription_name', 'migrator_sub'))
+        return data
 
     def _detect_state(self):
         # Basic state detection logic
