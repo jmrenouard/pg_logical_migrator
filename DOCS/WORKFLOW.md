@@ -94,6 +94,6 @@ Executes **Phase 3** and **Phase 4**:
 
 #### 3. Single-Database Execution Flow
 While `databases = *` or `all` can be used to dynamically discover databases on the source, `pg_logical_migrator` strictly enforces a **single-database execution model** for operations. Automated bulk migration (looping over multiple databases at once) is considered unsafe and is no longer supported.
-- In the **TUI**, users must explicitly select the target database from the dropdown menu before running any step or pipeline.
+- In the **Wizard**, users must explicitly select the target database from the menu before running any step or pipeline.
 - In the **CLI**, operations must be scoped to a specific target database using the `--db` override flag (e.g., `--db target_db`), unless the configuration defines only a single database.
 This ensures precision, limits risk, and avoids ambiguous cross-database errors during replication and cutover phases.

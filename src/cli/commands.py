@@ -483,12 +483,34 @@ def cmd_cleanup_reverse(args):
     return 0 if success else 1
 
 
-def cmd_tui(args):
-    """Launch the interactive Textual TUI."""
-    from src.main import MigratorApp
-    app = MigratorApp(args.config)
-    app.run()
-    return 0
+def cmd_stop_repl(args):
+    """Pause logical replication (DISABLE subscription)."""
+    cfg = Config(args.config, getattr(args, "database", None))
+    sc, dc = build_clients(cfg)
+    sub = cfg.get_replication().get("subscription_name")
+    print(f"\n=== Pause Replication ===")
+    try:
+        dc.execute_script(f"ALTER SUBSCRIPTION {sub} DISABLE;")
+        print(f"  [OK] Subscription '{sub}' disabled.")
+        return 0
+    except Exception as e:
+        print(f"  [FAIL] Failed to disable subscription '{sub}': {e}")
+        return 1
+
+
+def cmd_start_repl(args):
+    """Resume logical replication (ENABLE subscription)."""
+    cfg = Config(args.config, getattr(args, "database", None))
+    sc, dc = build_clients(cfg)
+    sub = cfg.get_replication().get("subscription_name")
+    print(f"\n=== Resume Replication ===")
+    try:
+        dc.execute_script(f"ALTER SUBSCRIPTION {sub} ENABLE;")
+        print(f"  [OK] Subscription '{sub}' enabled.")
+        return 0
+    except Exception as e:
+        print(f"  [FAIL] Failed to enable subscription '{sub}': {e}")
+        return 1
 
 
 def cmd_generate_config(args):

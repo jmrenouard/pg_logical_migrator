@@ -16,13 +16,11 @@ tests/
 │   ├── test_cli_pipelines.py      # init-replication / post-migration pipelines
 │   ├── test_github_workflows.py   # GitHub Actions YAML structure & contracts (requires: pyyaml)
 │   ├── test_helpers.py            # CLI helpers: logging, formatting, config
-│   ├── test_main.py               # Application entry point (TUI + CLI)
 │   ├── test_migrator.py           # Core migrator steps (basic cases)
 │   ├── test_migrator_extended.py  # Complex branches: drop_dest, LOBs, timeouts
 │   ├── test_post_sync.py          # PostSync basic operations
 │   ├── test_post_sync_extended.py # Error paths, disable_triggers, reassign_ownership
 │   ├── test_report_generator.py   # HTML report generation
-│   ├── test_tui.py                # Textual TUI async tests
 │   └── test_validation.py        # Row-count and object-audit validation
 │
 ├── integration/                   # Requires Docker test environment
@@ -83,7 +81,6 @@ PYTHONPATH=. venv/bin/pytest tests/unit \
 | `src/migrator.py` | 96% |
 | `src/post_sync.py` | 99% |
 | `src/report_generator.py` | 100% |
-| `src/tui.py` | 94% |
 | `src/validation.py` | 84% |
 
 ### Integration Tests (requires Docker)

@@ -15,7 +15,7 @@ This phase begins the heavy lifting of data movement.
 
 - **Publication Setup**: Create the logical publication on the source instance.
 - **Subscription Creation**: Define the subscription on the destination instance, triggering the initial `COPY` phase for all tables.
-- **Monitoring**: Track synchronization progress via the TUI or `repl-progress` command.
+- **Monitoring**: Track synchronization progress via the Wizard or `repl-progress` command.
 
 ### 🏁 Phase 3: Finalization (Cutover)
 The most critical phase where application traffic is redirected.

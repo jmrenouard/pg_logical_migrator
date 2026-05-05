@@ -10,5 +10,5 @@ vendor: "jmrenouard"
 homepage: "https://github.com/jmrenouard/pg_logical_migrator"
 license: "MIT"
 contents:
-  - src: "dist/pg_migrator--python3.11-v1.4.0"
+  - src: "dist/pg_migrator-linux-python3.11-v1.4.0"
     dst: "/usr/bin/pg_migrator"

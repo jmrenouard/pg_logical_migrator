@@ -176,24 +176,6 @@ class TestCmdCleanupReverse:
             rc = commands.cmd_cleanup_reverse(args)
         assert rc == 0
 
-
-# ---------------------------------------------------------------------------
-# cmd_tui
-# ---------------------------------------------------------------------------
-
-class TestCmdTui:
-    def test_calls_run(self):
-        args = _args()
-        mock_app = MagicMock()
-        with patch("src.cli.commands.Config"), \
-             patch("src.main.MigratorApp", return_value=mock_app, create=True), \
-             patch("src.cli.commands.MigratorApp", return_value=mock_app, create=True):
-            try:
-                rc = commands.cmd_tui(args)
-            except (ImportError, AttributeError):
-                pytest.skip("TUI import issue in test context")
-
-
 # ---------------------------------------------------------------------------
 # cmd_diagnose — size analysis branches
 # ---------------------------------------------------------------------------

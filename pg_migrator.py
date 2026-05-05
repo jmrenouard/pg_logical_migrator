@@ -7,12 +7,13 @@ import src.db as _db_module
 from src.cli.helpers import setup_logging
 from src.cli.commands import (
     cmd_check, cmd_diagnose, cmd_params,
-    cmd_migrate_schema_pre_data, cmd_terminate_replication,
+    cmd_migrate_schema_pre_data, cmd_terminate_replication, cmd_migrate_schema_post_data,
     cmd_setup_pub, cmd_setup_sub, cmd_progress, cmd_wait_sync,
     cmd_sync_sequences, cmd_enable_triggers, cmd_refresh_matviews,
     cmd_reassign_owner, cmd_audit_objects,
-    cmd_validate_rows, cmd_cleanup, cmd_setup_reverse, cmd_cleanup_reverse,
-    cmd_sync_lobs, cmd_sync_unlogged, cmd_tui, cmd_generate_config
+    cmd_sync_lobs, cmd_sync_unlogged, cmd_generate_config,
+    cmd_stop_repl, cmd_start_repl, cmd_validate_rows, cmd_cleanup,
+    cmd_setup_reverse, cmd_cleanup_reverse
 )
 from src.cli.wizard import cmd_wizard
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
@@ -48,7 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
               %(prog)s diagnose                       # Pre-flight diagnostics
               %(prog)s init-replication --drop-dest   # Initialize replication, drop existing DB
               %(prog)s post-migration                 # Finalize replication
-              %(prog)s tui                            # Interactive TUI mode
               %(prog)s validate-rows --config prod.ini
               %(prog)s generate-config --output my.ini
         """),
@@ -212,10 +212,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_term = sub.add_parser(
         "terminate-repl",
         parents=[global_parser],
-        help="Step 10 — Terminate replication & Schema (post-data)",
-        description="Stop logical replication and deploy indexes, FKs, and constraints.",
+        help="Step 10 — Terminate replication",
+        description="Stop logical replication by dropping subscription and publication.",
     )
     p_term.set_defaults(func=cmd_terminate_replication)
+
+    # Step 10b — migrate-schema-post-data
+    p_schema_post = sub.add_parser(
+        "migrate-schema-post-data",
+        parents=[global_parser],
+        help="Step 10b — Schema (post-data)",
+        description="Deploy indexes, FKs, and constraints.",
+    )
+    p_schema_post.set_defaults(func=cmd_migrate_schema_post_data)
 
     # Step 11 — sync-lobs
     p_lob = sub.add_parser(
@@ -298,12 +307,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- Utilities ---
 
-    # progress
-    p_p = sub.add_parser(
-        "progress",
+    # stop-repl
+    p_stop = sub.add_parser(
+        "stop-repl",
         parents=[global_parser],
-        help="Utility: Quick replication status check")
-    p_p.set_defaults(func=cmd_progress)
+        help="Utility: Pause logical replication (DISABLE subscription)")
+    p_stop.set_defaults(func=cmd_stop_repl)
+
+    # start-repl
+    p_start = sub.add_parser(
+        "start-repl",
+        parents=[global_parser],
+        help="Utility: Resume logical replication (ENABLE subscription)")
+    p_start.set_defaults(func=cmd_start_repl)
 
     # wait-sync
     p_w = sub.add_parser(
@@ -353,12 +369,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Automated Phase 3 & 4 (Cutover & Validation)")
     p_post.set_defaults(func=cmd_post_migration)
 
-    p_tui = sub.add_parser(
-        "tui",
-        parents=[global_parser],
-        help="Launch interactive Terminal UI dashboard")
-    p_tui.set_defaults(func=cmd_tui)
-
     p_wizard = sub.add_parser(
         "wizard",
         parents=[global_parser],
@@ -378,8 +388,7 @@ def main():
 
     # Setup logging with global options
     log_file = getattr(args, "log_file", None)
-    is_tui = args.command == "tui"
-    setup_logging(getattr(args, "loglevel", "INFO"), log_file, tui_mode=is_tui)
+    setup_logging(getattr(args, "loglevel", "INFO"), log_file)
 
     # Enable verbose diagnostic output
     if getattr(args, "verbose", False):
@@ -387,7 +396,7 @@ def main():
 
     # Dispatch to the selected subcommand
     try:
-        if args.command in ('tui', 'wizard', 'generate-config'):
+        if args.command in ('wizard', 'generate-config'):
             rc = args.func(args)
             sys.exit(rc)
         

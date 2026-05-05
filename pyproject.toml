@@ -21,7 +21,6 @@ dependencies = [
     "psycopg[binary]>=3.1.0",
     "jinja2>=3.1.0",
     "rich>=13.0.0",
-    "textual>=0.40.0",
     "configparser",
 ]
 
@@ -30,7 +29,8 @@ dependencies = [
 "Bug Tracker" = "https://github.com/jmrenouard/pg_logical_migrator/issues"
 
 [project.scripts]
-pg_migrator = "src.main:main"
+pg_migrator = "pg_migrator:main"
 
 [tool.setuptools]
+py-modules = ["pg_migrator"]
 packages = ["src", "src.cli"]

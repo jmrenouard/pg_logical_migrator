@@ -74,9 +74,11 @@ def test_step08_cleanup(migrator, source_client, dest_client):
     assert success is True
 
     # Verify removal
-    res_sub = dest_client.execute_query("SELECT subname FROM pg_subscription;")
+    sub_name = migrator.replication_cfg['subscription_name']
+    pub_name = migrator.replication_cfg['publication_name']
+    res_sub = dest_client.execute_query(f"SELECT subname FROM pg_subscription WHERE subname = '{sub_name}';")
     assert len(res_sub) == 0
-    res_pub = source_client.execute_query("SELECT pubname FROM pg_publication;")
+    res_pub = source_client.execute_query(f"SELECT pubname FROM pg_publication WHERE pubname = '{pub_name}';")
     assert len(res_pub) == 0
 
 

@@ -14,9 +14,8 @@ This document covers all the ways to invoke and operate `pg_logical_migrator`, f
 4. [CLI — pg_migrator.py](#4-cli--pg_migratorpy)
 5. [Global Options](#5-global-options)
 6. [Available Commands](#6-available-commands)
-7. [Interactive TUI Mode](#7-interactive-tui-mode)
-8. [Interactive Wizard Mode](#8-interactive-wizard-mode)
-9. [Incremental Pipeline Mode](#9-incremental-pipeline-mode)
+7. [Interactive Wizard Mode](#7-interactive-wizard-mode)
+8. [Incremental Pipeline Mode](#8-incremental-pipeline-mode)
 9. [Output Artifacts](#9-output-artifacts)
 10. [Building a Standalone Executable](#10-building-a-standalone-executable)
 
@@ -26,7 +25,7 @@ This document covers all the ways to invoke and operate `pg_logical_migrator`, f
 
 | Requirement | Description |
 | --- | --- |
-| Python ≥ 3.9 | Interpreter for all tool logic (`textual` requires ≥ 3.8) |
+| Python ≥ 3.9 | Interpreter for all tool logic |
 | `pg_dump` / `psql` | PostgreSQL client tools (≥ v10) — must be on `PATH` |
 | `psycopg` v3 | Python PostgreSQL driver — installed via `requirements.txt` |
 | Docker + Compose | Required **only** for the integrated test environment |
@@ -127,14 +126,14 @@ make env-down         # clean up containers
 
 ## 4. CLI — pg_migrator.py
 
-The primary entry point is `pg_migrator.py` at the project root. It uses subcommands to expose every migration step individually, plus the full pipeline and TUI modes.
+The primary entry point is `pg_migrator.py` at the project root. It uses subcommands to expose every migration step individually, plus the full pipeline and Wizard modes.
 
 ```bash
 python pg_migrator.py --help
 python pg_migrator.py <command> [options]
 ```
 
-> **Note**: The legacy entry point `src/main.py` is still functional but `pg_migrator.py` is now the recommended CLI with richer options.
+> **Note**: `pg_migrator.py` is the recommended CLI entry point.
 
 ---
 
@@ -257,7 +256,6 @@ python pg_migrator.py cleanup-reverse  # DEST + SOURCE
 | --- | --- |
 | `init-replication` | Initialize replication and validate, leaving it active |
 | `post-migration` | Finish replication sync and complete validations, destructive cleanup |
-| `tui` | Launch the interactive Terminal UI (Textual) for supervised migration |
 | `generate-config` | Generate a sample `config_migrator.ini` file |
 
 ```bash
@@ -268,109 +266,13 @@ python pg_migrator.py post-migration
 # Dry-run (shows steps without executing)
 python pg_migrator.py --dry-run init-replication
 
-# Interactive TUI
-python pg_migrator.py tui
-
 # Generate a config file
 python pg_migrator.py generate-config --output my_config.ini
 ```
 
 ---
 
-## 7. Interactive TUI Mode
-
-Launched via `python pg_migrator.py tui`. Presents a full-screen terminal dashboard built with the `textual` framework.
-
-```text
-┌────────────────────── PostgreSQL Logical Migrator ──────────────────────┐
-│ Sidebar                         │ Content Area                          │
-│                                 │                                       │
-│  ── OPTIONS ────────────────    │  ┌── Result Panel ──────────────────┐ │
-│  [ ] Drop Dest Schema          │  │                                  │ │
-│  [ ] Verbose Mode               │  │  Step output shown here (Panel   │ │
-│                                 │  │  or Rich Table)                  │ │
-│  ── STEPS ──────────────────    │  └──────────────────────────────────┘ │
-│  [1. Check Connectivity]    🔵  │                                       │
-│  [2. Run Diagnostics]       🔵  │  ┌── Live History ──────────────────┐ │
-│  [3. Verify Parameters]     🔵  │  │ 10:24:00 - Check Connectivity  │ │
-│  [4. Schema Pre-data]       🔵  │  │ 10:24:05 - Run Diagnostics     │ │
-│  [5. Setup Publication]     🟠  │  │                                  │ │
-│  [6. Setup Subscription]    🟠  │  └──────────────────────────────────┘ │
-│  [7. Progress Status]       🟠  │  └──────────────────────────────────┘ │
-│  [8. Refresh MatViews]      🟣  │                                       │
-│  [9. Sync Sequences]        🟣  │                                       │
-│  [10. Terminate & Post]     🟣  │                                       │
-│  [11. Sync LOBs]            🟣  │                                       │
-│  [12. Enable Triggers]      🟣  │                                       │
-│  [13. Reassign Ownership]   🟣  │                                       │
-│  [14. Object Audit]         🟡  │                                       │
-│  [15. Row Parity]           🟡  │                                       │
-│  [16. Cleanup Slots]        🔴  │                                       │
-│  [17. Setup Reverse]        🔴  │                                       │
-│                                 │                                       │
-│  ── AUTOMATION & UTILS ─────    │                                       │
-│  [▶ Init Replication]       🟩  │                                       │
-│  [▶ Post Migration]         🟩  │                                       │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Sidebar Sections
-
-**OPTIONS** — Checkboxes that modify the behavior of certain steps:
-
-| Checkbox | Effect |
-| --- | --- |
-| `Drop Dest Schema` | When checked, Step 4 (Copy Schema) and `init-replication` pipeline will drop and recreate the destination database before migrating the schema |
-| `Monitor Replication` | When checked, the Result Panel auto-refreshes every 2 seconds with live `pg_stat_subscription` status |
-
-**STEPS** — One button per migration step, plus utility commands:
-
-| Button | CLI Equivalent | Server | Description |
-| --- | --- | --- | --- |
-| 1. Check Connectivity | `check` | **SOURCE + DEST** | Test connectivity to source and destination |
-| 2. Run Diagnostics | `diagnose` | **SOURCE** | Pre-migration diagnostics (PK, LOBs, sequences, etc.) |
-| 3. Verify Parameters | `params` | **SOURCE + DEST** | Verify replication parameters (`wal_level`, etc.) |
-| 4. Schema Pre-data | `migrate-schema-pre-data` | **SOURCE → DEST** | Deploy base structures. Honors `Drop Dest` checkbox |
-| 5. Setup Publication | `setup-pub` | **SOURCE** | Create publication on SOURCE |
-| 6. Setup Subscription | `setup-sub` | **DEST** | Create subscription on DEST (async) |
-| 7. Progress Status | `repl-progress` | **SOURCE + DEST** | Monitor replication progress |
-| 8. Refresh MatViews | `refresh-matviews` | **DEST** | Refresh materialized views on DEST |
-| 9. Sync Sequences | `sync-sequences` | **SOURCE → DEST** | Read sequences from SOURCE, apply on DEST |
-| 10. Terminate & Post | `terminate-repl` | **SOURCE → DEST** | Stop replication and apply post-data schema |
-| 11a. Sync LOBs | `sync-lobs` | **SOURCE → DEST** | Synchronize Large Objects (LOBs) |
-| 11b. Sync UNLOGGED | `sync-unlogged` | **SOURCE → DEST** | Synchronize UNLOGGED tables |
-| 12. Enable Triggers | `enable-triggers` | **DEST** | Enable all triggers on DEST tables |
-| 13. Reassign Ownership | `reassign-owner` | **DEST** | Reassign object ownership |
-| 14. Object Audit | `audit-objects` | **SOURCE + DEST** | Compare object counts between databases |
-| 15. Row Parity | `validate-rows` | **SOURCE + DEST** | Compare row counts per table |
-| 16. Cleanup Slots | `cleanup` | **DEST + SOURCE** | Drop subscription, publication, and slots |
-| 17. Setup Reverse | `setup-reverse` | **DEST → SOURCE** | Prepare reverse logical replication |
-
-**AUTOMATION & UTILS** — Pipeline and utility commands:
-
-| Button | CLI Equivalent | Description |
-| --- | --- | --- |
-| ▶ Init Replication | `init-replication` | Runs schema migration, setups pub/sub, syncs objects and validates |
-| ▶ Post Migration | `post-migration` | Cleans up replication objects and ensures final completeness |
-| ⚙ Generate Config | `generate-config` | Write a sample `config_migrator.sample.ini` to disk |
-
-### Color Coding
-
-🔵 Pre-flight checks · 🟠 Replication setup · 🟢 Monitoring · 🟣 Post-sync · 🟡 Validation · 🔴 Destructive cleanup · 🟩 Automation · ⬜ Utility
-
-> **Note**: Step 12 (STOP/CLEANUP) appears last in the STEPS section intentionally — it is a destructive operation that drops the subscription, publication, and replication slot. Always run Steps 13 & 14 first to confirm data parity.
-
-### Asynchronous Steps
-
-Step 6 (Setup Subscription), Init Replication, and Post Migration run **asynchronously** in a background thread to avoid blocking the TUI. The Result Panel and Live Log update in real time as these operations progress.
-
-**Usage**: Click any button to execute that migration step. Each step displays its result in the Result Panel (as a Rich `Panel` or `Table`) and logs activity to the Live Log. Steps can be run individually or in sequence.
-
-**Exit**: Press `q` or `Ctrl+C` to quit the TUI.
-
----
-
-## 8. Interactive Wizard Mode
+## 7. Interactive Wizard Mode
 
 Launched via `python pg_migrator.py wizard`. The **Wizard** is a guided, step-by-step assistant for users who prefer a conversational interface with clear instructions and checkpoints.
 
@@ -394,7 +296,7 @@ python pg_migrator.py wizard
 
 ---
 
-## 9. Incremental Pipeline Mode
+## 8. Incremental Pipeline Mode
 
 Runs the migration pipeline non-interactively in an incremental sequence via two commands: `init-replication` and `post-migration`.
 
@@ -446,7 +348,7 @@ python pg_migrator.py --dry-run init-replication
 
 | Artifact | Location | Description |
 | --- | --- | --- |
-| `pg_migrator.log` | `RESULTS/<timestamp>/` (pipeline) or project root (TUI) | Full structured log of all SQL and shell commands with timestamps |
+| `pg_migrator.log` | `RESULTS/<timestamp>/` (pipeline) or project root | Full structured log of all SQL and shell commands with timestamps |
 | `migration_report.html` | `RESULTS/<timestamp>/` | Self-contained, audit-ready HTML report of every step |
 | `unit_tests.html` | `RESULTS/<timestamp>/` | Generated by `make test-report`; pytest HTML output |
 

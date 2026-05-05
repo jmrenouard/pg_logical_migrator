@@ -143,7 +143,7 @@ class TestPythonPackageWorkflow:
         assert install_step is not None
         run_cmd = install_step.get("run", "")
         assert "pytest" in run_cmd
-        assert "pytest-asyncio" in run_cmd
+        assert "pytest-cov" in run_cmd
 
     def test_test_job_runs_unit_tests(self):
         """Test job must execute pytest against tests/unit."""

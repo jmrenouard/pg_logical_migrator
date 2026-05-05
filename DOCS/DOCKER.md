@@ -56,11 +56,11 @@ services:
 ```
 
 ### 💡 Advanced Usage
-You can run the full-screen Terminal UI (TUI) through Docker by providing a pseudo-TTY (`-it` flags):
+You can run the interactive wizard through Docker by providing a pseudo-TTY (`-it` flags):
 
 ```bash
 docker run --rm -it \
   -v $(pwd)/config_migrator.ini:/app/config_migrator.ini \
   jmrenouard/pg_logical_migrator:latest \
-  python pg_migrator.py tui
+  python pg_migrator.py wizard
 ```

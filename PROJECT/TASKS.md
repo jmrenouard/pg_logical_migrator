@@ -9,8 +9,8 @@
 - [x] Implement `test_env/setup_pagila.sh` for dataset loading.
 - [x] Design and create `config_migrator.sample.ini`.
 - [x] Implement `src/config.py` for config loading.
-- [x] Setup `src/main.py` with Argument Parser (CLI vs TUI).
-- [x] Implement TUI shell using `textual` or `rich`.
+- [x] Setup CLI Argument Parser.
+- [x] Implement Wizard shell using `rich`.
 
 ## Block 2: 14-Step Migration Workflow Implementation
 
@@ -20,7 +20,7 @@
 - [x] **Step 4**: Implement `migrate_schema()` using `pg_dump -s`.
 - [x] **Step 5**: Implement `setup_source_replication()` (Publication/Slot).
 - [x] **Step 6**: Implement `setup_dest_replication()` (Subscription).
-- [x] **Step 7**: Implement `monitor_replication()` (Watch mode in TUI).
+- [x] **Step 7**: Implement `monitor_replication()` (Watch mode in Wizard).
 - [x] **Step 8**: Implement `refresh_materialized_views()`.
 - [x] **Step 9**: Implement `sync_sequences_fetch()` (Fetch source values).
 - [x] **Step 10**: Implement `sync_sequences_apply()` (Update target values).
@@ -31,8 +31,8 @@
 
 ## Block 3: UI & Automation
 
-- [x] Implement TUI "Result Zone" for summary reports.
-- [x] Implement TUI "Command Output Zone" for real-time logs.
+- [x] Implement Wizard "Result Zone" for summary reports.
+- [x] Implement Wizard "Command Output Zone" for real-time logs.
 - [x] Implement two-phase pipeline (`init-replication` and `post-migration`) to chain all 14 steps.
 - [x] Ensure all operations log to `pg_migrator.log`.
 

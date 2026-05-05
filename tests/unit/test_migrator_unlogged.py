@@ -67,10 +67,10 @@ def test_sync_unlogged_tables_success():
         copy_in_obj = MagicMock()
         copy_in_ctx.__enter__.return_value = copy_in_obj
 
-        success, msg, synced_count, outs = m.sync_unlogged_tables()
+        success, msg, cmds, outs = m.sync_unlogged_tables()
 
         assert success is True
-        assert synced_count == 1
+        assert len(cmds) == 1
         assert "Successfully synced 1 UNLOGGED tables." in msg
         mock_s_conn.commit.assert_called_once()
         mock_d_conn.commit.assert_called_once()

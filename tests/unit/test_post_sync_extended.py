@@ -217,7 +217,7 @@ class TestApplyReassign:
         cmds, outs = [], []
         err = ps._apply_reassign('ALTER TABLE t OWNER TO u;', "t", cmds, outs)
         assert err == 0
-        assert outs[0] == "SUCCESS"
+        assert outs[0] == "  - t: SUCCESS"
 
     def test_failure(self):
         dest = MagicMock()

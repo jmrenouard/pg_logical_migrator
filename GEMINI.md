@@ -1,12 +1,12 @@
 # pg_logical_migrator — Project Context
 
 ## Project Overview
-**pg_logical_migrator** is a Python-based orchestrator designed to automate PostgreSQL database migrations using **logical replication**. It provides a standardized **17-step sequential workflow**, a refactored **centralized TUI dashboard**, and automated pipelines for complex infrastructure migrations.
+**pg_logical_migrator** is a Python-based orchestrator designed to automate PostgreSQL database migrations using **logical replication**. It provides a standardized **17-step sequential workflow** and automated pipelines for complex infrastructure migrations.
 
 ### Core Technologies
 - **Language**: Python 3.9+
 - **Database Driver**: `psycopg` (v3)
-- **UI/TUI**: `rich` and `textual`
+- **UI**: `rich`
 - **Templating**: `jinja2` (for audit reports)
 - **Packaging**: `pyinstaller` (for standalone binaries)
 
@@ -69,10 +69,9 @@ Most users will use these two commands for automation:
 - **Phase 1 & 2**: `python pg_migrator.py init-replication --drop-dest`
 - **Phase 3 & 4**: `python pg_migrator.py post-migration`
 
-### Interactive TUI & Wizard
-Launch the graphical dashboard or the guided assistant:
+### Interactive Wizard
+Launch the guided assistant:
 ```bash
-python pg_migrator.py tui
 python pg_migrator.py wizard
 ```
 
@@ -87,9 +86,7 @@ python pg_migrator.py wizard
 
 ## Project Structure
 - `pg_migrator.py`: Main CLI entry point.
-- `src/main.py`: Main TUI entry point.
 - `src/cli/`: Subcommand logic and helper functions.
-- `src/tui.py`: Textual-based TUI implementation.
 - `src/db.py`: PostgreSQL interaction layer.
 - `src/migrator.py`: Core migration logic.
 - `tests/`: Comprehensive test suite (unit, integration, e2e).

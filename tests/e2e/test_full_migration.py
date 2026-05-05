@@ -30,6 +30,7 @@ def test_full_migration_e2e(tmp_path):
         python_bin, "pg_migrator.py", "init-replication",
         "--config", config_path,
         "--drop-dest",
+        "--wait",
         "--results-dir", results_dir
     ], capture_output=True, text=True, env=env)
     assert res.returncode == 0, f"init-replication failed: {res.stderr}"
@@ -65,7 +66,7 @@ def test_full_migration_e2e(tmp_path):
     print("Testing LOB synchronization...")
     # First check if the OID exists on DEST but is broken (native logical repl behavior)
     # The 'init-replication' already copied the table but OIDs refer to non-existent objects on DEST.
-    # We call 'sync-lobs' explicitly (though it is included in post-migration pipeline in TUI,
+    # We call 'sync-lobs' explicitly (though it is included in post-migration pipeline in Wizard,
     # CLI commands are independent unless run via a pipeline).
     cmd_lob = [python_bin, "pg_migrator.py", "sync-lobs", "-c", config_path]
     res_lob = subprocess.run(cmd_lob, capture_output=True, text=True, env=env)

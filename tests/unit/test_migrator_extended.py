@@ -296,8 +296,13 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # Always return 1 pending table → will time out
-        client.execute_query.return_value = [{"total": 1, "pending": 1}]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return [{"total": 1, "pending": 1}]
+            
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -309,8 +314,13 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call: pending=0 → sync complete
-        client.execute_query.return_value = [{"total": 1, "pending": 0}]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return [{"total": 1, "pending": 0}]
+            
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -323,11 +333,18 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call has pending=2, second call pending=0
-        client.execute_query.side_effect = [
+        
+        main_query_returns = [
             [{"total": 2, "pending": 2}],
             [{"total": 2, "pending": 0}],
         ]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return main_query_returns.pop(0)
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"), \
@@ -342,11 +359,21 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call raises, second returns sync complete
-        client.execute_query.side_effect = [
+
+        main_query_returns = [
             Exception("query failed"),
             [{"total": 1, "pending": 0}],
         ]
+
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            val = main_query_returns.pop(0)
+            if isinstance(val, Exception):
+                raise val
+            return val
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -358,10 +385,18 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        client.execute_query.side_effect = [
+        
+        main_query_returns = [
             None,            # None result
             [{"total": 1, "pending": 0}],  # sync complete
         ]
+
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return main_query_returns.pop(0)
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):

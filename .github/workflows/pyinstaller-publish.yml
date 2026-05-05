@@ -14,7 +14,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  PYINSTALLER_OPTS: '--collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml'
+  PYINSTALLER_OPTS: '--collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml'
   VERSION: ''
   TAG_NAME: ''
   IS_PRERELEASE: ''
@@ -37,9 +37,9 @@ jobs:
             platform: macos-arm64
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python_version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
 
@@ -119,7 +119,7 @@ jobs:
       matrix:
         python_version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Extract Version
         id: info
@@ -150,7 +150,7 @@ jobs:
       matrix:
         python_version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Extract Version
         id: info
@@ -235,9 +235,9 @@ jobs:
         python_version: ["3.11", "3.12", "3.13"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python_version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
 
@@ -274,7 +274,7 @@ jobs:
     needs: [build-binaries, package-os, package-python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set Release Info
         id: rel_info

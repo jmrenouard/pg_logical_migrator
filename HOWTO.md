@@ -74,7 +74,6 @@ Postgres logical replication has native limitations. `pg_logical_migrator` solve
 | `validate-rows` | Row count parity check (Exact or Stat-based). |
 | `cleanup` | Decommission all replication objects (Pubs, Subs, Slots). |
 | `setup-reverse` | **Safety**: Setup rollback replication path. |
-| `tui` | Launch the interactive Terminal User Interface. |
 
 ---
 

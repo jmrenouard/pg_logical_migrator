@@ -54,7 +54,7 @@ for PYTHON_VERSION in "3.11" "3.12"; do
       python${PYTHON_VERSION} -m pip install --upgrade pip &&
       python${PYTHON_VERSION} -m pip install pyinstaller build &&
       python${PYTHON_VERSION} -m pip install -r requirements.txt &&
-      python${PYTHON_VERSION} -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' --collect-all textual --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py &&
+      python${PYTHON_VERSION} -m PyInstaller --onefile --name pg_migrator --add-data 'src:src' --add-data 'config_migrator.sample.ini:.' --collect-all rich --collect-all psycopg --collect-all docker --collect-all jinja2 --collect-all yaml pg_migrator.py &&
       python${PYTHON_VERSION} -m build &&
       chown -R $(id -u):$(id -g) dist/ build/
     "

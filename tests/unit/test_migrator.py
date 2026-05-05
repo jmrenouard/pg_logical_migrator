@@ -161,9 +161,13 @@ def test_migrator_wait_for_sync():
 
     with patch("src.migrator.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
-        # Simulate 1 pending table, then 0 pending
+        # Simulate:
+        # 1. sub exists -> 1 pending table
+        # 2. sub exists -> 0 pending tables
         mock_instance.execute_query.side_effect = [
+            [{"cnt": 1}],
             [{"total": 1, "pending": 1}],
+            [{"cnt": 1}],
             [{"total": 1, "pending": 0}]
         ]
         # Skip progress report fetch during wait

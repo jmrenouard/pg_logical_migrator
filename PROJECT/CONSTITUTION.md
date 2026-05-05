@@ -14,7 +14,7 @@ The migration of production databases is a high-risk operation. Every action tak
 
 ### II. Intuitive UX for Complex Workflows
 
-A terminal interface should never be an obstacle. The TUI must:
+A terminal interface should never be an obstacle. The Wizard interface must:
 
 - **Zones of Visibility**: Provide dedicated areas for command execution logs ("Command Output") and distilled migration findings ("Result Zone").
 - **Manual Control**: Allow expert users to selectively re-run steps or override findings.
@@ -48,7 +48,7 @@ Migration history is critical for post-mortem analysis and compliance:
 
 - **Language**: Python 3.9+
 - **Database**: PostgreSQL 16+ (Source), 17/18+ (Destination)
-- **UI Framework**: Textual / Rich for TUI components.
+- **UI Framework**: Rich for Wizard components.
 - **Test Infrastructure**: Docker-based orchestration with `pagila` dataset.
 
 ### Code Quality Gates

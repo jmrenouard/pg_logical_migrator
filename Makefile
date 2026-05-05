@@ -17,11 +17,10 @@ help:
 	@echo "  build-clean      Remove PyInstaller build artefacts (build/ dist/ *.spec)"
 	@echo "  test-unit        Run unit tests"
 	@echo "  test-integration Run integration tests (requires docker env)"
-	@echo "  test-tui         Run TUI end-to-end tests (requires docker env)"
 	@echo "  test-wizard      Run Wizard integration tests"
 	@echo "  test-e2e         Run full end-to-end migration test (requires docker env)"
 	@echo "  test-packaging   Run packaging end-to-end test (build and validate binaries/packages)"
-	@echo "  test-all         Run all tests (unit, integration, tui, e2e, packaging)"
+	@echo "  test-all         Run all tests (unit, integration, e2e, packaging)"
 	@echo "  test-report      Run tests and generate reports"
 	@echo "  env-up           Start the Docker test environment"
 	@echo "  env-down         Stop the Docker test environment"
@@ -36,8 +35,7 @@ install: venv
 	$(PIP) install -r requirements.txt
 	$(PIP) install pyinstaller
 
-PYINSTALLER_OPTS = --collect-all textual \
-                   --collect-all rich \
+PYINSTALLER_OPTS = --collect-all rich \
                    --collect-all psycopg \
                    --collect-all docker \
                    --collect-all jinja2 \
@@ -73,9 +71,6 @@ test-unit:
 test-integration:
 	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_steps.py
 
-test-tui:
-	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_tui_e2e.py
-
 test-wizard:
 	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_wizard.py
 
@@ -100,7 +95,7 @@ test-report: install
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration --results-dir RESULTS/$(TIMESTAMP)
 	@echo "Reports generated in RESULTS/$(TIMESTAMP)/"
 
-test-all: test-unit test-integration test-tui test-wizard test-e2e test-packaging test-coverage test-report
+test-all: test-unit test-integration test-wizard test-e2e test-packaging test-coverage test-report
 
 run-pipeline:
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest
