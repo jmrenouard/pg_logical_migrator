@@ -6,3 +6,4 @@ pytest
 jinja2
 pytest-html
 pytest-cov
+PyYAML
