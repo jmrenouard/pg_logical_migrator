@@ -11,7 +11,7 @@ All 6 milestones and all 14 migration steps are fully implemented, tested, and v
 ## Documentation Map
 
 - **[CONSTITUTION.md](file:///home/jmren/GIT_REPOS/pg_logical_migrator/PROJECT/CONSTITUTION.md)**: Core principles, technical standards, and project governance.
-- **[SPECIFICATIONS.md](file:///home/jmren/GIT_REPOS/pg_logical_migrator/PROJECT/SPECIFICATIONS.md)**: Technical requirements, TUI design, and reporting framework.
+- **[SPECIFICATIONS.md](SPECIFICATIONS.md)**: Technical requirements, Wizard design, and reporting framework.
 - **[MILESTONES.md](file:///home/jmren/GIT_REPOS/pg_logical_migrator/PROJECT/MILESTONES.md)**: High-level developmental roadmap *(all milestones completed)*.
 - **[TASKS.md](file:///home/jmren/GIT_REPOS/pg_logical_migrator/PROJECT/TASKS.md)**: Granular implementation checklist *(all tasks completed)*.
 - **[PROGRESS.md](file:///home/jmren/GIT_REPOS/pg_logical_migrator/PROJECT/PROGRESS.md)**: Project health and milestone completion tracker.

@@ -15,7 +15,7 @@ This phase begins the heavy lifting of data movement.
 
 - **Publication Setup**: Create the logical publication on the source instance.
 - **Subscription Creation**: Define the subscription on the destination instance, triggering the initial `COPY` phase for all tables.
-- **Monitoring**: Track synchronization progress via the TUI or `repl-progress` command.
+- **Monitoring**: Track synchronization progress via the Wizard or `repl-progress` command.
 
 ### 🏁 Phase 3: Finalization (Cutover)
 The most critical phase where application traffic is redirected.
@@ -25,6 +25,7 @@ The most critical phase where application traffic is redirected.
 - **Object Synchronization**: Perform manual syncs that logical replication misses:
     - **Sequences**: Synchronize all sequence values (`sync-sequences`).
     - **Large Objects**: Manually migrate binary data (`sync-lobs`).
+    - **UNLOGGED Tables**: Manually migrate data for unlogged tables (`sync-unlogged`).
     - **Materialized Views**: Refresh data on the target (`refresh-matviews`).
 - **Post-Data Schema**: Create indexes and constraints (`terminate-repl`) once initial data is landed.
 - **Verification**: Perform final object audits and row count parity checks.

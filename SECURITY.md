@@ -6,8 +6,8 @@ We actively provide security updates for the following versions of **pg_logical_
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.3.x   | :white_check_mark: |
-| < 1.3.0 | :x:                |
+| 1.4.x   | :white_check_mark: |
+| < 1.4.0 | :x:                |
 
 ## Reporting a Vulnerability
 

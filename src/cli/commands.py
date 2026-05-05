@@ -16,7 +16,7 @@ from src.cli.helpers import (
 
 def cmd_check(args):
     """Step 1: Check connectivity to source and destination databases."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     res = checker.check_connectivity()
@@ -33,7 +33,7 @@ def cmd_check(args):
 # -- Step 2 ------------------------------------------------------------------
 def cmd_diagnose(args):
     """Step 2: Run pre-migration diagnostics on the source database."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, _ = build_clients(cfg)
     checker = DBChecker(sc, None, cfg)
     res = checker.check_problematic_objects()
@@ -96,7 +96,7 @@ def cmd_diagnose(args):
 # -- Step 3 ------------------------------------------------------------------
 def cmd_params(args):
     """Step 3: Verify replication parameters on source and destination."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     results = checker.check_replication_params()
@@ -115,7 +115,7 @@ def cmd_params(args):
 # -- Step 4 ------------------------------------------------------------------
 def cmd_migrate_schema_pre_data(args):
     """Step 4: Copy schema pre-data from source to destination (pg_dump -s --section=pre-data)."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would execute schema pre-data migration")
@@ -133,7 +133,7 @@ def cmd_migrate_schema_pre_data(args):
 # -- Step 10 -----------------------------------------------------------------
 def cmd_migrate_schema_post_data(args):
     """Step 10: Copy schema post-data from source to destination (pg_dump -s --section=post-data)."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would execute schema post-data migration")
@@ -148,7 +148,7 @@ def cmd_migrate_schema_post_data(args):
 # -- Step 5 ------------------------------------------------------------------
 def cmd_setup_pub(args):
     """Step 5: Create publication on source database."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         pub = cfg.get_replication()["publication_name"]
@@ -165,7 +165,7 @@ def cmd_setup_pub(args):
 # -- Step 6 ------------------------------------------------------------------
 def cmd_setup_sub(args):
     """Step 6: Create subscription on destination database."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         sub = cfg.get_replication()["subscription_name"]
@@ -184,7 +184,7 @@ def cmd_progress(args):
     from rich.console import Console
     from rich.table import Table
 
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     console = Console()
 
@@ -250,7 +250,7 @@ def cmd_repl_progress(args):
 # -- Step 8 ------------------------------------------------------------------
 def cmd_refresh_matviews(args):
     """Step 8: Refresh materialized views on destination."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
@@ -266,7 +266,7 @@ def cmd_refresh_matviews(args):
 # -- Step 9 ------------------------------------------------------------------
 def cmd_sync_sequences(args):
     """Step 9: Synchronize sequence values from source to destination."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
@@ -282,7 +282,7 @@ def cmd_sync_sequences(args):
 # -- Step 10 -----------------------------------------------------------------
 def cmd_terminate_replication(args):
     """Step 10: Terminate logical replication and deploy post-data schema."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would stop logical replication and deploy indexes/FKs")
@@ -316,7 +316,7 @@ def cmd_migrate_schema_post_data(args):
 # -- Step 11 ------------------------------------------------------------------
 def cmd_sync_lobs(args):
     """Step 11: Synchronize Large Objects (LOBs/BLOBs) and update OID references."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         print(
@@ -329,10 +329,25 @@ def cmd_sync_lobs(args):
     return 0 if success else 1
 
 
+def cmd_sync_unlogged(args):
+    """Step 11b: Synchronize UNLOGGED tables from source to destination."""
+    cfg = Config(args.config, getattr(args, "database", None))
+    migrator = Migrator(cfg)
+    if args.dry_run:
+        print(
+            "[DRY-RUN] Would synchronize UNLOGGED tables")
+        return 0
+    print("\n=== Step 11b — Synchronize UNLOGGED tables ===")
+    success, msg, cmds, outs = migrator.sync_unlogged_tables()
+    print_status(success, msg)
+    print_verbose_execution(args, cmds, outs)
+    return 0 if success else 1
+
+
 # -- Step 12 -----------------------------------------------------------------
 def cmd_enable_triggers(args):
     """Step 12: Enable all triggers on destination tables."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
@@ -347,7 +362,7 @@ def cmd_enable_triggers(args):
 
 def cmd_disable_triggers(args):
     """Disable all triggers on destination tables (utility command)."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     if args.dry_run:
@@ -363,7 +378,7 @@ def cmd_disable_triggers(args):
 # -- Step 13 -----------------------------------------------------------------
 def cmd_reassign_owner(args):
     """Step 13: Reassign ownership of all database objects on destination."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     ps = PostSync(sc, dc, cfg)
     target_owner = getattr(args, 'owner', None) or cfg.get_dest_dict()['user']
@@ -381,7 +396,7 @@ def cmd_reassign_owner(args):
 # -- Step 14 ------------------------------------------------------------------
 def cmd_audit_objects(args):
     """Step 14: Compare object counts between source and destination."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     validator = Validator(sc, dc, cfg)
     print("\n=== Step 14 — Object Audit ===")
@@ -396,7 +411,7 @@ def cmd_audit_objects(args):
 # -- Step 15 ------------------------------------------------------------------
 def cmd_validate_rows(args):
     """Step 15: Compare row counts for every table."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     sc, dc = build_clients(cfg)
     validator = Validator(sc, dc, cfg)
     print("\n=== Step 15 — Row Count Parity ===")
@@ -414,7 +429,7 @@ def cmd_validate_rows(args):
 # -- Step 16 ------------------------------------------------------------------
 def cmd_cleanup(args):
     """Step 16: Drop subscription, publication, and replication slot."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         sub = cfg.get_replication()["subscription_name"]
@@ -432,7 +447,7 @@ def cmd_cleanup(args):
 # -- Step 17 ------------------------------------------------------------------
 def cmd_setup_reverse(args):
     """Step 17: Setup reverse replication for rollback capability."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     if args.dry_run:
         print("[DRY-RUN] Would setup reverse replication")
@@ -448,7 +463,7 @@ def cmd_setup_reverse(args):
 
 def cmd_wait_sync(args):
     """Utility: Wait for replication to be in 'streaming' state and fully synced."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     print("\n=== Waiting for replication sync ===")
     success, msg, _, _ = migrator.wait_for_sync(
@@ -459,7 +474,7 @@ def cmd_wait_sync(args):
 
 def cmd_cleanup_reverse(args):
     """Cleanup reverse replication objects."""
-    cfg = Config(args.config)
+    cfg = Config(args.config, getattr(args, "database", None))
     migrator = Migrator(cfg)
     print("\n=== Cleanup REVERSE Replication (Rollback) ===")
     success, msg, cmds, outs = migrator.cleanup_reverse_replication()
@@ -468,12 +483,34 @@ def cmd_cleanup_reverse(args):
     return 0 if success else 1
 
 
-def cmd_tui(args):
-    """Launch the interactive Textual TUI."""
-    from src.main import MigratorApp
-    app = MigratorApp(args.config)
-    app.run()
-    return 0
+def cmd_stop_repl(args):
+    """Pause logical replication (DISABLE subscription)."""
+    cfg = Config(args.config, getattr(args, "database", None))
+    sc, dc = build_clients(cfg)
+    sub = cfg.get_replication().get("subscription_name")
+    print(f"\n=== Pause Replication ===")
+    try:
+        dc.execute_script(f"ALTER SUBSCRIPTION {sub} DISABLE;")
+        print(f"  [OK] Subscription '{sub}' disabled.")
+        return 0
+    except Exception as e:
+        print(f"  [FAIL] Failed to disable subscription '{sub}': {e}")
+        return 1
+
+
+def cmd_start_repl(args):
+    """Resume logical replication (ENABLE subscription)."""
+    cfg = Config(args.config, getattr(args, "database", None))
+    sc, dc = build_clients(cfg)
+    sub = cfg.get_replication().get("subscription_name")
+    print(f"\n=== Resume Replication ===")
+    try:
+        dc.execute_script(f"ALTER SUBSCRIPTION {sub} ENABLE;")
+        print(f"  [OK] Subscription '{sub}' enabled.")
+        return 0
+    except Exception as e:
+        print(f"  [FAIL] Failed to enable subscription '{sub}': {e}")
+        return 1
 
 
 def cmd_generate_config(args):

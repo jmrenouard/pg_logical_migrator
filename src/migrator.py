@@ -12,117 +12,137 @@ class Migrator:
         self.dest_conn = config.get_dest_dict()
         self.replication_cfg = config.get_replication()
 
+    def drop_recreate_dest_db(self):
+        """Pre-cleanup target database by terminating active logical replication slots,
+        subscriptions, and recreating the database."""
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
+        src_pass = self.source_conn.get('password', '')
+
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
+        dst_pass = self.dest_conn.get('password', '')
+
+        logging.info(f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
+
+        executed_sqls = []
+        out_results = []
+
+        # Pre-cleanup target DB: terminate active logical replication slots
+        # and subscriptions
+        try:
+            tgt_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
+            tgt_client = PostgresClient(tgt_conn_str)
+            with tgt_client.get_conn(autocommit=True) as tgt_conn:
+                # Safely drop subscriptions
+                try:
+                    subs = tgt_conn.execute("SELECT subname FROM pg_subscription").fetchall()
+                    for row in subs:
+                        sub = row['subname']
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" DISABLE')
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
+                        tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
+                except Exception as e:
+                    logging.warning(f"[DEST] Error dropping subscriptions during pre-cleanup: {e}")
+
+                # Safely drop replication slots
+                try:
+                    slots = tgt_conn.execute(
+                        "SELECT slot_name, active_pid FROM pg_replication_slots "
+                        "WHERE database = current_database()").fetchall()
+                    for row in slots:
+                        slot = row['slot_name']
+                        pid = row['active_pid']
+                        if pid:
+                            tgt_conn.execute(f"SELECT pg_terminate_backend({pid})")
+                            import time
+                            time.sleep(1)
+                        try:
+                            tgt_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                        except Exception as e:
+                            logging.warning(f"[DEST] Could not drop slot {slot}: {e}")
+                except Exception as e:
+                    logging.warning(f"[DEST] Error dropping replication slots during pre-cleanup: {e}")
+        except Exception as e:
+            # If DB doesn't exist or is unreachable, the drop will likely
+            # pass or fail naturally
+            logging.info(f"[DEST] Pre-cleanup skip (DB might not exist or unreachable): {e}")
+
+        # Pre-cleanup source DB: drop the replication slot if it was
+        # orphaned
+        try:
+            src_conn_str = f"host={src_host} port={src_port} user={src_user} dbname={src_db} password={src_pass}"
+            src_client = PostgresClient(src_conn_str)
+            with src_client.get_conn(autocommit=True) as src_conn:
+                sub_name = self.replication_cfg.get('subscription_name', 'migrator_sub')
+                try:
+                    slots = src_conn.execute(
+                        "SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s",
+                        (sub_name,)).fetchall()
+                    for row in slots:
+                        slot = row['slot_name']
+                        pid = row['active_pid']
+                        if pid:
+                            src_conn.execute(f"SELECT pg_terminate_backend({pid})")
+                        src_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                        logging.info(f"[SOURCE] Dropped orphaned replication slot '{slot}' on source database.")
+                except Exception as e:
+                    logging.warning(f"[SOURCE] Error dropping replication slot on source: {e}")
+        except Exception as e:
+            logging.warning(f"[SOURCE] Source pre-cleanup skip (DB unreachable): {e}")
+
+        admin_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname=postgres password={dst_pass}"
+        try:
+            admin_client = PostgresClient(admin_conn_str)
+            with admin_client.get_conn(autocommit=True) as conn:
+                # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
+                try:
+                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
+                except Exception:
+                    # Fallback for PostgreSQL < 13
+                    conn.execute(
+                        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        f"WHERE datname = '{dst_db}' AND pid <> pg_backend_pid();")
+                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}";')
+
+                conn.execute(f'CREATE DATABASE "{dst_db}";')
+            logging.info(f"[DEST] Successfully dropped and recreated database '{dst_db}'.")
+            executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
+            out_results.append("OK")
+            return True, f"Successfully dropped and recreated database '{dst_db}'.", executed_sqls, out_results
+        except Exception as e:
+            logging.error(f"[DEST] Failed to drop/recreate DB: {e}")
+            executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
+            out_results.append(str(e))
+            return False, f"Failed to drop/recreate destination database: {e}", executed_sqls, out_results
+
     def step4a_migrate_schema_pre_data(self, drop_dest=False):
         """Step 4a: Copy schema PRE-DATA using pg_dump -s --section=pre-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema PRE-DATA migration...")
-        src_db = self.source_conn['database']
-        src_user = self.source_conn['user']
-        src_host = self.source_conn['host']
-        src_port = self.source_conn['port']
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
         src_pass = self.source_conn.get('password', '')
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         if drop_dest:
-            logging.info(
-                f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
+            success, msg, executed, outs = self.drop_recreate_dest_db()
+            if not success:
+                return success, msg, executed, outs
 
-            # Pre-cleanup target DB: terminate active logical replication slots
-            # and subscriptions
-            try:
-                tgt_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
-                tgt_client = PostgresClient(tgt_conn_str)
-                with tgt_client.get_conn(autocommit=True) as tgt_conn:
-                    # Safely drop subscriptions
-                    try:
-                        subs = tgt_conn.execute(
-                            "SELECT subname FROM pg_subscription").fetchall()
-                        for (sub,) in subs:
-                            tgt_conn.execute(
-                                f'ALTER SUBSCRIPTION "{sub}" DISABLE')
-                            tgt_conn.execute(
-                                f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
-                            tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
-                    except Exception as e:
-                        logging.warning(
-                            f"[DEST] Error dropping subscriptions during pre-cleanup: {e}")
-
-                    # Safely drop replication slots
-                    try:
-                        slots = tgt_conn.execute(
-                            "SELECT slot_name, active_pid FROM pg_replication_slots "
-                            "WHERE database = current_database()").fetchall()
-                        for slot, pid in slots:
-                            if pid:
-                                tgt_conn.execute(
-                                    f"SELECT pg_terminate_backend({pid})")
-                            tgt_conn.execute(
-                                f"SELECT pg_drop_replication_slot('{slot}')")
-                    except Exception as e:
-                        logging.warning(
-                            f"[DEST] Error dropping replication slots during pre-cleanup: {e}")
-            except Exception as e:
-                # If DB doesn't exist or is unreachable, the drop will likely
-                # pass or fail naturally
-                logging.info(
-                    f"[DEST] Pre-cleanup skip (DB might not exist or unreachable): {e}")
-
-            # Pre-cleanup source DB: drop the replication slot if it was
-            # orphaned
-            try:
-                src_conn_str = f"host={src_host} port={src_port} user={src_user} dbname={src_db} password={src_pass}"
-                src_client = PostgresClient(src_conn_str)
-                with src_client.get_conn(autocommit=True) as src_conn:
-                    sub_name = self.replication_cfg.get(
-                        'subscription_name', 'migrator_sub')
-                    try:
-                        slots = src_conn.execute(
-                            "SELECT slot_name, active_pid FROM pg_replication_slots WHERE slot_name = %s",
-                            (sub_name,
-                             )).fetchall()
-                        for slot, pid in slots:
-                            if pid:
-                                src_conn.execute(
-                                    f"SELECT pg_terminate_backend({pid})")
-                            src_conn.execute(
-                                f"SELECT pg_drop_replication_slot('{slot}')")
-                            logging.info(
-                                f"[SOURCE] Dropped orphaned replication slot '{slot}' on source database.")
-                    except Exception as e:
-                        logging.warning(
-                            f"[SOURCE] Error dropping replication slot on source: {e}")
-            except Exception as e:
-                logging.warning(
-                    f"[SOURCE] Source pre-cleanup skip (DB unreachable): {e}")
-
-            admin_conn_str = f"host={dst_host} port={dst_port} user={dst_user} dbname=postgres password={dst_pass}"
-            try:
-                admin_client = PostgresClient(admin_conn_str)
-                with admin_client.get_conn(autocommit=True) as conn:
-                    # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
-                    try:
-                        conn.execute(
-                            f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
-                    except Exception:
-                        # Fallback for PostgreSQL < 13
-                        conn.execute(
-                            f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                            f"WHERE datname = '{dst_db}' AND pid <> pg_backend_pid();")
-                        conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}";')
-
-                    conn.execute(f'CREATE DATABASE "{dst_db}";')
-                logging.info(
-                    f"[DEST] Successfully dropped and recreated database '{dst_db}'.")
-            except Exception as e:
-                logging.error(f"[DEST] Failed to drop/recreate DB: {e}")
-                return False, f"Failed to drop/recreate destination database: {e}", [], [
-                    str(e)]
-
-        schemas = self.config.get_target_schemas()
+        source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_args = ""
         if schemas != ['all']:
             schema_args = " ".join([f"--schema='{s}'" for s in schemas])
@@ -155,19 +175,21 @@ class Migrator:
     def step4b_migrate_schema_post_data(self):
         """Step 4b: Copy schema POST-DATA using pg_dump -s --section=post-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema POST-DATA migration...")
-        src_db = self.source_conn['database']
-        src_user = self.source_conn['user']
-        src_host = self.source_conn['host']
-        src_port = self.source_conn['port']
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn.get('user', 'postgres')
+        src_host = self.source_conn.get('host', 'localhost')
+        src_port = self.source_conn.get('port', '5432')
         src_pass = self.source_conn.get('password', '')
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
-        schemas = self.config.get_target_schemas()
+        source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_args = ""
         if schemas != ['all']:
             schema_args = " ".join([f"--schema='{s}'" for s in schemas])
@@ -200,7 +222,8 @@ class Migrator:
         source_client = PostgresClient(
             self.config.get_source_conn(), label="SOURCE")
 
-        schemas = self.config.get_target_schemas()
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
         schema_filter = ""
         if schemas != ['all']:
             schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -236,7 +259,8 @@ class Migrator:
 
             sql1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
 
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
             if schemas == ['all']:
                 sql2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
             else:
@@ -261,75 +285,216 @@ class Migrator:
                 out_results.append(str(e))
             return False, f"Source setup failed: {str(e)}", executed_sqls, out_results
 
+    def _resolve_source_host(self, configured_host: str, configured_port: str) -> tuple:
+        """Return (host, port) reachable from inside the DEST container.
+
+        When the configured source host is a loopback address the subscription
+        connection string would point to 'localhost' which, inside the DEST
+        container, resolves to the DEST itself — not the SOURCE.  We query
+        ``inet_server_addr()`` on the SOURCE to get its Docker bridge IP.
+
+        Priority:
+        1. Explicit ``source_host`` / ``source_port`` in [replication] config.
+        2. Auto-detected Docker bridge IP via ``inet_server_addr()`` on SOURCE.
+        3. Original configured host (works for non-Docker / bare-metal setups).
+        """
+        rep_config = self.config.get_replication()
+        if rep_config.get('source_host'):
+            return rep_config['source_host'], rep_config.get('source_port', configured_port)
+
+        is_loopback = configured_host in ('localhost', '127.0.0.1', '::1', '')
+        if is_loopback:
+            try:
+                source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+                res = source_client.execute_query("SELECT inet_server_addr()::text AS ip")
+                if res and res[0].get('ip'):
+                    docker_ip = res[0]['ip'].split('/')[0]
+                    logging.info(
+                        f"[SOURCE] Auto-detected Docker/container IP: {docker_ip} "
+                        f"(configured '{configured_host}' is loopback — using container IP)"
+                    )
+                    return docker_ip, '5432'
+            except Exception as exc:
+                logging.warning(f"[SOURCE] Could not auto-detect container IP: {exc}")
+
+        return configured_host, configured_port
+
     def step6_setup_destination(self):
-        """Step 6: Create Subscription."""
+        """Step 6: Create Subscription (non-blocking).
+
+        Strategy:
+        1. Safe DROP of any existing subscription (disable→detach slot→drop).
+        2. Drop orphaned slot on SOURCE if present.
+        3. Create the replication slot on SOURCE manually (instant psycopg call).
+        4. CREATE SUBSCRIPTION with ``create_slot = false, copy_data = true``.
+           PostgreSQL registers the tables in pg_subscription_rel and starts
+           background tablesync workers immediately.  The command returns in
+           milliseconds because the slot already exists.
+        """
         logging.info("[DEST] Setting up subscription...")
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
 
-        src_user = self.source_conn['user']
-        src_pass = self.source_conn['password']
-        src_db = self.source_conn['database']
+        src_user = self.source_conn.get('user', 'postgres')
+        src_pass = self.source_conn.get('password', '')
+        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
 
-        # In Docker/NAT setups, the target DB might need a different host/port
-        # to reach the source DB than the host machine running pg_migrator.
-        rep_config = self.config.get_replication()
-        sub_host = rep_config.get('source_host', self.source_conn['host'])
-        sub_port = rep_config.get('source_port', self.source_conn['port'])
+        configured_host = self.source_conn.get('host', 'localhost')
+        configured_port = self.source_conn.get('port', '5432')
+        sub_host, sub_port = self._resolve_source_host(configured_host, configured_port)
 
-        conn_str = f"host={sub_host} port={sub_port} user={src_user} password={src_pass} dbname={src_db}"
+        conn_str = (f"host={sub_host} port={sub_port} user={src_user} "
+                    f"password={src_pass} dbname={src_db}")
+        logging.info(f"[DEST] Subscription connection: {sub_host}:{sub_port}/{src_db}")
 
-        dest_client = PostgresClient(
-            self.config.get_dest_conn(),
-            label="DESTINATION")
-        sql1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
-        sql2 = f"CREATE SUBSCRIPTION {sub_name} CONNECTION '{conn_str}' PUBLICATION {pub_name} WITH (copy_data = true);"
+        dest_client = PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+        source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
+
+        # ── Phase 1: Safe non-blocking DROP of existing subscription on DEST ──
+        sql_drop_sub = f"""\
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
+        ALTER SUBSCRIPTION {sub_name} DISABLE;
+        ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
+        DROP SUBSCRIPTION {sub_name};
+    END IF;
+END
+$$;"""
+
+        # ── Phase 2: Drop orphaned slot on SOURCE (if any) ──
+        sql_drop_slot = (
+            f"SELECT pg_drop_replication_slot(slot_name) "
+            f"FROM pg_replication_slots WHERE slot_name = '{sub_name}';"
+        )
+
+        # ── Phase 3: Create slot on SOURCE manually (pgoutput plugin, instant) ──
+        sql_create_slot = (
+            f"SELECT pg_create_logical_replication_slot('{sub_name}', 'pgoutput');"
+        )
+
+        # ── Phase 4: CREATE SUBSCRIPTION — slot exists, so this returns fast ──
+        # copy_data=true → PG registers all tables in pg_subscription_rel and
+        # starts background tablesync workers immediately.
+        sql_create_sub = (
+            f"CREATE SUBSCRIPTION {sub_name} "
+            f"CONNECTION '{conn_str}' "
+            f"PUBLICATION {pub_name} "
+            f"WITH (create_slot = false, copy_data = true);"
+        )
+
+        executed_sqls = [
+            f"[DEST] DROP subscription (safe)",
+            f"[SOURCE] DROP orphan slot",
+            f"[SOURCE] CREATE slot '{sub_name}'",
+            f"[DEST] CREATE SUBSCRIPTION (create_slot=false, copy_data=true)",
+        ]
+        out_results = []
         try:
-            dest_client.execute_script(sql1, autocommit=True)
-            dest_client.execute_script(sql2, autocommit=True)
-            return True, f"Subscription '{sub_name}' created.", [
-                f"[DEST] {sql1}", f"[DEST] {sql2}"], ["OK", "OK"]
+            dest_client.execute_script(sql_drop_sub, autocommit=True)
+            out_results.append("OK")
+            logging.info(f"[DEST] Existing subscription '{sub_name}' safely dropped (if any).")
+
+            try:
+                source_client.execute_script(sql_drop_slot, autocommit=True)
+            except Exception:
+                pass  # Slot may not exist — fine
+            out_results.append("OK")
+            logging.info(f"[SOURCE] Orphaned slot '{sub_name}' dropped (if any).")
+
+            source_client.execute_script(sql_create_slot, autocommit=True)
+            out_results.append("OK")
+            logging.info(f"[SOURCE] Replication slot '{sub_name}' created.")
+
+            dest_client.execute_script(sql_create_sub, autocommit=True)
+            out_results.append("OK")
+            logging.info(
+                f"[DEST] Subscription '{sub_name}' created — "
+                f"initial COPY started in PostgreSQL background workers."
+            )
+
+            return True, (
+                f"Subscription '{sub_name}' created. "
+                f"Initial data copy is running in PostgreSQL background workers. "
+                f"Use 'progress' (step 7 / U1) to monitor."
+            ), executed_sqls, out_results
+
         except Exception as e:
             logging.error(f"[DEST] Subscription creation failed: {e}")
-            return False, f"Destination setup failed: {str(e)}", [
-                f"[DEST] {sql1}", f"[DEST] {sql2}"], [str(e), str(e)]
+            out_results.append(str(e))
+            return False, f"Destination setup failed: {str(e)}", executed_sqls, out_results
 
     def wait_for_sync(self, timeout=60, poll_interval=5, show_progress=False):
         """Wait until all tables in the subscription are synchronized."""
         import time
+        if show_progress:
+            print("\n")
         logging.info("[DEST] Waiting for initial data sync to complete...")
 
-        dst_db = self.dest_conn['database']
-        dst_user = self.dest_conn['user']
-        dst_host = self.dest_conn['host']
-        dst_port = self.dest_conn['port']
+        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
+        dst_user = self.dest_conn.get('user', 'postgres')
+        dst_host = self.dest_conn.get('host', 'localhost')
+        dst_port = self.dest_conn.get('port', '5432')
         dst_pass = self.dest_conn.get('password', '')
 
         tgt_conn_uri = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
         client = PostgresClient(tgt_conn_uri, "DEST_WAIT")
 
+        sub_name = self.replication_cfg['subscription_name']
+        
         start_time = time.time()
         while time.time() - start_time < timeout:
-            query = "SELECT count(*) AS pending FROM pg_subscription_rel WHERE srsubstate NOT IN ('s', 'r');"
+            query = """
+            SELECT count(*) AS total, 
+                   COALESCE(SUM(CASE WHEN srsubstate NOT IN ('s', 'r') THEN 1 ELSE 0 END), 0) AS pending 
+            FROM pg_subscription_rel;
+            """
             try:
+                # Check if subscription exists
+                sub_exists_query = "SELECT count(*) AS cnt FROM pg_subscription WHERE subname = %s"
+                sub_res = client.execute_query(sub_exists_query, (sub_name,))
+                if not sub_res or sub_res[0].get('cnt', 0) == 0:
+                    elapsed = int(time.time() - start_time)
+                    msg = f"Subscription '{sub_name}' not yet visible..."
+                    if show_progress:
+                        print(f"\r  [wait] {msg} waiting ({elapsed}s)          ", end="", flush=True)
+                    logging.debug(f"[DEST] {msg}")
+                    time.sleep(poll_interval)
+                    continue
+
                 result = client.execute_query(query, fetch=True)
                 if result is not None and len(result) > 0:
+                    total = result[0]['total']
                     pending = result[0]['pending']
-                    if pending == 0:
+                    
+                    if total > 0 and pending == 0:
                         if show_progress:
-                            print("\n  [OK] All tables synchronized.")
+                            print("\r  [OK] All tables synchronized.                                        ")
                         return True, "Sync completed. All tables synchronized.", [
                             "[DEST] [POLL pg_subscription_rel]"], ["Sync finished"]
-
-                    if show_progress:
-                        elapsed = int(time.time() - start_time)
-                        # Try to get byte progress if possible
-                        progress = self.get_initial_copy_progress()
-                        pct = progress['summary']['percent_bytes'] if progress else 0
-                        print(
-                            f"\r  [wait] Syncing... {pending} tables remaining ({pct}% bytes) - {elapsed}s elapsed",
-                            end="",
-                            flush=True)
+                    elif total == 0:
+                        if show_progress:
+                            elapsed = int(time.time() - start_time)
+                            print(f"\r  [wait] Subscription initializing ({elapsed}s)... waiting for metadata", end="", flush=True)
+                        logging.debug("[DEST] No tables found in pg_subscription_rel yet.")
+                    else:
+                        if show_progress:
+                            elapsed = int(time.time() - start_time)
+                            # Try to get byte progress if possible
+                            progress = self.get_initial_copy_progress()
+                            if progress:
+                                pct = progress['summary']['percent_bytes']
+                                copied = progress['summary']['bytes_copied_pretty']
+                                total_size = progress['summary']['total_source_pretty']
+                                print(
+                                    f"\r  [sync] {pct:>5}% | {copied:>10} / {total_size:<10} | {pending:>3} tables left | {elapsed:>4}s",
+                                    end="",
+                                    flush=True)
+                            else:
+                                print(
+                                    f"\r  [sync] {pending:>3} tables remaining... | {elapsed:>4}s elapsed",
+                                    end="",
+                                    flush=True)
 
                 logging.debug(
                     "[DEST] Syncing... Waiting for tables to finish initial copy.")
@@ -548,10 +713,14 @@ class Migrator:
             source_client.execute_script(sql2, autocommit=True)
 
             return True, "Replication cleaned up.", [
-                f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], ["OK", "OK", "OK"]
+                f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], [
+                f"  - Subscription {sub_name}: DISABLED AND DROPPED",
+                f"  - Replication slot {sub_name}: DROPPED",
+                f"  - Publication {pub_name}: DROPPED"
+            ]
         except Exception as e:
             return False, f"Cleanup failed: {str(e)}", [
-                f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], [str(e)]
+                f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], [str(e), str(e), str(e)]
 
     def setup_reverse_replication(self):
         """
@@ -574,9 +743,9 @@ class Migrator:
 
         rep_config = self.config.get_replication()
         dst_host_for_src = rep_config.get(
-            'dest_host_for_src', dst_conn['host'])
+            'dest_host', dst_conn['host'])
         dst_port_for_src = rep_config.get(
-            'dest_port_for_src', dst_conn['port'])
+            'dest_port', dst_conn['port'])
         dst_user = dst_conn['user']
         dst_password = dst_conn['password']
         dst_database = dst_conn['database']
@@ -733,142 +902,80 @@ class Migrator:
         out_results = []
 
         try:
-            source_client = PostgresClient(
-                self.config.get_source_conn(), label="SOURCE")
+            source_client = PostgresClient(self.config.get_source_conn(), label="SOURCE")
 
-            schemas = self.config.get_target_schemas()
-            schema_filter = ""
-            if schemas != ['all']:
-                schema_list = ", ".join([f"'{s}'" for s in schemas])
-                schema_filter = f"AND n.nspname IN ({schema_list})"
+            # Fetch all Large Objects globally from source
+            query_all_lobs = "SELECT oid FROM pg_largeobject_metadata;"
+            all_lobs = source_client.execute_query(query_all_lobs)
 
-            # 1. Identify tables with OID columns that are actually Large Objects
-            # Actually, most OID columns in user tables are intended for LOBs
-            # if they aren't system columns.
-            query_lob_cols = f"""
-            SELECT
-                n.nspname AS schema_name,
-                c.relname AS table_name,
-                a.attname AS column_name
-            FROM pg_attribute a
-            JOIN pg_class c ON a.attrelid = c.oid
-            JOIN pg_namespace n ON c.relnamespace = n.oid
-            WHERE a.atttypid = 'oid'::regtype
-              AND c.relkind = 'r'
-              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-              {schema_filter}
-              AND a.attnum > 0;
-            """
-
-            lob_columns = source_client.execute_query(query_lob_cols)
-            if not lob_columns:
-                logging.info("[BOTH] No tables with OID columns found.")
+            if not all_lobs:
+                logging.info("[BOTH] No Large Objects found in metadata.")
                 return True, "No Large Objects to synchronize.", [], []
 
             total_synced = 0
-            for col_info in lob_columns:
-                schema = col_info['schema_name']
-                table = col_info['table_name']
-                column = col_info['column_name']
+            batch_size = 100
 
-                # Get PK for this table
-                pk_query = f"""
-                SELECT a.attname
-                FROM pg_index i
-                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                WHERE i.indrelid = '"{schema}"."{table}"'::regclass
-                AND i.indisprimary;
-                """
-                pk_res = source_client.execute_query(pk_query)
-                if not pk_res:
-                    logging.warning(
-                        f"[SOURCE] Skipping LOB sync for {schema}.{table}: No Primary Key found.")
-                    continue
+            src_conn_str = self.config.get_source_conn()
+            dst_conn_str = self.config.get_dest_conn()
 
-                pk_col = pk_res[0]['attname']
+            s_client = PostgresClient(src_conn_str)
+            d_client = PostgresClient(dst_conn_str)
+            
+            with s_client.get_conn() as s_conn, d_client.get_conn() as d_conn:
+                s_conn.autocommit = False
+                d_conn.autocommit = False
 
-                logging.info(
-                    f"[BOTH] Syncing LOBs for table {schema}.{table} (column: {column}, PK: {pk_col})...")
+                for row in all_lobs:
+                    old_oid = row['oid']
 
-                # Fetch all rows with non-null OIDs from source
-                # sourcery skip:
-                # python.sqlalchemy.security.sqlalchemy-execute-raw-query
-                data_query = (
-                    f'SELECT "{pk_col}", "{column}" FROM "{schema}"."{table}" '
-                    f'WHERE "{column}" IS NOT NULL AND "{column}" != 0;'
-                )
-                rows = source_client.execute_query(data_query)
+                    try:
+                        with s_conn.cursor() as s_cur, d_conn.cursor() as d_cur:
+                            # 1. Open source LOB (INV_READ)
+                            s_cur.execute("SELECT lo_open(%s, %s)", (old_oid, 0x40000))
+                            fd_src = list(s_cur.fetchone().values())[0]
 
-                if not rows:
-                    continue
+                            # 2. Recreate exact same OID on destination
+                            d_cur.execute("SAVEPOINT lob_sp")
+                            try:
+                                d_cur.execute("SELECT lo_create(%s)", (old_oid,))
+                            except Exception:
+                                d_cur.execute("ROLLBACK TO lob_sp")
+                                d_cur.execute("SELECT lo_unlink(%s)", (old_oid,))
+                                d_cur.execute("SELECT lo_create(%s)", (old_oid,))
+                            d_cur.execute("RELEASE SAVEPOINT lob_sp")
 
-                # Open connections for streaming
-                src_conn_str = self.config.get_source_conn()
-                dst_conn_str = self.config.get_dest_conn()
+                            # Open dest LOB (INV_WRITE)
+                            d_cur.execute("SELECT lo_open(%s, %s)", (old_oid, 0x20000))
+                            fd_dst = list(d_cur.fetchone().values())[0]
 
-                s_client = PostgresClient(src_conn_str)
-                d_client = PostgresClient(dst_conn_str)
-                with s_client.get_conn() as s_conn, d_client.get_conn() as d_conn:
-                    # LOB operations must be in a transaction
-                    s_conn.autocommit = False
-                    d_conn.autocommit = False
+                            # 3. Stream data from source to dest
+                            CHUNK_SIZE = 4 * 1024 * 1024
+                            while True:
+                                s_cur.execute("SELECT loread(%s, %s)", (fd_src, CHUNK_SIZE))
+                                content = list(s_cur.fetchone().values())[0]
+                                if not content:
+                                    break
+                                d_cur.execute("SELECT lowrite(%s, %s)", (fd_dst, content))
 
-                    for row in rows:
-                        pk_val = row[pk_col]
-                        old_oid = row[column]
+                            s_cur.execute("SELECT lo_close(%s)", (fd_src,))
+                            d_cur.execute("SELECT lo_close(%s)", (fd_dst,))
 
-                        try:
-                            # 1. Read from source and write to destination
-                            # using server-side functions
-                            with s_conn.cursor() as s_cur, d_conn.cursor() as d_cur:
-                                # INV_READ = 0x40000
-                                s_cur.execute(
-                                    "SELECT lo_open(%s, %s)", (old_oid, 0x40000))
-                                fd_src = list(s_cur.fetchone().values())[0]
-
-                                d_cur.execute("SELECT lo_create(0)")
-                                new_oid = list(d_cur.fetchone().values())[0]
-
-                                # INV_WRITE = 0x20000
-                                d_cur.execute(
-                                    "SELECT lo_open(%s, %s)", (new_oid, 0x20000))
-                                fd_dst = list(d_cur.fetchone().values())[0]
-
-                                CHUNK_SIZE = 4 * 1024 * 1024  # 4MB chunks
-                                while True:
-                                    s_cur.execute(
-                                        "SELECT loread(%s, %s)", (fd_src, CHUNK_SIZE))
-                                    content = list(s_cur.fetchone().values())[0]
-                                    if not content:
-                                        break
-                                    d_cur.execute(
-                                        "SELECT lowrite(%s, %s)", (fd_dst, content))
-
-                                s_cur.execute("SELECT lo_close(%s)", (fd_src,))
-                                d_cur.execute("SELECT lo_close(%s)", (fd_dst,))
-
-                                # 3. Update reference in destination table
-                                update_sql = sql.SQL('UPDATE {}.{} SET {} = %s WHERE {} = %s').format(
-                                    sql.Identifier(schema),
-                                    sql.Identifier(table),
-                                    sql.Identifier(column),
-                                    sql.Identifier(pk_col)
-                                )
-                                d_cur.execute(update_sql, (new_oid, pk_val))
-
+                        total_synced += 1
+                        if total_synced % batch_size == 0:
                             s_conn.commit()
                             d_conn.commit()
-                            total_synced += 1
-                        except Exception as e:
-                            s_conn.rollback()
-                            d_conn.rollback()
-                            logging.error(
-                                f"[BOTH] Failed to sync LOB for {schema}.{table} PK={pk_val}: {e}")
-                            out_results.append(f"Error PK={pk_val}: {e}")
+                    except Exception as e:
+                        s_conn.rollback()
+                        d_conn.rollback()
+                        logging.error(f"[BOTH] Failed to sync LOB OID={old_oid}: {e}")
+                        out_results.append(f"Error LOB OID={old_oid}: {e}")
 
-            executed_sqls.append(
-                f"LOB SYNC: {total_synced} objects processed.")
-            out_results.append(f"OK: {total_synced} synced")
+                if total_synced % batch_size != 0:
+                    s_conn.commit()
+                    d_conn.commit()
+
+            out_results.append(f"  - Total Large Objects Synced: {total_synced}")
+            executed_sqls.append(f"LOB SYNC: {total_synced} objects processed.")
 
             msg = f"Large Objects synchronization complete. Processed {total_synced} objects."
             return True, msg, executed_sqls, out_results
@@ -876,3 +983,80 @@ class Migrator:
         except Exception as e:
             logging.error(f"Large Objects sync failed: {e}", exc_info=True)
             return False, f"LOB sync failed: {str(e)}", executed_sqls, out_results
+
+    def sync_unlogged_tables(self):
+        """
+        Identify UNLOGGED tables and manually sync their data because 
+        logical replication does not copy UNLOGGED tables.
+        """
+        logging.info("[BOTH] Starting UNLOGGED tables synchronization...")
+        executed_sqls = []
+        out_results = []
+        
+        try:
+            source_client = PostgresClient(
+                self.config.get_source_conn(), label="SOURCE")
+            
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
+            schema_filter = ""
+            if schemas != ['all']:
+                schema_list = ", ".join([f"'{s}'" for s in schemas])
+                schema_filter = f"AND n.nspname IN ({schema_list})"
+                
+            query_unlogged = f"""
+            SELECT
+                n.nspname AS schema_name,
+                c.relname AS table_name
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r'
+              AND c.relpersistence = 'u'
+              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              {schema_filter};
+            """
+            
+            unlogged_tables = source_client.execute_query(query_unlogged)
+            if not unlogged_tables:
+                logging.info("[BOTH] No UNLOGGED tables found.")
+                return True, "No UNLOGGED tables to synchronize.", 0, []
+                
+            total_synced = 0
+            
+            s_client = PostgresClient(self.config.get_source_conn())
+            d_client = PostgresClient(self.config.get_dest_conn())
+            
+            with s_client.get_conn() as s_conn, d_client.get_conn() as d_conn:
+                for row in unlogged_tables:
+                    schema = row['schema_name']
+                    table = row['table_name']
+                    full_name = f'"{schema}"."{table}"'
+                    
+                    logging.info(f"[BOTH] Syncing UNLOGGED table: {full_name}...")
+                    
+                    try:
+                        with s_conn.cursor() as s_cur, d_conn.cursor() as d_cur:
+                            d_cur.execute(f"TRUNCATE TABLE {full_name};")
+                            with s_cur.copy(f"COPY {full_name} TO STDOUT") as copy_out:
+                                with d_cur.copy(f"COPY {full_name} FROM STDIN") as copy_in:
+                                    for data in copy_out:
+                                        copy_in.write(data)
+                        s_conn.commit()
+                        d_conn.commit()
+                        out_results.append(f"  - UNLOGGED Table {schema}.{table}: SUCCESS")
+                        total_synced += 1
+                        executed_sqls.append(f"SYNC UNLOGGED {full_name}")
+                    except Exception as e:
+                        logging.error(f"[DEST] Failed to sync UNLOGGED table {full_name}: {e}")
+                        s_conn.rollback()
+                        d_conn.rollback()
+                        raise
+                        
+            msg = f"Successfully synced {total_synced} UNLOGGED tables."
+            logging.info(msg)
+            return True, msg, executed_sqls, out_results
+            
+        except Exception as e:
+            msg = f"Failed to sync UNLOGGED tables: {e}"
+            logging.error(f"[BOTH] {msg}")
+            return False, msg, executed_sqls, out_results

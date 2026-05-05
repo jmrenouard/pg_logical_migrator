@@ -10,7 +10,8 @@ class DBChecker:
     def _get_schema_filter(self, nspname_col="n.nspname"):
         if not self.config:
             return ""
-        schemas = self.config.get_target_schemas()
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
         if schemas == ['all']:
             return ""
         schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -67,7 +68,8 @@ class DBChecker:
         # Tables with Identity Columns
         schema_filter_identity = ""
         if self.config:
-            schemas = self.config.get_target_schemas()
+            from src.db import resolve_target_schemas
+            schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None))
             if schemas != ['all']:
                 schema_list = ", ".join([f"'{s}'" for s in schemas])
                 schema_filter_identity = f"AND table_schema IN ({schema_list})"
@@ -137,6 +139,18 @@ class DBChecker:
           {self._get_schema_filter()};
         """
         matviews = self.source.execute_query(query_matviews)
+        
+        query_top_tables = f"""
+        SELECT n.nspname AS schema_name, c.relname AS table_name, c.reltuples::bigint AS estimated_count
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          {self._get_schema_filter()}
+        ORDER BY c.reltuples DESC
+        LIMIT 5;
+        """
+        top_tables = self.source.execute_query(query_top_tables)
 
         return {
             "no_pk": no_pk,
@@ -146,7 +160,8 @@ class DBChecker:
             "unlogged_tables": unlogged_tables,
             "temp_tables": temp_tables,
             "foreign_tables": foreign_tables,
-            "matviews": matviews
+            "matviews": matviews,
+            "top_tables": top_tables
         }
 
     def check_replication_params(self, apply_source=False, apply_dest=False):

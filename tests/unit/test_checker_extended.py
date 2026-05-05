@@ -57,6 +57,7 @@ class TestCheckProblematicObjectsSchemaFilter:
             [],       # temp_tables
             [],       # foreign_tables
             [],       # matviews
+            [],       # top_tables
         ]
 
         cfg = MagicMock()
@@ -69,16 +70,11 @@ class TestCheckProblematicObjectsSchemaFilter:
     def test_with_all_schemas(self):
         """schema_filter_identity should be empty when schemas == ['all']."""
         source = MagicMock()
-        source.execute_query.side_effect = [
-            [],
-            [{"count": 0}],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-        ]
+        def mock_execute_query(query, params=None):
+            if "pg_largeobject_metadata" in query:
+                return [{"count": 0}]
+            return []
+        source.execute_query.side_effect = mock_execute_query
         cfg = MagicMock()
         cfg.get_target_schemas.return_value = ["all"]
         checker = DBChecker(source, config=cfg)

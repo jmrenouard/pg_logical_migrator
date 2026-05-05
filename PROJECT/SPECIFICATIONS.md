@@ -4,10 +4,10 @@
 
 ## Overview
 
-`pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a Textual Terminal User Interface (TUI) for interactive step-by-step execution and incremental pipeline commands (`init-replication`, `post-migration`) for hands-off migrations.
+`pg_logical_migrator` is a Python-based CLI tool that automates PostgreSQL database migrations using **logical replication** (publish/subscribe). It provides a step-by-step Wizard for interactive execution and incremental pipeline commands (`init-replication`, `post-migration`) for hands-off migrations.
 
 - **Language**: Python ≥ 3.9
-- **Key Libraries**: `textual`, `rich`, `psycopg` (v3), `psycopg-binary`
+- **Key Libraries**: `rich`, `psycopg` (v3), `psycopg-binary`
 - **PostgreSQL**: Source and destination must be PostgreSQL 10 or higher with `wal_level = logical`
 
 ---
@@ -23,7 +23,6 @@
 | `src/post_sync.py` | `PostSync` | Steps 8–11: MatViews refresh, sequence sync, trigger activation |
 | `src/validation.py` | `Validator` | Steps 13–14: Object audit and row parity comparison |
 | `src/report_generator.py` | `ReportGenerator` | Generates self-contained HTML audit reports |
-| `src/main.py` | `MigratorApp` | TUI entry point |
 
 ---
 
@@ -51,7 +50,7 @@ The tool reads all runtime parameters from `config_migrator.ini` (copy from `con
 
 ## CLI Interface
 
-Entry point: `pg_migrator.py` (project root). The legacy `src/main.py` launches the TUI directly and remains functional.
+Entry point: `pg_migrator.py` (project root).
 
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -65,15 +64,9 @@ Entry point: `pg_migrator.py` (project root). The legacy `src/main.py` launches 
 
 ---
 
-## TUI (Terminal User Interface)
+## Step-by-Step Wizard
 
-Built with the [`textual`](https://textual.textualize.io/) framework. Launched via `python pg_migrator.py tui` or directly from `src/main.py`.
-
-- **Sidebar**: 14 step-buttons + automation buttons, color-coded by phase (blue = checks, orange = replication setup, green = monitoring, purple = post-sync, yellow = validation, red = cleanup, green = automation, white = utility).
-- **Options**: `Drop Dest Schema` checkbox and `Verbose Mode` checkbox.
-- **Result Zone**: Displays step output as a `Panel` or `Table` (Rich components via `RichLog`).
-- **Log Area**: Live scrolling `RichLog` with Rich markup support.
-- **Async execution**: Step 6 (Setup Subscription), `init-replication`, and `post-migration` run in background threads to avoid blocking the UI.
+Launched via `python pg_migrator.py wizard`. Provides an interactive assistant for guided step-by-step migration execution using the `rich` library.
 
 ---
 

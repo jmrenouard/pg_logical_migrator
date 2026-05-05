@@ -8,7 +8,7 @@
 [![Docker Hub](https://img.shields.io/docker/v/jmrenouard/pg_logical_migrator?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/jmrenouard/pg_logical_migrator)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/jmrenouard)
 
-**pg_logical_migrator** is a Python-based orchestrator designed to automate PostgreSQL database migrations using **logical replication**. It provides a standardized **17-step sequential workflow**, a refactored **centralized TUI dashboard**, and automated pipelines for complex infrastructure migrations.
+**pg_logical_migrator** is a Python-based orchestrator designed to automate PostgreSQL database migrations using **logical replication**. It provides a standardized **17-step sequential workflow** and automated pipelines for complex infrastructure migrations.
 
 ---
 
@@ -23,7 +23,6 @@ Watch how **pg_logical_migrator** orchestrates an end-to-end database migration,
 ## Key Features
 
 - **Standardized 17-Step Workflow**: A strictly defined, repeatable process ensuring maximum data integrity.
-- **Refactored TUI Dashboard**: A modern, result-centric interface with action tabs and an **interactive action history**.
 - **Large Object (LOB) Synchronization**: Manually migrates binary data (OIDs) and restores table references.
 - **Deep Pre-flight Diagnostics**: Scans for Primary Key coverage, LOBs, and unowned sequences.
 - **Replication Byte-level Tracking**: Real-time progress monitoring of the initial data copy.
@@ -39,7 +38,6 @@ Watch how **pg_logical_migrator** orchestrates an end-to-end database migration,
 graph LR
     subgraph UI [User Interfaces]
         CLI([fa:fa-terminal CLI]):::ui
-        TUI([fa:fa-desktop TUI]):::ui
     end
 
     subgraph Engine [Migration Engine]
@@ -63,7 +61,7 @@ graph LR
     end
 
     %% Flow
-    CLI & TUI --> CMD
+    CLI --> CMD
     CMD --> Logic
     Logic --> SRC
     Logic --> DST
@@ -94,6 +92,16 @@ For local development, ensure you have Python 3.9+ and the required drivers.
 ```bash
 git clone https://github.com/jmrenouard/pg_logical_migrator
 pip install -r requirements.txt
+```
+
+---
+
+## 🎮 Interactive Modes
+
+**Step-by-Step Wizard**
+Launch the interactive assistant for a guided experience:
+```bash
+python pg_migrator.py wizard
 ```
 
 ---

@@ -40,6 +40,7 @@ def _make_config(schemas=("all",), pub="test_pub", sub="test_sub"):
         "subscription_name": sub,
     }
     cfg.get_target_schemas.return_value = list(schemas)
+    cfg.override_db = None
     return cfg
 
 
@@ -295,12 +296,17 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # Always return 1 pending table → will time out
-        client.execute_query.return_value = [{"pending": 1}]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return [{"total": 1, "pending": 1}]
+            
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
-            ok, msg, cmds, outs = m.wait_for_sync(timeout=0, poll_interval=1)
+            ok, msg, cmds, outs = m.wait_for_sync(timeout=0.1, poll_interval=1)
         assert ok is False
         assert "timed out" in msg
 
@@ -308,8 +314,13 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call: pending=0 → sync complete
-        client.execute_query.return_value = [{"pending": 0}]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return [{"total": 1, "pending": 0}]
+            
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -322,16 +333,23 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call has pending=2, second call pending=0
-        client.execute_query.side_effect = [
-            [{"pending": 2}],
-            [{"pending": 0}],
+        
+        main_query_returns = [
+            [{"total": 2, "pending": 2}],
+            [{"total": 2, "pending": 0}],
         ]
+        
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return main_query_returns.pop(0)
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"), \
              patch.object(m, "get_initial_copy_progress", return_value={
-                 "summary": {"percent_bytes": 50}}):
+                 "summary": {"percent_bytes": 50, "bytes_copied_pretty": "50MB", "total_source_pretty": "100MB"}}):
             ok, msg, cmds, outs = m.wait_for_sync(
                 timeout=60, poll_interval=0, show_progress=True)
         assert ok is True
@@ -341,11 +359,21 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        # First call raises, second returns sync complete
-        client.execute_query.side_effect = [
+
+        main_query_returns = [
             Exception("query failed"),
-            [{"pending": 0}],
+            [{"total": 1, "pending": 0}],
         ]
+
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            val = main_query_returns.pop(0)
+            if isinstance(val, Exception):
+                raise val
+            return val
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -357,10 +385,18 @@ class TestWaitForSync:
         cfg = _make_config()
         m = Migrator(cfg)
         client = MagicMock()
-        client.execute_query.side_effect = [
+        
+        main_query_returns = [
             None,            # None result
-            [{"pending": 0}],  # sync complete
+            [{"total": 1, "pending": 0}],  # sync complete
         ]
+
+        def _exec_query(q, *args, **kwargs):
+            if "pg_subscription WHERE" in q:
+                return [{"cnt": 1}]
+            return main_query_returns.pop(0)
+
+        client.execute_query.side_effect = _exec_query
 
         with patch("src.migrator.PostgresClient", return_value=client), \
              patch("time.sleep"):
@@ -658,6 +694,7 @@ class TestSyncLargeObjectsExtended:
         source_client = MagicMock()
         # lob_columns has one entry
         source_client.execute_query.side_effect = [
+            [],
             [{"schema_name": "public", "table_name": "t1", "column_name": "data"}],
             [{"attname": "id"}],   # pk result
             [],                     # data_query → empty rows → continue

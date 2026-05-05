@@ -6,7 +6,7 @@ from src.cli.commands import (
     cmd_repl_progress, cmd_sync_sequences,
     cmd_enable_triggers, cmd_disable_triggers, cmd_refresh_matviews,
     cmd_reassign_owner, cmd_audit_objects, cmd_validate_rows,
-    cmd_cleanup, cmd_tui, cmd_generate_config, cmd_setup_reverse,
+    cmd_cleanup, cmd_generate_config, cmd_setup_reverse,
     cmd_cleanup_reverse, cmd_sync_lobs
 )
 
@@ -286,12 +286,6 @@ def test_cmd_cleanup(mock_migrator, mock_cfg, mock_args):
         "publication_name": "pub", "subscription_name": "sub"}
     assert cmd_cleanup(mock_args) == 0
 
-
-@patch("src.main.MigratorApp")
-def test_cmd_tui(mock_app, mock_args):
-    mock_app_instance = mock_app.return_value
-    assert cmd_tui(mock_args) == 0
-    mock_app_instance.run.assert_called_once()
 
 
 @patch("src.cli.commands.generate_sample_config")

@@ -7,13 +7,15 @@ import src.db as _db_module
 from src.cli.helpers import setup_logging
 from src.cli.commands import (
     cmd_check, cmd_diagnose, cmd_params,
-    cmd_migrate_schema_pre_data, cmd_terminate_replication,
+    cmd_migrate_schema_pre_data, cmd_terminate_replication, cmd_migrate_schema_post_data,
     cmd_setup_pub, cmd_setup_sub, cmd_progress, cmd_wait_sync,
     cmd_sync_sequences, cmd_enable_triggers, cmd_refresh_matviews,
     cmd_reassign_owner, cmd_audit_objects,
-    cmd_validate_rows, cmd_cleanup, cmd_setup_reverse, cmd_cleanup_reverse,
-    cmd_sync_lobs, cmd_tui, cmd_generate_config
+    cmd_sync_lobs, cmd_sync_unlogged, cmd_generate_config,
+    cmd_stop_repl, cmd_start_repl, cmd_validate_rows, cmd_cleanup,
+    cmd_setup_reverse, cmd_cleanup_reverse
 )
+from src.cli.wizard import cmd_wizard
 from src.cli.pipelines import cmd_init_replication, cmd_post_migration
 import argparse
 import sys
@@ -24,7 +26,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.3.2"
+__version__ = "1.4.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,9 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pg_migrator.py",
         description=textwrap.dedent("""\
-            ╔══════════════════════════════════════════════════════════╗
-            ║  pg_logical_migrator — PostgreSQL Logical Migrator CLI  ║
-            ╚══════════════════════════════════════════════════════════╝
+            ╔═══════════════════════════════════════════════════════════╗
+            ║   pg_logical_migrator — PostgreSQL Logical Migrator CLI   ║
+            ╚═══════════════════════════════════════════════════════════╝
 
             Automate PostgreSQL database migrations using logical
             replication.  Run individual steps or the full pipeline.
@@ -47,7 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
               %(prog)s diagnose                       # Pre-flight diagnostics
               %(prog)s init-replication --drop-dest   # Initialize replication, drop existing DB
               %(prog)s post-migration                 # Finalize replication
-              %(prog)s tui                            # Interactive TUI mode
               %(prog)s validate-rows --config prod.ini
               %(prog)s generate-config --output my.ini
         """),
@@ -211,19 +212,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_term = sub.add_parser(
         "terminate-repl",
         parents=[global_parser],
-        help="Step 10 — Terminate replication & Schema (post-data)",
-        description="Stop logical replication and deploy indexes, FKs, and constraints.",
+        help="Step 10 — Terminate replication",
+        description="Stop logical replication by dropping subscription and publication.",
     )
     p_term.set_defaults(func=cmd_terminate_replication)
+
+    # Step 10b — migrate-schema-post-data
+    p_schema_post = sub.add_parser(
+        "migrate-schema-post-data",
+        parents=[global_parser],
+        help="Step 10b — Schema (post-data)",
+        description="Deploy indexes, FKs, and constraints.",
+    )
+    p_schema_post.set_defaults(func=cmd_migrate_schema_post_data)
 
     # Step 11 — sync-lobs
     p_lob = sub.add_parser(
         "sync-lobs",
         parents=[global_parser],
-        help="Step 11 — Synchronize Large Objects (LOBs)",
+        help="Step 11a — Synchronize Large Objects (LOBs)",
         description="Manually migrate binary data (OIDs) and update table references.",
     )
     p_lob.set_defaults(func=cmd_sync_lobs)
+
+    # Step 11b — sync-unlogged
+    p_unl = sub.add_parser(
+        "sync-unlogged",
+        parents=[global_parser],
+        help="Step 11b — Synchronize UNLOGGED tables",
+        description="Manually copy UNLOGGED tables using COPY.",
+    )
+    p_unl.set_defaults(func=cmd_sync_unlogged)
 
     # Step 12 — enable-triggers
     p_trig = sub.add_parser(
@@ -288,12 +307,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- Utilities ---
 
-    # progress
-    p_p = sub.add_parser(
-        "progress",
+    # stop-repl
+    p_stop = sub.add_parser(
+        "stop-repl",
         parents=[global_parser],
-        help="Utility: Quick replication status check")
-    p_p.set_defaults(func=cmd_progress)
+        help="Utility: Pause logical replication (DISABLE subscription)")
+    p_stop.set_defaults(func=cmd_stop_repl)
+
+    # start-repl
+    p_start = sub.add_parser(
+        "start-repl",
+        parents=[global_parser],
+        help="Utility: Resume logical replication (ENABLE subscription)")
+    p_start.set_defaults(func=cmd_start_repl)
 
     # wait-sync
     p_w = sub.add_parser(
@@ -332,9 +358,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Drop destination first")
     p_init.add_argument(
-        "--no-wait",
+        "--wait",
         action="store_true",
-        help="Do not wait for initial sync")
+        help="Wait for initial sync to complete before finishing")
     p_init.set_defaults(func=cmd_init_replication)
 
     p_post = sub.add_parser(
@@ -343,11 +369,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Automated Phase 3 & 4 (Cutover & Validation)")
     p_post.set_defaults(func=cmd_post_migration)
 
-    p_tui = sub.add_parser(
-        "tui",
+    p_wizard = sub.add_parser(
+        "wizard",
         parents=[global_parser],
-        help="Launch interactive Terminal UI dashboard")
-    p_tui.set_defaults(func=cmd_tui)
+        help="Launch interactive step-by-step assistant")
+    p_wizard.set_defaults(func=cmd_wizard)
 
     return parser
 
@@ -370,8 +396,38 @@ def main():
 
     # Dispatch to the selected subcommand
     try:
-        rc = args.func(args)
-        sys.exit(rc)
+        if args.command in ('wizard', 'generate-config'):
+            rc = args.func(args)
+            sys.exit(rc)
+        
+        # Multi-DB execution logic
+        from src.config import Config
+        from src.db import PostgresClient
+        cfg = Config(getattr(args, "config", "config_migrator.ini"))
+        dbs = cfg.get_databases()
+        
+        if '*' in dbs:
+            # Discover all user databases via the admin (source) connection
+            sc = PostgresClient(cfg.get_source_conn())
+            res = sc.execute_query("SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+            dbs = [row['datname'] for row in res]
+            sc.close()
+            logging.info(f"Discovered {len(dbs)} user databases to migrate: {', '.join(dbs)}")
+
+        overall_rc = 0
+        for db in dbs:
+            print(f"\n" + "="*60)
+            print(f" Executing '{args.command}' for database: {db}")
+            print("="*60)
+            args.database = db
+            rc = args.func(args)
+            if rc != 0:
+                print(f"\033[31m[ERROR] Command failed for database {db} with exit code {rc}\033[0m", file=sys.stderr)
+                overall_rc = rc
+                # We could break or continue. Let's continue to attempt the rest, but fail at the end.
+        
+        sys.exit(overall_rc)
+
     except FileNotFoundError as e:
         print(f"\033[31mError: {e}\033[0m", file=sys.stderr)
         print("  → Use 'pg_migrator.py generate-config' to create a sample config file.",

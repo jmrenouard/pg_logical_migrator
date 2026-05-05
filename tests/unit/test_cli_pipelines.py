@@ -134,6 +134,7 @@ def test_cmd_post_migration_success(
     mock_mig_instance.step10_terminate_replication.return_value = (
         True, "msg", [], [])
     mock_mig_instance.sync_large_objects.return_value = (True, "msg", [], [])
+    mock_mig_instance.sync_unlogged_tables.return_value = (True, "msg", [], [])
 
     # Mock validator
     mock_val_instance = mock_val.return_value

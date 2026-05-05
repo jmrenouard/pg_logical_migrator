@@ -97,11 +97,11 @@ class TestPythonPackageWorkflow:
         assert "build-python-assets" in self.jobs
 
     def test_test_job_matrix_python_versions(self):
-        """CI tests must cover Python 3.9, 3.10, 3.11."""
+        """CI tests must cover Python 3.11, 3.12, 3.13."""
         matrix = self.jobs["test"]["strategy"]["matrix"]["python-version"]
-        assert "3.9" in matrix
-        assert "3.10" in matrix
         assert "3.11" in matrix
+        assert "3.12" in matrix
+        assert "3.13" in matrix
 
     def test_docker_job_needs_test(self):
         """Docker build must only run after tests pass."""
@@ -142,8 +142,8 @@ class TestPythonPackageWorkflow:
             (s for s in steps if "Install" in s.get("name", "")), None)
         assert install_step is not None
         run_cmd = install_step.get("run", "")
-        assert "flake8" in run_cmd
         assert "pytest" in run_cmd
+        assert "pytest-cov" in run_cmd
 
     def test_test_job_runs_unit_tests(self):
         """Test job must execute pytest against tests/unit."""
@@ -183,8 +183,11 @@ class TestPythonPackageWorkflow:
         login_step = next(
             (s for s in steps if "login" in s.get("name", "").lower()), None)
         assert login_step is not None
-        cond = login_step.get("if", "")
-        assert "push" in cond
+        # Since I moved the 'if' to the job level for the whole job, 
+        # the individual step might not have it anymore, or it's inherited.
+        job_if = self.jobs["docker"].get("if", "")
+        step_if = login_step.get("if", "")
+        assert "push" in job_if or "push" in step_if
 
     def test_version_extraction_script(self):
         """The version extraction bash command must find a version in pg_migrator.py."""
@@ -250,11 +253,12 @@ class TestPyInstallerPublishWorkflow:
         assert "macos-latest" in os_list
 
     def test_build_matrix_python_versions(self):
-        """Must build for Python 3.9 and 3.11."""
+        """Must build for Python 3.11, 3.12, 3.13."""
         strategy = self.jobs["build-binaries"]["strategy"]
         versions = strategy["matrix"]["python_version"]
-        assert "3.9" in versions
         assert "3.11" in versions
+        assert "3.12" in versions
+        assert "3.13" in versions
 
     def test_trigger_on_version_tags(self):
         """Must trigger on v* tags for stable releases."""
@@ -449,8 +453,8 @@ class TestVersionExtractionLogic:
         return match.group(1) if match else "unknown"
 
     def test_extracts_standard_version(self):
-        content = '__version__ = "1.3.2"'
-        assert self._run_version_extraction(content) == "1.3.2"
+        content = '__version__ = "1.4.0"'
+        assert self._run_version_extraction(content) == "1.4.0"
 
     def test_extracts_prerelease_version(self):
         content = '__version__ = "1.4.0-alpha.1"'
@@ -483,7 +487,7 @@ class TestVersionExtractionLogic:
 
     def test_tag_mismatch_would_exit(self):
         """Simulate: if tag != f'v{version}' → would exit(1)."""
-        version = "1.3.2"
+        version = "1.4.0"
         wrong_tag = "v9.9.9"
         if wrong_tag != f"v{version}":
             assert True  # Would have called exit(1)

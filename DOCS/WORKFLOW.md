@@ -20,7 +20,8 @@
 8.  **Refresh Materialized Views (`refresh-matviews`)**: Manually refresh non-replicated data in matviews.
 9.  **Sync Sequences (`sync-sequences`)**: Align sequence values to prevent ID collisions after cutover.
 10. **Terminate & Post-Schema (`terminate-repl`)**: Stop replication and deploy indexes, foreign keys, and constraints.
-11. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
+11a. **Large Object Sync (`sync-lobs`)**: Manually migrate binary data (OIDs) and update table references.
+11b. **UNLOGGED Table Sync (`sync-unlogged`)**: Manually synchronize UNLOGGED tables via COPY.
 12. **Enable Triggers (`enable-triggers`)**: Restore application-level trigger logic on the target.
 13. **Reassign Ownership (`reassign-owner`)**: Set correct role owners for all database objects.
 
@@ -81,7 +82,8 @@ Executes **Phase 3** and **Phase 4**:
 - `refresh-matviews` (Step 8)
 - `sync-sequences` (Step 9)
 - `terminate-repl` (Step 10: Terminate & Post-Schema)
-- `sync-lobs` (Step 11)
+- `sync-lobs` (Step 11a)
+- `sync-unlogged` (Step 11b)
 - `enable-triggers` (Step 12)
 - `reassign-owner` (Step 13)
 - `audit-objects` (Step 14)
@@ -89,3 +91,9 @@ Executes **Phase 3** and **Phase 4**:
 - **Report Generation** (Final Audit)
 
 *Result: The target database is fully independent, verified, and ready for production traffic.*
+
+#### 3. Single-Database Execution Flow
+While `databases = *` or `all` can be used to dynamically discover databases on the source, `pg_logical_migrator` strictly enforces a **single-database execution model** for operations. Automated bulk migration (looping over multiple databases at once) is considered unsafe and is no longer supported.
+- In the **Wizard**, users must explicitly select the target database from the menu before running any step or pipeline.
+- In the **CLI**, operations must be scoped to a specific target database using the `--db` override flag (e.g., `--db target_db`), unless the configuration defines only a single database.
+This ensures precision, limits risk, and avoids ambiguous cross-database errors during replication and cutover phases.

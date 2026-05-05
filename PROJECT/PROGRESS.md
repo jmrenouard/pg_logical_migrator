@@ -36,7 +36,7 @@ This document provides a high-level overview of the `pg_logical_migrator` develo
 - [x] Pagila setup: 🟢 Complete
 - [x] Tech Specifications: 🟢 Complete
 - [x] Project Constitution: 🟢 Complete
-- [x] TUI Shell: 🟢 Complete
+- [x] Wizard Shell: 🟢 Complete
 - [x] Automated Reporting: 🟢 Complete
 
 ### Overall Project Health

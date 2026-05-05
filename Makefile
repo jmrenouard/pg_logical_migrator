@@ -17,6 +17,7 @@ help:
 	@echo "  build-clean      Remove PyInstaller build artefacts (build/ dist/ *.spec)"
 	@echo "  test-unit        Run unit tests"
 	@echo "  test-integration Run integration tests (requires docker env)"
+	@echo "  test-wizard      Run Wizard integration tests"
 	@echo "  test-e2e         Run full end-to-end migration test (requires docker env)"
 	@echo "  test-packaging   Run packaging end-to-end test (build and validate binaries/packages)"
 	@echo "  test-all         Run all tests (unit, integration, e2e, packaging)"
@@ -34,6 +35,12 @@ install: venv
 	$(PIP) install -r requirements.txt
 	$(PIP) install pyinstaller
 
+PYINSTALLER_OPTS = --collect-all rich \
+                   --collect-all psycopg \
+                   --collect-all docker \
+                   --collect-all jinja2 \
+                   --collect-all yaml
+
 build: install
 	@echo ">>> Bundling $(BIN_NAME) into a single executable..."
 	$(PYINSTALLER) \
@@ -41,6 +48,7 @@ build: install
 		--name $(BIN_NAME) \
 		--add-data "src:src" \
 		--add-data "config_migrator.sample.ini:."	\
+		$(PYINSTALLER_OPTS) \
 		pg_migrator.py
 	@echo ">>> Executable ready: dist/$(BIN_NAME)"
 
@@ -58,21 +66,23 @@ env-down:
 	cd test_env && docker compose down -v --remove-orphans
 
 test-unit:
-	PYTHONPATH=. $(PYTEST) tests/unit
+	PYTHONPATH=. $(PYTEST) -vv tests/unit
 
 test-integration:
-	PYTHONPATH=. $(PYTEST) tests/integration
+	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_steps.py
+
+test-wizard:
+	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_wizard.py
 
 test-e2e:
-	PYTHONPATH=. $(PYTEST) tests/e2e
-
-test-all: test-unit test-integration test-e2e test-packaging
+	PYTHONPATH=. $(PYTEST) -vv tests/e2e
 
 test-packaging:
 	./e2e_packaging_test.sh
 
 test-coverage: install
-	PYTHONPATH=. $(PYTEST) tests/unit \
+	$(PIP) install pytest-cov
+	PYTHONPATH=. $(PYTEST) -vv tests/unit \
 		--cov=src \
 		--cov-report=term-missing \
 		--cov-report=html:RESULTS/coverage \
@@ -80,17 +90,19 @@ test-coverage: install
 
 test-report: install
 	@mkdir -p RESULTS/$(TIMESTAMP)
-	PYTHONPATH=. $(PYTEST) tests/unit --html=RESULTS/$(TIMESTAMP)/unit_tests.html --self-contained-html
+	PYTHONPATH=. $(PYTEST) -vv tests/unit --html=RESULTS/$(TIMESTAMP)/unit_tests.html --self-contained-html
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest --results-dir RESULTS/$(TIMESTAMP)
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration --results-dir RESULTS/$(TIMESTAMP)
 	@echo "Reports generated in RESULTS/$(TIMESTAMP)/"
+
+test-all: test-unit test-integration test-wizard test-e2e test-packaging test-coverage test-report
 
 run-pipeline:
 	PYTHONPATH=. $(PYTHON) pg_migrator.py init-replication --drop-dest
 	PYTHONPATH=. $(PYTHON) pg_migrator.py post-migration
 
 clean: build-clean
-	rm -rf RESULTS/*
+	rm -rf RESULTS/* *.log
 	rm -f pg_migrator.log
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete

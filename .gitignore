@@ -50,6 +50,7 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
+.worktrees/
 cover/
 
 # Translations
@@ -211,3 +212,4 @@ config_migrator.ini
 !*.spec
 dummy_dir/report_post_error.html
 dummy_dir/report_init_error.html
+docs/**

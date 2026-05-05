@@ -10,7 +10,8 @@ class PostSync:
     def _get_schema_filter(self, nspname_col="n.nspname"):
         if not self.config:
             return ""
-        schemas = self.config.get_target_schemas()
+        from src.db import resolve_target_schemas
+        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
         if schemas == ['all']:
             return ""
         schema_list = ", ".join([f"'{s}'" for s in schemas])
@@ -38,9 +39,9 @@ class PostSync:
                 cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
-                    outs.append("SUCCESS")
+                    outs.append(f"  - MatView {schema}.{name}: SUCCESS")
                 except Exception as e:
-                    outs.append(f"FAILED: {e}")
+                    outs.append(f"  - MatView {schema}.{name}: FAILED ({e})")
             return True, f"Processed {len(cmds)} materialized views", cmds, outs
         except Exception as e:
             return False, str(e), [query], [str(e)]
@@ -74,9 +75,9 @@ class PostSync:
                                f'{is_called_str});')
                         cmds.append(f"[DEST] {sql}")
                         self.dest.execute_script(sql)
-                        outs.append(f"Synced to {last_val}")
+                        outs.append(f"  - Sequence {schema}.{name}: SUCCESS (val={last_val})")
                 except Exception as e:
-                    outs.append(f"FAILED: {e}")
+                    outs.append(f"  - Sequence {schema}.{name}: FAILED ({e})")
             return True, f"Synced {len(cmds)} sequences", cmds, outs
         except Exception as e:
             return False, str(e), [query], [str(e)]
@@ -106,9 +107,9 @@ class PostSync:
                 cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
-                    outs.append("SUCCESS")
+                    outs.append(f"  - Table {schema}.{name} (triggers): ENABLED")
                 except Exception as e:
-                    outs.append(f"FAILED: {e}")
+                    outs.append(f"  - Table {schema}.{name} (triggers): FAILED ({e})")
             return True, f"Enabled triggers on {len(cmds)} tables", cmds, outs
         except Exception as e:
             return False, str(e), [query], [str(e)]
@@ -135,9 +136,9 @@ class PostSync:
                 cmds.append(f"[DEST] {sql}")
                 try:
                     self.dest.execute_script(sql)
-                    outs.append("SUCCESS")
+                    outs.append(f"  - Table {schema}.{name} (triggers): DISABLED")
                 except Exception as e:
-                    outs.append(f"FAILED: {e}")
+                    outs.append(f"  - Table {schema}.{name} (triggers): FAILED ({e})")
             return True, f"Disabled triggers on {len(cmds)} tables", cmds, outs
         except Exception as e:
             return False, str(e), [query], [str(e)]
@@ -146,11 +147,11 @@ class PostSync:
         cmds.append(f"[DEST] {sql}")
         try:
             self.dest.execute_script(sql)
-            outs.append("SUCCESS")
+            outs.append(f"  - {label}: SUCCESS")
             return 0
         except Exception as e:
             logging.error(f"[DEST] Failed to reassign owner ({label}): {e}")
-            outs.append(f"FAILED: {e}")
+            outs.append(f"  - {label}: FAILED ({e})")
             return 1
 
     def reassign_ownership(self, target_owner):

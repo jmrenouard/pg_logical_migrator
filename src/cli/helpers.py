@@ -12,7 +12,10 @@ def setup_logging(level: str = "INFO", log_file: str = None):
     """Configure root logger with console + optional file handler."""
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
-    handlers = [logging.StreamHandler(sys.stderr)]
+    handlers = []
+    handlers.append(logging.StreamHandler(sys.stderr))
+
+        
     if log_file:
         os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
         handlers.append(logging.FileHandler(log_file))
@@ -69,15 +72,30 @@ def print_table(headers: list, rows: list):
 
 
 def print_verbose_execution(args, cmds, outs=None):
-    """If verbose is enabled, print commands and outputs to stdout."""
+    """If verbose is enabled, print commands and outputs to stdout. Also prints structured statuses."""
+    outs = outs or []
+    
+    # Always print structured statuses
+    printed_status = False
+    for out in outs:
+        out_str = str(out)
+        if out_str.startswith("  - "):
+            if not printed_status:
+                print()
+                printed_status = True
+            print(out_str)
+            
     if not getattr(args, "verbose", False) or not cmds:
         return
+        
     print("\n  [VERBOSE] Executed Commands and Results:")
-    outs = outs or []
     for i, c in enumerate(cmds):
         print(f"    CMD: {str(c).strip()}")
         if i < len(outs) and outs[i]:
             out_str = str(outs[i]).strip()
+            # Skip if we already printed this as a structured status
+            if str(outs[i]).startswith("  - "):
+                continue
             lines = out_str.split("\n")
             if len(lines) > 10:
                 print(f"    OUT: {lines[0]}")

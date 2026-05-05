@@ -1,10 +1,9 @@
 psycopg[binary]
-textual
 rich
 docker
 configparser
 pytest
 jinja2
 pytest-html
-pytest-asyncio
-pyyaml
+pytest-cov
+PyYAML

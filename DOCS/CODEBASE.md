@@ -8,7 +8,7 @@ This document provides a comprehensive overview of the `pg_logical_migrator` cod
 
 ## High-Level Architecture
 
-The project is a modular Python application providing both a Command Line Interface (CLI) and a Terminal User Interface (TUI). It is built around single-responsibility classes managing logical replication phases (diagnostics, setup, post-sync, and validation).
+The project is a modular Python application providing both a Command Line Interface (CLI) and an Interactive Wizard. It is built around single-responsibility classes managing logical replication phases (diagnostics, setup, post-sync, and validation).
 
 ### Directory Structure
 
@@ -23,8 +23,6 @@ pg_logical_migrator/
 │   ├── post_sync.py         # Sequences, triggers, materialized views, ownership
 │   ├── validation.py        # Object and data parity auditing
 │   ├── report_generator.py  # HTML audit report generation
-│   ├── tui.py               # Textual TUI Application logic
-│   ├── main.py              # TUI entry point
 │   └── cli/                 # CLI-specific logic
 │       ├── commands.py      # Individual step command wrappers
 │       ├── pipelines.py     # Orchestrated multi-step pipelines (init-replication, post-migration)
@@ -88,10 +86,9 @@ pg_logical_migrator/
   - `init-replication`: Steps 1-6 + `wait_for_sync` + Validation. Includes `--no-wait` option.
   - `post-migration`: `wait_for_sync` + Step 16 (Stop) + Step 12 (Post-Data) + Post-sync + Validation.
 
-### Terminal User Interface (TUI)
-- **`src/tui.py`**: A full-screen dashboard with a 17-step interactive sidebar.
-- Features real-time progress widgets, size analysis tables, and toggleable options (Stats counting, Verbose mode).
-- Uses `rich` components (Panel, Table) for robust, styled rendering.
+### Interactive Wizard
+- **`src/cli/commands.py (cmd_wizard)`**: A guided, step-by-step assistant with state detection.
+- Provides interactive menus to configure databases, run specific steps, or execute pipelines.
 
 ---
 

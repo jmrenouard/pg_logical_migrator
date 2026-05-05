@@ -161,10 +161,14 @@ def test_migrator_wait_for_sync():
 
     with patch("src.migrator.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
-        # Simulate 1 pending table, then 0 pending
+        # Simulate:
+        # 1. sub exists -> 1 pending table
+        # 2. sub exists -> 0 pending tables
         mock_instance.execute_query.side_effect = [
-            [{"pending": 1}],
-            [{"pending": 0}]
+            [{"cnt": 1}],
+            [{"total": 1, "pending": 1}],
+            [{"cnt": 1}],
+            [{"total": 1, "pending": 0}]
         ]
         # Skip progress report fetch during wait
         m.get_initial_copy_progress = MagicMock(return_value=None)
@@ -192,8 +196,8 @@ def test_migrator_setup_reverse_replication():
     mock_config.get_replication.return_value = {
         "publication_name": "pub",
         "subscription_name": "sub",
-        "dest_host_for_src": "172.17.0.1",
-        "dest_port_for_src": 5433
+        "dest_host": "172.17.0.1",
+        "dest_port": 5433
     }
 
     m = Migrator(mock_config)

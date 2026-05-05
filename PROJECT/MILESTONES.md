@@ -7,7 +7,7 @@
 - [x] Initialized Python environment.
 - [x] Docker orchestration for PG16 and PG17.
 - [x] Pagila dataset loading.
-- [x] Basic TUI structure.
+- [x] Basic Wizard structure.
 
 ## Milestone 2: Diagnostics (M2) — ✅ COMPLETED
 
