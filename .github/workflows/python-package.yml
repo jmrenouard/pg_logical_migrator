@@ -39,18 +39,8 @@ jobs:
           pip install pytest pytest-cov
       - name: Prepare test config
         run: cp config_migrator.sample.ini config_migrator.ini
-      - name: Start Docker Test Environment
-        run: make env-up
-      - name: Run Tests with Coverage
-        run: |
-          PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ \
-            --cov=src \
-            --cov-report=xml \
-            --cov-report=term \
-            --cov-report=html:RESULTS/coverage
-      - name: Stop Docker Test Environment
-        if: always()
-        run: make env-down
+      - name: Run All Tests (Unit, Integration, E2E, Coverage)
+        run: make test-all
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,7 +52,6 @@ jobs:
         with:
           name: coverage-report-${{ matrix.python-version }}
           path: |
-            coverage.xml
             RESULTS/coverage/
 
   # 2. Build & Push Docker Image (ghcr.io)

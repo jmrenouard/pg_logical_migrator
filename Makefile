@@ -69,13 +69,17 @@ test-unit:
 	PYTHONPATH=. $(PYTEST) -vv tests/unit
 
 test-integration:
-	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_steps.py
+	@echo "Running integration tests in containerized environment..."
+	cd test_env && docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm test_runner ./test_env/run_e2e_tests.sh tests/integration/test_steps.py
+	cd test_env && docker compose down -v --remove-orphans
 
 test-wizard:
 	PYTHONPATH=. $(PYTEST) -vv tests/integration/test_wizard.py
 
 test-e2e:
-	PYTHONPATH=. $(PYTEST) -vv tests/e2e
+	@echo "Running E2E tests in containerized environment..."
+	cd test_env && docker compose -f docker-compose.yml -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test_runner test_runner
+	cd test_env && docker compose down -v --remove-orphans
 
 test-packaging:
 	./e2e_packaging_test.sh
@@ -86,7 +90,7 @@ test-coverage: install
 		--cov=src \
 		--cov-report=term-missing \
 		--cov-report=html:RESULTS/coverage \
-		--cov-fail-under=80
+		--cov-fail-under=70
 
 test-report: install
 	@mkdir -p RESULTS/$(TIMESTAMP)

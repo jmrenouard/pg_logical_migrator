@@ -1,6 +1,19 @@
+"""
+db.py — PostgreSQL interaction layer.
+
+Provides the :class:`PostgresClient` for executing queries/scripts against
+a PostgreSQL instance via ``psycopg`` (v3), along with helper functions for
+shell command execution (``pg_dump``/``psql``) and schema resolution.
+
+Module-level flag ``VERBOSE`` controls diagnostic output (toggled by CLI).
+"""
+
 import psycopg
 import sys
 from contextlib import contextmanager
+import os
+import stat
+import tempfile
 
 # Module-level verbose flag — toggled by CLI --verbose / -v
 VERBOSE = False
@@ -67,6 +80,37 @@ class PostgresClient:
             _verbose_print(f"{self.label}:ERROR", str(e))
             raise
 
+
+
+@contextmanager
+def pgpass_context(source_conn, dest_conn=None):
+    """
+    Temporarily sets up PGPASSFILE pointing to a secure temp file
+    containing passwords for source and (optionally) destination.
+    """
+    fd, path = tempfile.mkstemp(prefix="pg_logical_migrator_")
+    try:
+        with os.fdopen(fd, 'w') as f:
+            for conn in [c for c in (source_conn, dest_conn) if c]:
+                host = conn.get('host', '*')
+                port = conn.get('port', '*')
+                user = conn.get('user', '*')
+                pwd = conn.get('password', '')
+                if pwd:
+                    f.write(f"{host}:{port}:*:{user}:{pwd}\n")
+                    
+        original_pgpassfile = os.environ.get('PGPASSFILE')
+        os.environ['PGPASSFILE'] = path
+        yield
+    finally:
+        if original_pgpassfile is not None:
+            os.environ['PGPASSFILE'] = original_pgpassfile
+        else:
+            os.environ.pop('PGPASSFILE', None)
+        try:
+            os.remove(path)
+        except Exception:
+            pass
 
 def pretty_size(bytes_size):
     """Convert bytes to human readable format."""

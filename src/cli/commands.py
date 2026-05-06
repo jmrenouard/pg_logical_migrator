@@ -308,11 +308,6 @@ def cmd_terminate_replication(args):
     return 0 if success2 else 1
 
 
-def cmd_migrate_schema_post_data(args):
-    """Legacy alias for Step 10."""
-    return cmd_terminate_replication(args)
-
-
 # -- Step 11 ------------------------------------------------------------------
 def cmd_sync_lobs(args):
     """Step 11: Synchronize Large Objects (LOBs/BLOBs) and update OID references."""

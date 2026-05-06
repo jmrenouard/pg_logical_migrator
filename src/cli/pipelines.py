@@ -36,7 +36,7 @@ def cmd_init_replication(args):
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     migrator = Migrator(cfg)
-    PostSync(sc, dc, cfg)
+    # NOTE: PostSync is not needed in init-replication pipeline (used in post-migration)
     validator = Validator(sc, dc, cfg)
     reporter = ReportGenerator()
 

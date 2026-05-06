@@ -1,21 +1,29 @@
+"""
+checker.py — Pre-migration diagnostic checks.
+
+Provides the DBChecker class responsible for verifying database connectivity,
+scanning for problematic objects (tables without PK, LOBs, identity columns,
+unlogged/temporary/foreign tables), validating replication parameters, and
+analysing database size distribution.
+"""
+
 import logging
 
+from src.schema_utils import SchemaFilterMixin
 
-class DBChecker:
+
+class DBChecker(SchemaFilterMixin):
+    """Performs pre-migration diagnostics on source and destination databases.
+
+    Inherits ``_get_schema_filter()`` from :class:`SchemaFilterMixin` for
+    consistent schema-level SQL filtering across the codebase.
+    """
+
     def __init__(self, source_client, dest_client=None, config=None):
+        super().__init__()
         self.source = source_client
         self.dest = dest_client
         self.config = config
-
-    def _get_schema_filter(self, nspname_col="n.nspname"):
-        if not self.config:
-            return ""
-        from src.db import resolve_target_schemas
-        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
-        if schemas == ['all']:
-            return ""
-        schema_list = ", ".join([f"'{s}'" for s in schemas])
-        return f"AND {nspname_col} IN ({schema_list})"
 
     def check_connectivity(self):
         results = {"source": False, "dest": False}

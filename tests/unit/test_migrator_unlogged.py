@@ -9,13 +9,15 @@ def test_sync_unlogged_tables_no_tables():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_instance = mock_pc.return_value
         mock_instance.execute_query.return_value = []
 
         success, msg, synced_count, outs = m.sync_unlogged_tables()
         assert success is True
-        assert synced_count == 0
+        # Fixed: sync_unlogged_tables now correctly returns [] (list) instead of 0 (int)
+        # to match the (bool, str, list, list) return type contract
+        assert synced_count == []
 
 
 def test_sync_unlogged_tables_success():
@@ -35,7 +37,7 @@ def test_sync_unlogged_tables_success():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
@@ -95,7 +97,7 @@ def test_sync_unlogged_tables_failure():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = [
@@ -131,7 +133,7 @@ def test_sync_unlogged_tables_connection_failure():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
 
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = Exception("Connection Failed")

@@ -1,8 +1,16 @@
+"""
+test_migrator.py — Core unit tests for the Migrator class.
+
+Tests cover the main migration lifecycle steps: initialisation, source/destination
+setup, schema migration (pre/post-data), sync monitoring, and reverse replication.
+"""
+
 from unittest.mock import MagicMock, patch
 from src.migrator import Migrator
 
 
 def test_migrator_init():
+    """Verify Migrator.__init__ correctly stores replication config from Config."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = {
         "user": "u",
@@ -24,6 +32,7 @@ def test_migrator_init():
 
 
 def test_step5_setup_source():
+    """Verify publication creation on source with FOR ALL TABLES when schema=['all']."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = "postgresql://u:p@h:5432/d"
     mock_config.get_dest_conn.return_value = "postgresql://u2:p2@h2:5433/d2"
@@ -33,7 +42,7 @@ def test_step5_setup_source():
     mock_config.get_target_schemas.return_value = ["all"]
 
     m = Migrator(mock_config)
-    with patch("src.migrator.PostgresClient") as mock_client:
+    with patch("src.db.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
         mock_instance.execute_query.return_value = []
         success, msg, cmds, outs = m.step5_setup_source()
@@ -45,6 +54,7 @@ def test_step5_setup_source():
 
 
 def test_step6_setup_destination():
+    """Verify subscription creation on destination with correct connection params."""
     mock_config = MagicMock()
     # Mock return values for methods used in __init__
     mock_config.get_source_conn.return_value = {
@@ -61,7 +71,7 @@ def test_step6_setup_destination():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_client:
+    with patch("src.db.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
         success, msg, cmds, outs = m.step6_setup_destination()
 
@@ -73,6 +83,7 @@ def test_step6_setup_destination():
 
 
 def test_step4a_migrate_schema_pre_data():
+    """Verify pg_dump --section=pre-data piped to psql executes successfully."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = {
         "user": "u", "password": "p", "database": "db"}
@@ -86,7 +97,7 @@ def test_step4a_migrate_schema_pre_data():
 
     m = Migrator(mock_config)
 
-    with patch("src.db.execute_shell_command") as mock_exec, patch("src.migrator.PostgresClient"):
+    with patch("src.db.execute_shell_command") as mock_exec, patch("src.db.PostgresClient"):
         mock_exec.return_value = (True, "mock migrated")
 
         success, msg, cmds, outs = m.step4a_migrate_schema_pre_data()
@@ -97,6 +108,7 @@ def test_step4a_migrate_schema_pre_data():
 
 
 def test_step4b_migrate_schema_post_data():
+    """Verify pg_dump --section=post-data piped to psql executes successfully."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = {
         "user": "u", "password": "p", "database": "db"}
@@ -121,6 +133,7 @@ def test_step4b_migrate_schema_post_data():
 
 
 def test_get_initial_copy_progress():
+    """Verify initial copy progress reports 50% when half bytes are copied."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = {"database": "src"}
     mock_config.get_dest_conn.return_value = {"database": "dst"}
@@ -129,7 +142,7 @@ def test_get_initial_copy_progress():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_client:
+    with patch("src.db.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
         # 1. source_tables query
         # 2. rel_status query
@@ -150,6 +163,7 @@ def test_get_initial_copy_progress():
 
 
 def test_migrator_wait_for_sync():
+    """Verify wait_for_sync detects completion after 2 polling cycles."""
     mock_config = MagicMock()
     mock_config.get_dest_conn.return_value = {
         "database": "dst",
@@ -159,7 +173,7 @@ def test_migrator_wait_for_sync():
         "port": 5433}
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_client:
+    with patch("src.db.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
         # Simulate:
         # 1. sub exists -> 1 pending table
@@ -180,6 +194,7 @@ def test_migrator_wait_for_sync():
 
 
 def test_migrator_setup_reverse_replication():
+    """Verify reverse replication creates pub_rev and sub_rev with correct host."""
     mock_config = MagicMock()
     mock_config.get_source_conn.return_value = {
         "database": "src",
@@ -202,7 +217,7 @@ def test_migrator_setup_reverse_replication():
 
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_client:
+    with patch("src.db.PostgresClient") as mock_client:
         mock_instance = mock_client.return_value
         mock_instance.execute_query.return_value = [{'count': 0}]
         success, msg, cmds, outs = m.setup_reverse_replication()

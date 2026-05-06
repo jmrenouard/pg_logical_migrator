@@ -26,7 +26,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 
 def build_parser() -> argparse.ArgumentParser:

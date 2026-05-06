@@ -1,21 +1,28 @@
+"""
+validation.py — Post-migration validation and auditing.
+
+Provides the Validator class responsible for comparing row counts (exact or
+estimated) and auditing structural object parity between source and
+destination databases.
+"""
+
 import logging
 
+from src.schema_utils import SchemaFilterMixin
 
-class Validator:
+
+class Validator(SchemaFilterMixin):
+    """Validates data integrity between source and destination databases.
+
+    Inherits ``_get_schema_filter()`` from :class:`SchemaFilterMixin` for
+    consistent schema-level SQL filtering across the codebase.
+    """
+
     def __init__(self, source_client, dest_client, config=None):
+        super().__init__()
         self.source = source_client
         self.dest = dest_client
         self.config = config
-
-    def _get_schema_filter(self, nspname_col="n.nspname"):
-        if not self.config:
-            return ""
-        from src.db import resolve_target_schemas
-        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
-        if schemas == ['all']:
-            return ""
-        schema_list = ", ".join([f"'{s}'" for s in schemas])
-        return f"AND {nspname_col} IN ({schema_list})"
 
     def compare_row_counts(self, use_stats=False):
         """Step 14: Compare row counts. Exact via COUNT(*) or estimated via pg_stat_user_tables."""
