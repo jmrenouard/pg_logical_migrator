@@ -38,7 +38,30 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
       - name: Prepare test config
-        run: cp config_migrator.sample.ini config_migrator.ini
+        run: |
+          cat <<EOF > config_migrator.ini
+          [source]
+          host = localhost
+          port = 5432
+          user = postgres
+          password = secret
+          database = test_migration
+
+          [destination]
+          host = localhost
+          port = 5433
+          user = postgres
+          password = secret
+          database = test_migration
+
+          [replication]
+          publication_name = pub_test_migration
+          subscription_name = sub_test_migration
+          sync_lobs = true
+          sync_unlogged = true
+          drop_destination = true
+          target_schema = all
+          EOF
       - name: Start Docker Test Environment
         working-directory: ./test_env
         run: |
