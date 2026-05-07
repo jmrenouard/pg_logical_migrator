@@ -104,6 +104,33 @@ class CoreReplicationMixin:
                 logging.warning(f"[SOURCE] Could not auto-detect container IP: {exc}")
 
         return configured_host, configured_port
+
+    def _resolve_dest_host(self, configured_host: str, configured_port: str) -> tuple:
+        """Return (host, port) reachable from inside the SOURCE container for reverse replication.
+        
+        Uses inet_server_addr() on DEST to find its container IP when loopback is configured.
+        """
+        rep_config = self.config.get_replication()
+        if rep_config.get('dest_host'):
+            return rep_config['dest_host'], rep_config.get('dest_port', configured_port)
+
+        is_loopback = configured_host in ('localhost', '127.0.0.1', '::1', '')
+        if is_loopback:
+            try:
+                dest_client = db.PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
+                res = dest_client.execute_query("SELECT inet_server_addr()::text AS ip")
+                if res and res[0].get('ip'):
+                    docker_ip = res[0]['ip'].split('/')[0]
+                    logging.info(
+                        f"[DESTINATION] Auto-detected Docker/container IP: {docker_ip} "
+                        f"(configured '{configured_host}' is loopback — using container IP)"
+                    )
+                    return docker_ip, '5432'
+            except Exception as exc:
+                logging.warning(f"[DESTINATION] Could not auto-detect container IP: {exc}")
+
+        return configured_host, configured_port
+
     def step6_setup_destination(self):
         """Step 6: Create Subscription (non-blocking).
 
@@ -267,10 +294,11 @@ $$;"""
         sql_pub2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
 
         rep_config = self.config.get_replication()
-        dst_host_for_src = rep_config.get(
-            'dest_host', dst_conn['host'])
-        dst_port_for_src = rep_config.get(
-            'dest_port', dst_conn['port'])
+        
+        configured_host = dst_conn.get('host', 'localhost')
+        configured_port = dst_conn.get('port', '5432')
+        dst_host_for_src, dst_port_for_src = self._resolve_dest_host(configured_host, configured_port)
+        
         dst_user = dst_conn['user']
         dst_password = dst_conn['password']
         dst_database = dst_conn['database']
