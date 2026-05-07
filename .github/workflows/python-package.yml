@@ -39,6 +39,7 @@ jobs:
           pip install pytest pytest-cov
       - name: Prepare test config
         run: |
+          mkdir -p tests
           cat <<EOF > config_migrator.ini
           [source]
           host = localhost
@@ -62,6 +63,7 @@ jobs:
           drop_destination = true
           target_schema = all
           EOF
+          cp config_migrator.ini tests/test_config.ini
       - name: Start Docker Test Environment
         working-directory: ./test_env
         run: |
@@ -72,6 +74,7 @@ jobs:
         run: ./test_env/setup_pagila.sh
       - name: Run Tests with Coverage
         run: |
+          export MIGRATOR_CONFIG=tests/test_config.ini
           PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ \
             --cov=src \
             --cov-report=xml \
