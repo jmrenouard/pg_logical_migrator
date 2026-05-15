@@ -1,11 +1,11 @@
 from unittest.mock import patch, MagicMock
-from src.cli.wizard import MigrationWizard
+from src.cli.wizard import MigrationWizard, WizardModel
 
 @patch("src.cli.wizard.os.path.exists", return_value=True)
 @patch("src.cli.wizard.Config")
 @patch("builtins.input")
 @patch.object(MigrationWizard, "_execute_step")
-@patch.object(MigrationWizard, "_detect_state")
+@patch.object(WizardModel, "detect_state")
 @patch("src.cli.wizard.build_clients")
 def test_wizard_run_by_command_name(mock_clients, mock_detect, mock_execute_step, mock_input, mock_config, mock_exists):
     mock_config.return_value.get_databases.return_value = ["postgres"]
@@ -36,7 +36,7 @@ def test_wizard_run_by_command_name(mock_clients, mock_detect, mock_execute_step
 @patch("builtins.input")
 @patch("src.cli.wizard.Confirm.ask")
 @patch.object(MigrationWizard, "_execute_step")
-@patch.object(MigrationWizard, "_detect_state")
+@patch.object(WizardModel, "detect_state")
 @patch("src.cli.wizard.build_clients")
 def test_wizard_skip_step(mock_clients, mock_detect, mock_execute_step, mock_confirm, mock_input, mock_config, mock_exists):
     mock_config.return_value.get_databases.return_value = ["postgres"]
@@ -68,7 +68,7 @@ def test_wizard_skip_step(mock_clients, mock_detect, mock_execute_step, mock_con
 @patch("src.cli.pipelines.cmd_init_replication")
 @patch("builtins.input")
 @patch("src.cli.wizard.Confirm.ask")
-@patch.object(MigrationWizard, "_detect_state")
+@patch.object(WizardModel, "detect_state")
 @patch("src.cli.wizard.build_clients")
 def test_wizard_pipeline_init(mock_clients, mock_detect, mock_confirm, mock_input, mock_init_repl, mock_config, mock_exists):
     mock_config.return_value.get_databases.return_value = ["postgres"]
@@ -100,7 +100,7 @@ def test_wizard_db_discovery_fallback(mock_ask, mock_clients, mock_config, mock_
     mock_ask.return_value = "postgres"
     
     wizard = MigrationWizard("test.ini")
-    wizard._init_config()
+    wizard.model.init_config()
     wizard._select_database()
     
     # Since discovery fails, it should fallback to 'postgres'

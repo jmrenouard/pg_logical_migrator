@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.cli.wizard import MigrationWizard
+from src.cli.wizard import MigrationWizard, WizardModel
 
 @patch("builtins.input")
 @patch("src.cli.wizard.Config")
@@ -36,7 +36,7 @@ def test_wizard_config_flow(mock_makedirs, mock_confirm, mock_ask, mock_clients,
 
     
     # Mock _detect_state to avoid real DB calls during the loop
-    with patch.object(wizard, "_detect_state") as mock_detect:
+    with patch.object(WizardModel, "detect_state") as mock_detect:
         mock_detect.return_value = {
             "connectivity": {"source": True, "dest": True},
             "schema_pre": False,
