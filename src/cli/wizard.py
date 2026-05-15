@@ -632,7 +632,7 @@ class MigrationWizard:
 
         if Confirm.ask(f"Save to {self.model.config_path}?", default=True):
             os.makedirs(os.path.dirname(os.path.abspath(self.model.config_path)), exist_ok=True)
-            self.model.save_config()
+            self.model.cfg.save()
             self.view.console.print("[green]Configuration saved.[/green]")
             self.model.init_clients()
 

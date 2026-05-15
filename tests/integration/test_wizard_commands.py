@@ -65,7 +65,7 @@ def test_wizard_skip_step(mock_clients, mock_detect, mock_execute_step, mock_con
 
 @patch("src.cli.wizard.os.path.exists", return_value=True)
 @patch("src.cli.wizard.Config")
-@patch("src.cli.pipelines.cmd_init_replication")
+@patch("src.cli.wizard.cmd_init_replication")
 @patch("builtins.input")
 @patch("src.cli.wizard.Confirm.ask")
 @patch.object(WizardModel, "detect_state")
@@ -76,12 +76,11 @@ def test_wizard_pipeline_init(mock_clients, mock_detect, mock_confirm, mock_inpu
     wizard = MigrationWizard("test.ini")
     mock_detect.return_value = {"connectivity": {"source": True, "dest": True}}
     
-    # 1. Main menu: pipeline
-    # 2. Pipeline menu: init-replication
-    # 3. Confirm drop-dest: True
-    # 4. Confirm wait: True
-    # 5. Main menu: exit
-    mock_input.side_effect = ["pipeline", "init-replication", "exit"]
+    # 1. Main menu: init-replication
+    # 2. Confirm drop-dest: True
+    # 3. Confirm wait: True
+    # 4. Main menu: exit
+    mock_input.side_effect = ["init-replication", "exit"]
     mock_confirm.return_value = True
     
     wizard.run()
@@ -104,4 +103,4 @@ def test_wizard_db_discovery_fallback(mock_ask, mock_clients, mock_config, mock_
     wizard._select_database()
     
     # Since discovery fails, it should fallback to 'postgres'
-    assert wizard.database == "postgres"
+    assert wizard.model.database == "postgres"
