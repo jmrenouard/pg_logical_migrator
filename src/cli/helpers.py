@@ -4,7 +4,7 @@ import os
 import sys
 import textwrap
 
-from typing import Optional, Any
+from typing import Optional
 
 from src.config import Config
 from src.db import PostgresClient
