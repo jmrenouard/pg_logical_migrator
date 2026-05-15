@@ -9,6 +9,7 @@ analysing database size distribution.
 
 import logging
 
+from src.db import sanitize_identifier
 from src.schema_utils import SchemaFilterMixin
 
 
@@ -74,13 +75,7 @@ class DBChecker(SchemaFilterMixin):
         lo_count = self.source.execute_query(query_lo)[0]['count']
 
         # Tables with Identity Columns
-        schema_filter_identity = ""
-        if self.config:
-            from src.db import resolve_target_schemas
-            schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None))
-            if schemas != ['all']:
-                schema_list = ", ".join([f"'{s}'" for s in schemas])
-                schema_filter_identity = f"AND table_schema IN ({schema_list})"
+        schema_filter_identity = self._get_schema_filter("table_schema")
 
         query_identity = f"""
         SELECT table_schema, table_name, column_name
@@ -228,8 +223,9 @@ class DBChecker(SchemaFilterMixin):
                 # Apply parameter if specified and needed
                 if needs_apply and apply_flags[label] and apply_val is not None:
                     try:
+                        safe_name = sanitize_identifier(name)
                         client.execute_query(
-                            f"ALTER SYSTEM SET {name} = '{apply_val}';")
+                            f"ALTER SYSTEM SET {safe_name} = '{apply_val}';")
                         status = "PENDING RESTART"
                         logging.info(
                             f"[{label.upper()}] Applied {name} = '{apply_val}' on {label}. Restart required.")

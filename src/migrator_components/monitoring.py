@@ -1,6 +1,5 @@
 import logging
 import time
-import re
 from src import db
 
 class MonitoringMixin:
@@ -10,11 +9,11 @@ class MonitoringMixin:
             print("\n")
         logging.info("[DEST] Waiting for initial data sync to complete...")
 
-        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
-        dst_user = self.dest_conn.get('user', 'postgres')
-        dst_host = self.dest_conn.get('host', 'localhost')
-        dst_port = self.dest_conn.get('port', '5432')
-        dst_pass = self.dest_conn.get('password', '')
+        dst_db = self.dest_conn['database']
+        dst_user = self.dest_conn['user']
+        dst_host = self.dest_conn['host']
+        dst_port = self.dest_conn['port']
+        dst_pass = self.dest_conn['password']
 
         tgt_conn_uri = f"host={dst_host} port={dst_port} user={dst_user} dbname={dst_db} password={dst_pass}"
         client = db.PostgresClient(tgt_conn_uri, "DEST_WAIT")
@@ -210,10 +209,10 @@ class MonitoringMixin:
         try:
             # Check standard sub on DEST
             sub_status += dest_client.execute_query(
-                f"SELECT 'DEST' as side, * FROM pg_stat_subscription WHERE subname = '{sub_name}';")
+                "SELECT 'DEST' as side, * FROM pg_stat_subscription WHERE subname = %s;", (sub_name,))
             # Check reverse sub on SOURCE
             sub_status += source_client.execute_query(
-                f"SELECT 'SOURCE' as side, * FROM pg_stat_subscription WHERE subname = '{rev_sub_name}';")
+                "SELECT 'SOURCE' as side, * FROM pg_stat_subscription WHERE subname = %s;", (rev_sub_name,))
         except Exception:
             pass
 

@@ -1,13 +1,16 @@
 import logging
-import time
-import re
 from src import db
+from src.db import sanitize_identifier, redact_conninfo
+
+from typing import Any
 
 class CoreReplicationMixin:
+    config: Any
     def step5_setup_source(self):
         """Step 5: Create Publication and set identity for tables without PK."""
         logging.info("[SOURCE] Setting up publication...")
         pub_name = self.replication_cfg['publication_name']
+        pub_ident = sanitize_identifier(pub_name)
         source_client = db.PostgresClient(
             self.config.get_source_conn(), label="SOURCE")
 
@@ -38,21 +41,23 @@ class CoreReplicationMixin:
             for row in no_pk_tables:
                 schema = row['schema_name']
                 table = row['table_name']
-                alt_sql = f'ALTER TABLE "{schema}"."{table}" REPLICA IDENTITY FULL;'
+                sch_ident = sanitize_identifier(schema)
+                tbl_ident = sanitize_identifier(table)
+                alt_sql = f'ALTER TABLE {sch_ident}.{tbl_ident} REPLICA IDENTITY FULL;'
                 executed_sqls.append(f"[SOURCE] {alt_sql}")
                 source_client.execute_script(alt_sql)
                 out_results.append("OK")
                 logging.info(
                     f"[SOURCE] Set REPLICA IDENTITY FULL for no-PK table: {schema}.{table}")
 
-            sql1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
+            sql1 = f"DROP PUBLICATION IF EXISTS {pub_ident};"
 
             schemas = db.resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
             if schemas == ['all']:
-                sql2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
+                sql2 = f"CREATE PUBLICATION {pub_ident} FOR ALL TABLES;"
             else:
-                schema_list = ", ".join(schemas)
-                sql2 = f"CREATE PUBLICATION {pub_name} FOR TABLES IN SCHEMA {schema_list};"
+                schema_idents = ", ".join(sanitize_identifier(s) for s in schemas)
+                sql2 = f"CREATE PUBLICATION {pub_ident} FOR TABLES IN SCHEMA {schema_idents};"
 
             executed_sqls.append(f"[SOURCE] {sql1}")
             source_client.execute_script(sql1)
@@ -71,6 +76,7 @@ class CoreReplicationMixin:
                 executed_sqls.append("INITIALIZATION")
                 out_results.append(str(e))
             return False, f"Source setup failed: {str(e)}", executed_sqls, out_results
+
     def _resolve_source_host(self, configured_host: str, configured_port: str) -> tuple:
         """Return (host, port) reachable from inside the DEST container.
 
@@ -146,18 +152,21 @@ class CoreReplicationMixin:
         logging.info("[DEST] Setting up subscription...")
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
+        sub_ident = sanitize_identifier(sub_name)
+        pub_ident = sanitize_identifier(pub_name)
 
-        src_user = self.source_conn.get('user', 'postgres')
-        src_pass = self.source_conn.get('password', '')
-        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
+        src_user = self.source_conn['user']
+        src_pass = self.source_conn['password']
+        src_db = self.source_conn['database']
 
-        configured_host = self.source_conn.get('host', 'localhost')
-        configured_port = self.source_conn.get('port', '5432')
+        configured_host = self.source_conn['host']
+        configured_port = self.source_conn['port']
         sub_host, sub_port = self._resolve_source_host(configured_host, configured_port)
 
         conn_str = (f"host={sub_host} port={sub_port} user={src_user} "
                     f"password={src_pass} dbname={src_db}")
-        logging.info(f"[DEST] Subscription connection: {sub_host}:{sub_port}/{src_db}")
+        # C2: Log redacted connection info
+        logging.info(f"[DEST] Subscription connection: {redact_conninfo(conn_str)}")
 
         dest_client = db.PostgresClient(self.config.get_dest_conn(), label="DESTINATION")
         source_client = db.PostgresClient(self.config.get_source_conn(), label="SOURCE")
@@ -167,9 +176,9 @@ class CoreReplicationMixin:
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
-        ALTER SUBSCRIPTION {sub_name} DISABLE;
-        ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
-        DROP SUBSCRIPTION {sub_name};
+        ALTER SUBSCRIPTION {sub_ident} DISABLE;
+        ALTER SUBSCRIPTION {sub_ident} SET (slot_name = NONE);
+        DROP SUBSCRIPTION {sub_ident};
     END IF;
 END
 $$;"""
@@ -189,17 +198,17 @@ $$;"""
         # copy_data=true → PG registers all tables in pg_subscription_rel and
         # starts background tablesync workers immediately.
         sql_create_sub = (
-            f"CREATE SUBSCRIPTION {sub_name} "
+            f"CREATE SUBSCRIPTION {sub_ident} "
             f"CONNECTION '{conn_str}' "
-            f"PUBLICATION {pub_name} "
+            f"PUBLICATION {pub_ident} "
             f"WITH (create_slot = false, copy_data = true);"
         )
 
         executed_sqls = [
-            f"[DEST] DROP subscription (safe)",
-            f"[SOURCE] DROP orphan slot",
+            "[DEST] DROP subscription (safe)",
+            "[SOURCE] DROP orphan slot",
             f"[SOURCE] CREATE slot '{sub_name}'",
-            f"[DEST] CREATE SUBSCRIPTION (create_slot=false, copy_data=true)",
+            "[DEST] CREATE SUBSCRIPTION (create_slot=false, copy_data=true)",
         ]
         out_results = []
         try:
@@ -235,24 +244,55 @@ $$;"""
             logging.error(f"[DEST] Subscription creation failed: {e}")
             out_results.append(str(e))
             return False, f"Destination setup failed: {str(e)}", executed_sqls, out_results
+
     def step10_terminate_replication(self):
-        """Step 10: Cleanup publication and subscription."""
+        """Step 10: Terminate replication (disable subscription)."""
+        sub_name = self.replication_cfg['subscription_name']
+        sub_ident = sanitize_identifier(sub_name)
+
+        sql1 = f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
+                ALTER SUBSCRIPTION {sub_ident} DISABLE;
+            END IF;
+        END
+        $$;
+        """
+
+        try:
+            dest_client = db.PostgresClient(
+                self.config.get_dest_conn(), label="DESTINATION")
+
+            dest_client.execute_script(sql1, autocommit=True)
+
+            return True, "Replication terminated (subscription disabled).", [
+                f"[DEST] {sql1}"], [
+                f"  - Subscription {sub_name}: DISABLED"
+            ]
+        except Exception as e:
+            return False, f"Error terminating replication: {e}", [], []
+
+    def step16_cleanup_replication(self):
+        """Step 16: Cleanup publication and subscription."""
         sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name']
+        sub_ident = sanitize_identifier(sub_name)
+        pub_ident = sanitize_identifier(pub_name)
 
         # Robust subscription drop
         sql1 = f"""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
-                ALTER SUBSCRIPTION {sub_name} DISABLE;
-                ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
-                DROP SUBSCRIPTION {sub_name};
+                ALTER SUBSCRIPTION {sub_ident} DISABLE;
+                ALTER SUBSCRIPTION {sub_ident} SET (slot_name = NONE);
+                DROP SUBSCRIPTION {sub_ident};
             END IF;
         END
         $$;
         """
-        sql2 = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        sql2 = f"DROP PUBLICATION IF EXISTS {pub_ident};"
         sql3 = (f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS "
                 f"(SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');")
 
@@ -273,8 +313,8 @@ $$;"""
                 f"  - Publication {pub_name}: DROPPED"
             ]
         except Exception as e:
-            return False, f"Cleanup failed: {str(e)}", [
-                f"[DEST] {sql1}", f"[SOURCE] {sql3}", f"[SOURCE] {sql2}"], [str(e), str(e), str(e)]
+            return False, f"Error cleaning up replication: {e}", [], []
+
     def setup_reverse_replication(self):
         """
         Reverse the replication flow: Destination becomes Publisher, Source becomes Subscriber.
@@ -286,17 +326,19 @@ $$;"""
         fwd_sub_name = self.replication_cfg['subscription_name']
         pub_name = self.replication_cfg['publication_name'] + "_rev"
         sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        pub_ident = sanitize_identifier(pub_name)
+        sub_ident = sanitize_identifier(sub_name)
 
         dst_conn = self.dest_conn
 
         # Preparation of SQLs
-        sql_pub1 = f"DROP PUBLICATION IF EXISTS {pub_name};"
-        sql_pub2 = f"CREATE PUBLICATION {pub_name} FOR ALL TABLES;"
+        sql_pub1 = f"DROP PUBLICATION IF EXISTS {pub_ident};"
+        sql_pub2 = f"CREATE PUBLICATION {pub_ident} FOR ALL TABLES;"
 
-        rep_config = self.config.get_replication()
+        self.config.get_replication()
         
-        configured_host = dst_conn.get('host', 'localhost')
-        configured_port = dst_conn.get('port', '5432')
+        configured_host = dst_conn['host']
+        configured_port = dst_conn['port']
         dst_host_for_src, dst_port_for_src = self._resolve_dest_host(configured_host, configured_port)
         
         dst_user = dst_conn['user']
@@ -305,9 +347,9 @@ $$;"""
         conn_str = (f"host={dst_host_for_src} port={dst_port_for_src}"
                     f" user={dst_user} password={dst_password} dbname={dst_database}")
 
-        sql_sub1 = f"DROP SUBSCRIPTION IF EXISTS {sub_name};"
-        sql_sub2 = (f"CREATE SUBSCRIPTION {sub_name} CONNECTION '{conn_str}' "
-                    f"PUBLICATION {pub_name} WITH (copy_data = false, create_slot = true);")
+        sql_sub1 = f"DROP SUBSCRIPTION IF EXISTS {sub_ident};"
+        sql_sub2 = (f"CREATE SUBSCRIPTION {sub_ident} CONNECTION '{conn_str}' "
+                    f"PUBLICATION {pub_ident} WITH (copy_data = false, create_slot = true);")
 
         executed_sqls = []
         out_results = []
@@ -368,24 +410,27 @@ $$;"""
                 executed_sqls.append("INITIALIZATION")
                 out_results.append(str(e))
             return False, f"Reverse setup failed: {str(e)}", executed_sqls, out_results
+
     def cleanup_reverse_replication(self):
         """Cleanup reverse publication (on DEST) and reverse subscription (on SOURCE)."""
         pub_name = self.replication_cfg['publication_name'] + "_rev"
         sub_name = self.replication_cfg['subscription_name'] + "_rev"
+        pub_ident = sanitize_identifier(pub_name)
+        sub_ident = sanitize_identifier(sub_name)
 
         # Robust subscription drop (on SOURCE for reverse)
         sql_sub = f"""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_subscription WHERE subname = '{sub_name}') THEN
-                ALTER SUBSCRIPTION {sub_name} DISABLE;
-                ALTER SUBSCRIPTION {sub_name} SET (slot_name = NONE);
-                DROP SUBSCRIPTION {sub_name};
+                ALTER SUBSCRIPTION {sub_ident} DISABLE;
+                ALTER SUBSCRIPTION {sub_ident} SET (slot_name = NONE);
+                DROP SUBSCRIPTION {sub_ident};
             END IF;
         END
         $$;
         """
-        sql_pub = f"DROP PUBLICATION IF EXISTS {pub_name};"
+        sql_pub = f"DROP PUBLICATION IF EXISTS {pub_ident};"
         sql_slot = (f"SELECT pg_drop_replication_slot('{sub_name}') WHERE EXISTS "
                     f"(SELECT 1 FROM pg_replication_slots WHERE slot_name = '{sub_name}');")
 

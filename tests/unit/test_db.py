@@ -56,11 +56,15 @@ def test_get_conn():
     client = PostgresClient("postgresql://user:pwd@host:5432/db")
     with patch("psycopg.connect") as mock_connect:
         mock_conn = MagicMock()
+        mock_conn.closed = False
         mock_connect.return_value = mock_conn
         with client.get_conn() as conn:
             assert conn == mock_conn
         mock_connect.assert_called_once()
-        mock_conn.close.assert_called_once()
+        mock_conn.rollback.assert_called_once()
+        
+    client.close()
+    mock_conn.close.assert_called_once()
 
 
 def test_execute_query_with_params():
@@ -84,11 +88,15 @@ def test_postgres_client_execute_query_no_fetch():
     with patch.object(PostgresClient, "get_conn") as mock_get_conn:
         mock_conn = MagicMock()
         mock_get_conn.return_value.__enter__.return_value = mock_conn
+        mock_cur = MagicMock()
+        mock_cur.rowcount = 1
+        mock_conn.execute.return_value = mock_cur
         results = client.execute_query(
             "UPDATE test SET name='test'", fetch=False)
-        assert results is None
+        assert results == 1
         mock_conn.execute.assert_called_once_with(
             "UPDATE test SET name='test'", None)
+        mock_conn.commit.assert_called_once()
 
 
 def test_postgres_client_execute_query_error():

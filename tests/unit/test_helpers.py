@@ -1,12 +1,9 @@
 """Tests for src/cli/helpers.py — targeting 100% coverage."""
-import datetime
 import logging
 import os
 import types
-from io import StringIO
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.cli.helpers import (
     build_clients,
@@ -58,7 +55,7 @@ class TestSetupResultsDir:
     def test_without_base_creates_timestamped(self, tmp_path):
         with patch("src.cli.helpers.os.makedirs") as mock_mkdirs, \
              patch("src.cli.helpers.os.path.join", return_value=str(tmp_path / "RESULTS/ts")):
-            result = setup_results_dir()
+            setup_results_dir()
             mock_mkdirs.assert_called_once()
 
     def test_timestamp_format(self):

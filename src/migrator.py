@@ -8,7 +8,6 @@ to progressively setup, monitor, and finalize replication.
 Its logic is decomposed into specific thematic mixins located in `src.migrator_components`.
 """
 
-import logging
 
 from src.migrator_components.schema import SchemaMigrationMixin
 from src.migrator_components.replication import CoreReplicationMixin
@@ -16,7 +15,6 @@ from src.migrator_components.monitoring import MonitoringMixin
 from src.migrator_components.data_sync import DataSyncMixin
 
 # Exported for backward compatibility with existing tests that patch these symbols
-from src.db import PostgresClient, execute_shell_command, resolve_target_schemas, pgpass_context
 
 
 class Migrator(SchemaMigrationMixin, CoreReplicationMixin, MonitoringMixin, DataSyncMixin):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg_logical_migrator"
-version = "1.4.0"
+version = "1.4.1"
 authors = [
   { name="Jean-Marie Renouard", email="jmrenouard@gmail.com" },
 ]
@@ -33,4 +33,4 @@ pg_migrator = "pg_migrator:main"
 
 [tool.setuptools]
 py-modules = ["pg_migrator"]
-packages = ["src", "src.cli"]
+packages = ["src", "src.cli", "src.migrator_components"]

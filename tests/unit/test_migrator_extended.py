@@ -6,10 +6,8 @@ Missing lines (original analysis):
   451-453, 457-512, 521-553, 613-614, 643, 694-697, 703-706, 717,
   783-785, 802
 """
-import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.migrator import Migrator
 from src.config import Config
@@ -63,7 +61,8 @@ class TestStep4aDropDest:
             return client
 
         with patch("src.db.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         assert ok is True
 
@@ -79,7 +78,8 @@ class TestStep4aDropDest:
             return client
 
         with patch("src.db.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         # Admin drop also fails → step returns False (correct behaviour)
         assert ok is False
@@ -127,7 +127,8 @@ class TestStep4aDropDest:
             return client
 
         with patch("src.db.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         # Subscription cleanup ran, then continued to shell command
         assert ok is True
@@ -161,7 +162,8 @@ class TestStep4aDropDest:
             return client
 
         with patch("src.db.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         assert ok is True
 
@@ -171,7 +173,8 @@ class TestStep4aDropDest:
         m = Migrator(cfg)
 
         with patch("src.db.PostgresClient"), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=False)
         assert ok is True
         assert any("public" in c or "sales" in c for c in cmds)
@@ -185,7 +188,8 @@ class TestStep4bMigrateSchemaPostData:
     def test_failure(self):
         cfg = _make_config()
         m = Migrator(cfg)
-        with patch("src.db.execute_shell_command", return_value=(False, "error")):
+        with patch("src.db.pipe_shell_commands", return_value=(False, "error")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4b_migrate_schema_post_data()
         assert ok is False
         assert "POST-DATA" in msg.upper()
@@ -193,7 +197,8 @@ class TestStep4bMigrateSchemaPostData:
     def test_with_schema_filter(self):
         cfg = _make_config(schemas=["myschema"])
         m = Migrator(cfg)
-        with patch("src.db.execute_shell_command", return_value=(True, "")):
+        with patch("src.db.pipe_shell_commands", return_value=(True, "")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4b_migrate_schema_post_data()
         assert ok is True
 

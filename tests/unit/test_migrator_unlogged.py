@@ -58,7 +58,7 @@ def test_sync_unlogged_tables_success():
         
         copy_out_ctx = MagicMock()
         mock_s_cur.copy.return_value = copy_out_ctx
-        copy_out_iter = MagicMock()
+        MagicMock()
         copy_out_ctx.__enter__.return_value = ["data1", "data2"]
 
         mock_d_cur = MagicMock()

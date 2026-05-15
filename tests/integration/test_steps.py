@@ -68,19 +68,16 @@ def test_step07_wait_for_sync(migrator):
     assert success is True
 
 
-def test_step08_cleanup(migrator, source_client, dest_client):
+def test_step08_terminate(migrator, source_client, dest_client):
     """Step 10: Terminate replication."""
     success, msg, *_ = migrator.step10_terminate_replication()
     assert success is True
 
-    # Verify removal
+    # Verify disabled
     sub_name = migrator.replication_cfg['subscription_name']
-    pub_name = migrator.replication_cfg['publication_name']
-    res_sub = dest_client.execute_query(f"SELECT subname FROM pg_subscription WHERE subname = '{sub_name}';")
-    assert len(res_sub) == 0
-    res_pub = source_client.execute_query(f"SELECT pubname FROM pg_publication WHERE pubname = '{pub_name}';")
-    assert len(res_pub) == 0
-
+    res_sub = dest_client.execute_query(f"SELECT subenabled FROM pg_subscription WHERE subname = '{sub_name}';")
+    assert len(res_sub) == 1
+    assert res_sub[0]['subenabled'] is False
 
 def test_step09_schema_post_data(migrator):
     """Step 4b: Schema copy post-data."""
@@ -115,3 +112,17 @@ def test_step14_row_counts(db_validator):
     success, summary, cmds, outs, report = db_validator.compare_row_counts()
     assert success is True
     assert isinstance(report, list)
+
+
+def test_step15_cleanup(migrator, source_client, dest_client):
+    """Step 16: Cleanup replication."""
+    success, msg, *_ = migrator.step16_cleanup_replication()
+    assert success is True
+
+    # Verify removal
+    sub_name = migrator.replication_cfg['subscription_name']
+    pub_name = migrator.replication_cfg['publication_name']
+    res_sub = dest_client.execute_query(f"SELECT subname FROM pg_subscription WHERE subname = '{sub_name}';")
+    assert len(res_sub) == 0
+    res_pub = source_client.execute_query(f"SELECT pubname FROM pg_publication WHERE pubname = '{pub_name}';")
+    assert len(res_pub) == 0

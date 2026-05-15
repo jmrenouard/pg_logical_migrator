@@ -1,6 +1,4 @@
-import os
 import configparser
-import pytest
 from src.config import Config
 
 def test_config_update_and_save(tmp_path):

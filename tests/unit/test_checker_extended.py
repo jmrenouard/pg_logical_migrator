@@ -5,7 +5,6 @@ Missing lines (original analysis):
 """
 from unittest.mock import MagicMock
 
-import pytest
 
 from src.checker import DBChecker
 
@@ -101,9 +100,9 @@ class TestCheckReplicationParamsApply:
         source = self._make_client(params)
         dest = self._make_client([])
         checker = DBChecker(source, dest)
-        result = checker.check_replication_params(apply_source=True, apply_dest=False)
+        checker.check_replication_params(apply_source=True, apply_dest=False)
         source.execute_query.assert_any_call(
-            "ALTER SYSTEM SET wal_level = 'logical';")
+            'ALTER SYSTEM SET "wal_level" = \'logical\';')
 
     def test_apply_fails_gracefully(self):
         """Lines 213-215: apply raises exception — error logged."""
@@ -129,9 +128,9 @@ class TestCheckReplicationParamsApply:
         source = self._make_client(params)
         dest = self._make_client([])
         checker = DBChecker(source, dest)
-        result = checker.check_replication_params(apply_source=True)
+        checker.check_replication_params(apply_source=True)
         source.execute_query.assert_any_call(
-            "ALTER SYSTEM SET max_replication_slots = '10';")
+            'ALTER SYSTEM SET "max_replication_slots" = \'10\';')
 
     def test_apply_invalid_int_param(self):
         """Lines 200-203: non-integer setting triggers apply."""
@@ -142,9 +141,9 @@ class TestCheckReplicationParamsApply:
         source = self._make_client(params)
         dest = self._make_client([])
         checker = DBChecker(source, dest)
-        result = checker.check_replication_params(apply_source=True)
+        checker.check_replication_params(apply_source=True)
         source.execute_query.assert_any_call(
-            "ALTER SYSTEM SET max_replication_slots = '10';")
+            'ALTER SYSTEM SET "max_replication_slots" = \'10\';')
 
     def test_pending_restart_sets_status(self):
         """Line 172: pending_restart => PENDING RESTART status."""

@@ -1,23 +1,25 @@
 import logging
 import time
-import re
 from src import db
+from src.db import sanitize_identifier
 
 class SchemaMigrationMixin:
     def drop_recreate_dest_db(self):
         """Pre-cleanup target database by terminating active logical replication slots,
         subscriptions, and recreating the database."""
-        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
-        src_user = self.source_conn.get('user', 'postgres')
-        src_host = self.source_conn.get('host', 'localhost')
-        src_port = self.source_conn.get('port', '5432')
-        src_pass = self.source_conn.get('password', '')
+        src_db = self.source_conn['database']
+        src_user = self.source_conn['user']
+        src_host = self.source_conn['host']
+        src_port = self.source_conn['port']
+        src_pass = self.source_conn['password']
 
-        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
-        dst_user = self.dest_conn.get('user', 'postgres')
-        dst_host = self.dest_conn.get('host', 'localhost')
-        dst_port = self.dest_conn.get('port', '5432')
-        dst_pass = self.dest_conn.get('password', '')
+        dst_db = self.dest_conn['database']
+        dst_user = self.dest_conn['user']
+        dst_host = self.dest_conn['host']
+        dst_port = self.dest_conn['port']
+        dst_pass = self.dest_conn['password']
+
+        dst_db_ident = sanitize_identifier(dst_db)
 
         logging.info(f"[DEST] Targeting maintenance database to drop and recreate '{dst_db}'...")
 
@@ -35,9 +37,10 @@ class SchemaMigrationMixin:
                     subs = tgt_conn.execute("SELECT subname FROM pg_subscription").fetchall()
                     for row in subs:
                         sub = row['subname']
-                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" DISABLE')
-                        tgt_conn.execute(f'ALTER SUBSCRIPTION "{sub}" SET (slot_name = NONE)')
-                        tgt_conn.execute(f'DROP SUBSCRIPTION "{sub}"')
+                        sub_ident = sanitize_identifier(sub)
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION {sub_ident} DISABLE')
+                        tgt_conn.execute(f'ALTER SUBSCRIPTION {sub_ident} SET (slot_name = NONE)')
+                        tgt_conn.execute(f'DROP SUBSCRIPTION {sub_ident}')
                 except Exception as e:
                     logging.warning(f"[DEST] Error dropping subscriptions during pre-cleanup: {e}")
 
@@ -50,10 +53,10 @@ class SchemaMigrationMixin:
                         slot = row['slot_name']
                         pid = row['active_pid']
                         if pid:
-                            tgt_conn.execute(f"SELECT pg_terminate_backend({pid})")
+                            tgt_conn.execute("SELECT pg_terminate_backend(%s)", (pid,))
                             time.sleep(1)
                         try:
-                            tgt_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                            tgt_conn.execute("SELECT pg_drop_replication_slot(%s)", (slot,))
                         except Exception as e:
                             logging.warning(f"[DEST] Could not drop slot {slot}: {e}")
                 except Exception as e:
@@ -78,8 +81,8 @@ class SchemaMigrationMixin:
                         slot = row['slot_name']
                         pid = row['active_pid']
                         if pid:
-                            src_conn.execute(f"SELECT pg_terminate_backend({pid})")
-                        src_conn.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+                            src_conn.execute("SELECT pg_terminate_backend(%s)", (pid,))
+                        src_conn.execute("SELECT pg_drop_replication_slot(%s)", (slot,))
                         logging.info(f"[SOURCE] Dropped orphaned replication slot '{slot}' on source database.")
                 except Exception as e:
                     logging.warning(f"[SOURCE] Error dropping replication slot on source: {e}")
@@ -92,15 +95,15 @@ class SchemaMigrationMixin:
             with admin_client.get_conn(autocommit=True) as conn:
                 # Attempt DROP DATABASE WITH (FORCE) compatible with PG13+
                 try:
-                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}" WITH (FORCE);')
+                    conn.execute(f'DROP DATABASE IF EXISTS {dst_db_ident} WITH (FORCE);')
                 except Exception:
                     # Fallback for PostgreSQL < 13
                     conn.execute(
-                        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        f"WHERE datname = '{dst_db}' AND pid <> pg_backend_pid();")
-                    conn.execute(f'DROP DATABASE IF EXISTS "{dst_db}";')
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = %s AND pid <> pg_backend_pid();", (dst_db,))
+                    conn.execute(f'DROP DATABASE IF EXISTS {dst_db_ident};')
 
-                conn.execute(f'CREATE DATABASE "{dst_db}";')
+                conn.execute(f'CREATE DATABASE {dst_db_ident};')
             logging.info(f"[DEST] Successfully dropped and recreated database '{dst_db}'.")
             executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
             out_results.append("OK")
@@ -110,20 +113,19 @@ class SchemaMigrationMixin:
             executed_sqls.append(f"DROP DATABASE IF EXISTS {dst_db} & CREATE DATABASE {dst_db}")
             out_results.append(str(e))
             return False, f"Failed to drop/recreate destination database: {e}", executed_sqls, out_results
+
     def step4a_migrate_schema_pre_data(self, drop_dest=False):
         """Step 4a: Copy schema PRE-DATA using pg_dump -s --section=pre-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema PRE-DATA migration...")
-        src_db = self.source_conn.get('database', self.config.override_db or 'postgres')
-        src_user = self.source_conn.get('user', 'postgres')
-        src_host = self.source_conn.get('host', 'localhost')
-        src_port = self.source_conn.get('port', '5432')
-        src_pass = self.source_conn.get('password', '')
+        src_db = self.source_conn['database']
+        src_user = self.source_conn['user']
+        src_host = self.source_conn['host']
+        src_port = self.source_conn['port']
 
-        dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
-        dst_user = self.dest_conn.get('user', 'postgres')
-        dst_host = self.dest_conn.get('host', 'localhost')
-        dst_port = self.dest_conn.get('port', '5432')
-        dst_pass = self.dest_conn.get('password', '')
+        dst_db = self.dest_conn['database']
+        dst_user = self.dest_conn['user']
+        dst_host = self.dest_conn['host']
+        dst_port = self.dest_conn['port']
 
         if drop_dest:
             success, msg, executed, outs = self.drop_recreate_dest_db()
@@ -132,24 +134,29 @@ class SchemaMigrationMixin:
 
         source_client = db.PostgresClient(self.config.get_source_conn(), label="SOURCE")
         schemas = db.resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
-        schema_args = ""
+        schema_args = []
         if schemas != ['all']:
-            schema_args = " ".join([f"--schema='{s}'" for s in schemas])
+            for s in schemas:
+                schema_args.extend([f"--schema={s}"])
 
-        dump_cmd = (f"pg_dump -h {src_host} -p {src_port} -U {src_user} "
-                    f"-s --section=pre-data {schema_args} {src_db}")
-        psql_cmd = (f"psql -v ON_ERROR_STOP=0 --echo-all "
-                    f"-h {dst_host} -p {dst_port} -U {dst_user} -d {dst_db}")
-        cmd = f"{dump_cmd} | {psql_cmd}"
+        dump_args = [
+            "pg_dump", "-h", src_host, "-p", src_port, "-U", src_user,
+            "-s", "--section=pre-data",
+        ] + schema_args + [src_db]
+
+        psql_args = [
+            "psql", "-v", "ON_ERROR_STOP=0", "--echo-all",
+            "-h", dst_host, "-p", dst_port, "-U", dst_user, "-d", dst_db,
+        ]
 
         # Sanitised version for logs (no passwords)
         dump_cmd_log = (f"[SOURCE] pg_dump -h {src_host} -p {src_port} -U {src_user} "
-                        f"-s --section=pre-data {schema_args} {src_db}")
+                        f"-s --section=pre-data {' '.join(schema_args)} {src_db}")
         psql_cmd_log = f"[DEST] psql -v ON_ERROR_STOP=0 --echo-all -h {dst_host} -p {dst_port} -U {dst_user} -d {dst_db}"
         cmd_log = f"[BOTH] {dump_cmd_log} | {psql_cmd_log}"
 
         with db.pgpass_context(self.source_conn, self.dest_conn):
-            success, out = db.execute_shell_command(cmd, log_cmd=cmd_log)
+            success, out = db.pipe_shell_commands(dump_args, psql_args, log_cmd=cmd_log)
             
         if not success:
             err_msg = out.strip() if out else "Unknown error"
@@ -161,6 +168,7 @@ class SchemaMigrationMixin:
                 cmd_log], [err_msg]
         return True, "Schema PRE-DATA successfully migrated.", [
             cmd_log], [out or "Success"]
+
     def step4b_migrate_schema_post_data(self):
         """Step 4b: Copy schema POST-DATA using pg_dump -s --section=post-data | psql (local commands)."""
         logging.info("[BOTH] Starting schema POST-DATA migration...")
@@ -168,34 +176,37 @@ class SchemaMigrationMixin:
         src_user = self.source_conn.get('user', 'postgres')
         src_host = self.source_conn.get('host', 'localhost')
         src_port = self.source_conn.get('port', '5432')
-        src_pass = self.source_conn.get('password', '')
 
         dst_db = self.dest_conn.get('database', self.config.override_db or 'postgres')
         dst_user = self.dest_conn.get('user', 'postgres')
         dst_host = self.dest_conn.get('host', 'localhost')
         dst_port = self.dest_conn.get('port', '5432')
-        dst_pass = self.dest_conn.get('password', '')
 
         source_client = db.PostgresClient(self.config.get_source_conn(), label="SOURCE")
         schemas = db.resolve_target_schemas(source_client, self.config, getattr(self.config, 'override_db', None))
-        schema_args = ""
+        schema_args = []
         if schemas != ['all']:
-            schema_args = " ".join([f"--schema='{s}'" for s in schemas])
+            for s in schemas:
+                schema_args.extend([f"--schema={s}"])
 
-        dump_cmd = (f"pg_dump -h {src_host} -p {src_port} -U {src_user} "
-                    f"-s --section=post-data {schema_args} {src_db}")
-        psql_cmd = (f"psql -v ON_ERROR_STOP=0 --echo-all "
-                    f"-h {dst_host} -p {dst_port} -U {dst_user} -d {dst_db}")
-        cmd = f"{dump_cmd} | {psql_cmd}"
+        dump_args = [
+            "pg_dump", "-h", src_host, "-p", src_port, "-U", src_user,
+            "-s", "--section=post-data",
+        ] + schema_args + [src_db]
+
+        psql_args = [
+            "psql", "-v", "ON_ERROR_STOP=0", "--echo-all",
+            "-h", dst_host, "-p", dst_port, "-U", dst_user, "-d", dst_db,
+        ]
 
         # Sanitised version for logs (no passwords)
         dump_cmd_log = (f"[SOURCE] pg_dump -h {src_host} -p {src_port} -U {src_user} "
-                        f"-s --section=post-data {schema_args} {src_db}")
+                        f"-s --section=post-data {' '.join(schema_args)} {src_db}")
         psql_cmd_log = f"[DEST] psql -v ON_ERROR_STOP=0 --echo-all -h {dst_host} -p {dst_port} -U {dst_user} -d {dst_db}"
         cmd_log = f"[BOTH] {dump_cmd_log} | {psql_cmd_log}"
 
         with db.pgpass_context(self.source_conn, self.dest_conn):
-            success, out = db.execute_shell_command(cmd, log_cmd=cmd_log)
+            success, out = db.pipe_shell_commands(dump_args, psql_args, log_cmd=cmd_log)
             
         if not success:
             err_msg = out.strip() if out else "Unknown error"

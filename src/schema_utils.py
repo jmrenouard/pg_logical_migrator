@@ -17,7 +17,10 @@ Usage:
 from src.db import resolve_target_schemas
 
 
+from typing import Any
+
 class SchemaFilterMixin:
+    config: Any
     """Mixin providing a reusable ``_get_schema_filter()`` method.
 
     Any class that inherits from this mixin gains the ability to generate

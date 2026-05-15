@@ -9,11 +9,9 @@ Strategy:
 
 Install requirement: pyyaml (already in venv)
 """
-import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -71,8 +69,8 @@ class TestWorkflowYamlValidity:
         )
         # Only fail on hard errors, ignore trailing-spaces (cosmetic)
         blocking_errors = [
-            l for l in result.stdout.splitlines()
-            if "error" in l.lower() and "trailing-spaces" not in l
+            line for line in result.stdout.splitlines()
+            if "error" in line.lower() and "trailing-spaces" not in line
         ]
         assert not blocking_errors, (
             f"yamllint errors in {filename}:\n" + "\n".join(blocking_errors))
@@ -135,15 +133,14 @@ class TestPythonPackageWorkflow:
         branches = pr.get("branches", [])
         assert "main" in branches
 
-    def test_test_job_installs_flake8_and_pytest(self):
-        """Test job must install flake8 and pytest."""
+    def test_test_job_installs_dev_requirements(self):
+        """Test job must install dev requirements."""
         steps = self.jobs["test"]["steps"]
         install_step = next(
             (s for s in steps if "Install" in s.get("name", "")), None)
         assert install_step is not None
         run_cmd = install_step.get("run", "")
-        assert "pytest" in run_cmd
-        assert "pytest-cov" in run_cmd
+        assert "requirements-dev.txt" in run_cmd
 
     def test_test_job_runs_unit_tests(self):
         """Test job must execute pytest against tests/unit."""
@@ -539,8 +536,8 @@ class TestPackagingArtifactContracts:
     def test_requirements_parseable(self):
         """requirements.txt must be readable (no BOM, no encoding errors)."""
         content = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
-        lines = [l.strip() for l in content.splitlines() if l.strip()
-                 and not l.strip().startswith("#")]
+        lines = [line.strip() for line in content.splitlines() if line.strip()
+                 and not line.strip().startswith("#")]
         assert len(lines) > 0, "requirements.txt is empty"
 
     def test_dockerfile_uses_python_base(self):
@@ -604,7 +601,7 @@ class TestMakefileTargets:
                 else:
                     break
         # Makefile uses $(PYTEST) variable, not the literal word 'pytest'
-        assert any("PYTEST" in l or "pytest" in l for l in target_lines), \
+        assert any("PYTEST" in line or "pytest" in line for line in target_lines), \
             "test-unit target must call PYTEST or pytest"
 
     def test_coverage_target_or_flag_present(self):

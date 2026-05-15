@@ -1,5 +1,10 @@
 import configparser
 import os
+import re
+import hashlib
+import logging
+
+from src.db import PostgresClient
 
 
 class Config:
@@ -31,6 +36,13 @@ class Config:
         
         if db_name:
             base['database'] = db_name
+        else:
+            base['database'] = base.get('database', 'postgres')
+            
+        base['user'] = base.get('user', 'postgres')
+        base['password'] = base.get('password', '')
+        base['host'] = base.get('host', 'localhost')
+        base['port'] = base.get('port', '5432')
             
         return base
 
@@ -50,6 +62,13 @@ class Config:
 
         if db_name:
             base['database'] = db_name
+        else:
+            base['database'] = base.get('database', 'postgres')
+
+        base['user'] = base.get('user', 'postgres')
+        base['password'] = base.get('password', '')
+        base['host'] = base.get('host', 'localhost')
+        base['port'] = base.get('port', '5432')
 
         return base
 
@@ -63,7 +82,7 @@ class Config:
             s = self.get_dest_dict(db_name)
         else:
             if section not in self.config:
-                return f"postgresql://user:pass@localhost:5432/postgres"
+                return "postgresql://user:pass@localhost:5432/postgres"
             s = dict(self.config[section])
             
         db = db_name if db_name else s.get('database', 'postgres')
@@ -89,7 +108,6 @@ class Config:
 
         if dbs_str and dbs_str.lower() in ('*', 'all'):
             try:
-                from src.db import PostgresClient
                 # Temporarily override dbname to postgres to run the query
                 conn_uri = self.get_source_conn(db_name='postgres')
                 client = PostgresClient(conn_uri)
@@ -99,7 +117,6 @@ class Config:
                     return [r['datname'] for r in res]
                 return []
             except Exception as e:
-                import logging
                 logging.error(f"Could not discover databases dynamically: {e}")
                 return []
         
@@ -115,9 +132,6 @@ class Config:
         return []
 
     def get_replication(self, db_name=None):
-        import re
-        import hashlib
-        
         if 'replication' not in self.config:
             rep = {}
         else:

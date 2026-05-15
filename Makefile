@@ -33,6 +33,7 @@ venv:
 install: venv
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
+	$(PIP) install -r requirements-dev.txt
 	$(PIP) install pyinstaller
 
 PYINSTALLER_OPTS = --collect-all rich \

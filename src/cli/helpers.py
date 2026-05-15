@@ -4,15 +4,17 @@ import os
 import sys
 import textwrap
 
+from typing import Optional, Any
+
 from src.config import Config
 from src.db import PostgresClient
 
 
-def setup_logging(level: str = "INFO", log_file: str = None):
+def setup_logging(level: str = "INFO", log_file: Optional[str] = None):
     """Configure root logger with console + optional file handler."""
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
-    handlers = []
+    handlers: list[logging.Handler] = []
     handlers.append(logging.StreamHandler(sys.stderr))
 
         
@@ -31,7 +33,7 @@ def setup_logging(level: str = "INFO", log_file: str = None):
     )
 
 
-def setup_results_dir(base: str = None) -> str:
+def setup_results_dir(base: Optional[str] = None) -> str:
     """Create and return a timestamped results directory."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     if base:

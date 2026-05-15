@@ -50,7 +50,7 @@ def test_step5_setup_source():
         assert success is True
         assert "test_pub" in msg
         mock_instance.execute_script.assert_any_call(
-            "CREATE PUBLICATION test_pub FOR ALL TABLES;")
+            'CREATE PUBLICATION "test_pub" FOR ALL TABLES;')
 
 
 def test_step6_setup_destination():
@@ -79,7 +79,7 @@ def test_step6_setup_destination():
         assert "test_sub" in msg
         # Check if the subscription creation call was made
         calls = [c[0][0] for c in mock_instance.execute_script.call_args_list]
-        assert any("CREATE SUBSCRIPTION test_sub" in call for call in calls)
+        assert any('CREATE SUBSCRIPTION "test_sub"' in call for call in calls)
 
 
 def test_step4a_migrate_schema_pre_data():
@@ -97,8 +97,10 @@ def test_step4a_migrate_schema_pre_data():
 
     m = Migrator(mock_config)
 
-    with patch("src.db.execute_shell_command") as mock_exec, patch("src.db.PostgresClient"):
-        mock_exec.return_value = (True, "mock migrated")
+    with patch("src.db.pipe_shell_commands") as mock_pipe, \
+         patch("src.db.PostgresClient"), \
+         patch("src.db.pgpass_context"):
+        mock_pipe.return_value = (True, "mock migrated")
 
         success, msg, cmds, outs = m.step4a_migrate_schema_pre_data()
 
@@ -122,8 +124,9 @@ def test_step4b_migrate_schema_post_data():
 
     m = Migrator(mock_config)
 
-    with patch("src.db.execute_shell_command") as mock_exec:
-        mock_exec.return_value = (True, "mock migrated")
+    with patch("src.db.pipe_shell_commands") as mock_pipe, \
+         patch("src.db.pgpass_context"):
+        mock_pipe.return_value = (True, "mock migrated")
 
         success, msg, cmds, outs = m.step4b_migrate_schema_post_data()
 
@@ -224,7 +227,7 @@ def test_migrator_setup_reverse_replication():
 
         assert success is True
         # Verify DEST (Publisher) commands
-        assert any("CREATE PUBLICATION pub_rev" in str(c) for c in cmds)
+        assert any('CREATE PUBLICATION "pub_rev"' in str(c) for c in cmds)
         # Verify SOURCE (Subscriber) commands
-        assert any("CREATE SUBSCRIPTION sub_rev" in str(c) for c in cmds)
+        assert any('CREATE SUBSCRIPTION "sub_rev"' in str(c) for c in cmds)
         assert any("host=172.17.0.1" in str(c) for c in cmds)

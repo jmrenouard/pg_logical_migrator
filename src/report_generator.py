@@ -153,8 +153,16 @@ class ReportGenerator:
                     <strong>{{ steps|length }}</strong>
                 </div>
                 <div class="summary-item">
+                    <span>Passed</span>
+                    <strong style="color: var(--success);">{{ ok_count }}</strong>
+                </div>
+                <div class="summary-item">
+                    <span>Failed</span>
+                    <strong style="color: var(--error);">{{ fail_count }}</strong>
+                </div>
+                <div class="summary-item">
                     <span>Final Status</span>
-                    <strong><span class="badge badge-ok">SUCCESS</span></strong>
+                    <strong><span class="badge badge-{{ 'fail' if has_failures else 'ok' }}">{{ final_status }}</span></strong>
                 </div>
             </div>
         </div>
@@ -220,10 +228,19 @@ class ReportGenerator:
 </html>
 """
         template = Template(template_str)
+        ok_count = sum(1 for s in self.steps if s['status'] == 'OK')
+        fail_count = sum(1 for s in self.steps if s['status'] in ('FAIL', 'ERROR'))
+        has_failures = fail_count > 0
+        final_status = "FAILED" if has_failures else "SUCCESS"
+
         html_content = template.render(
             project_name=self.project_name,
             start_time=self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            steps=self.steps
+            steps=self.steps,
+            ok_count=ok_count,
+            fail_count=fail_count,
+            has_failures=has_failures,
+            final_status=final_status,
         )
         # Ensure the directory exists
         os.makedirs(

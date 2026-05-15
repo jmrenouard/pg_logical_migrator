@@ -1,6 +1,4 @@
 import logging
-import time
-import re
 from src import db
 
 class DataSyncMixin:

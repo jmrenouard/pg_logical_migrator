@@ -8,12 +8,65 @@ shell command execution (``pg_dump``/``psql``) and schema resolution.
 Module-level flag ``VERBOSE`` controls diagnostic output (toggled by CLI).
 """
 
-import psycopg
-import sys
-from contextlib import contextmanager
+import logging
 import os
-import stat
+import re
+import shlex
+import subprocess
+import sys
 import tempfile
+from contextlib import contextmanager
+from typing import Optional
+
+import psycopg
+import psycopg.rows
+
+
+# ---------------------------------------------------------------------------
+#  Security utilities
+# ---------------------------------------------------------------------------
+
+# Whitelist pattern for PostgreSQL identifiers (schemas, tables, roles,
+# publication/subscription names, etc.).  Rejects anything that contains
+# characters that could be used for SQL injection.
+_SAFE_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_$]*$')
+
+
+def sanitize_identifier(name: str) -> str:
+    """Return *name* quoted as a SQL identifier if it is safe.
+
+    Raises ``ValueError`` if *name* contains characters outside the
+    PostgreSQL identifier character set (letters, digits, underscore, $).
+    This is a defence-in-depth measure for DDL statements that cannot use
+    parameterised queries (e.g. ``CREATE PUBLICATION``, ``ALTER SUBSCRIPTION``).
+    """
+    if not name or not _SAFE_IDENT_RE.match(name):
+        raise ValueError(
+            f"Unsafe SQL identifier rejected: {name!r}. "
+            "Only letters, digits, underscores and $ are allowed."
+        )
+    return f'"{name}"'
+
+
+def redact_conninfo(conninfo: str) -> str:
+    """Remove passwords from a libpq connection string or URI.
+
+    Handles both key=value format and postgresql:// URIs.
+    """
+    # key=value format: password=secret  →  password=***
+    redacted = re.sub(
+        r'(password\s*=\s*)(\S+)',
+        r'\1***',
+        conninfo,
+        flags=re.IGNORECASE,
+    )
+    # URI format: postgresql://user:secret@host  →  postgresql://user:***@host
+    redacted = re.sub(
+        r'(://[^:]+:)([^@]+)(@)',
+        r'\1***\3',
+        redacted,
+    )
+    return redacted
 
 # Module-level verbose flag — toggled by CLI --verbose / -v
 VERBOSE = False
@@ -36,18 +89,44 @@ class PostgresClient:
     def __init__(self, conn_uri, label="DB"):
         self.conn_uri = conn_uri
         self.label = label
+        self._conn_txn = None
+        self._conn_auto = None
+
+    def close(self):
+        """Close any cached connections."""
+        if self._conn_txn and not self._conn_txn.closed:
+            self._conn_txn.close()
+        if self._conn_auto and not self._conn_auto.closed:
+            self._conn_auto.close()
+
+    def _create_conn(self, autocommit: bool) -> psycopg.Connection:
+        return psycopg.connect(
+            self.conn_uri,
+            row_factory=psycopg.rows.dict_row,  # type: ignore
+            autocommit=autocommit,
+            connect_timeout=10,
+            options="-c statement_timeout=300000"
+        )
 
     @contextmanager
-    def get_conn(self, autocommit=False) -> psycopg.Connection:
-        import psycopg.rows
-        conn = psycopg.connect(
-            self.conn_uri,
-            row_factory=psycopg.rows.dict_row,
-            autocommit=autocommit)
-        try:
-            yield conn
-        finally:
-            conn.close()
+    def get_conn(self, autocommit=False):
+        if autocommit:
+            if self._conn_auto is None or self._conn_auto.closed:
+                self._conn_auto = self._create_conn(autocommit=True)
+            conn = self._conn_auto
+            try:
+                yield conn
+            finally:
+                pass  # Keep autocommit connection open for reuse
+        else:
+            if self._conn_txn is None or self._conn_txn.closed:
+                self._conn_txn = self._create_conn(autocommit=False)
+            conn = self._conn_txn
+            try:
+                yield conn
+            finally:
+                if not conn.closed:
+                    conn.rollback()  # Clean up any uncommitted transaction state
 
     def execute_query(self, query, params=None, fetch=True, autocommit=False):
         _verbose_print(f"{self.label}:SQL", query.strip())
@@ -61,8 +140,11 @@ class PostgresClient:
                     _verbose_print(f"{self.label}:RESULT", result if len(
                         result) <= 20 else f"{len(result)} rows returned")
                     return result
+                if not autocommit:
+                    conn.commit()
                 _verbose_print(f"{self.label}:RESULT",
                                "(no fetch – statement executed)")
+                return getattr(cur, 'rowcount', None)
         except Exception as e:
             _verbose_print(f"{self.label}:ERROR", str(e))
             raise
@@ -89,6 +171,7 @@ def pgpass_context(source_conn, dest_conn=None):
     containing passwords for source and (optionally) destination.
     """
     fd, path = tempfile.mkstemp(prefix="pg_logical_migrator_")
+    os.fchmod(fd, 0o600)
     try:
         with os.fdopen(fd, 'w') as f:
             for conn in [c for c in (source_conn, dest_conn) if c]:
@@ -123,17 +206,25 @@ def pretty_size(bytes_size):
     return f"{bytes_size:3.1f} PB"
 
 
-def execute_shell_command(command, log_cmd=None):
-    import subprocess
-    import logging
-    display_cmd = log_cmd or command
-    prefix = "" if display_cmd.strip().startswith("[") else "[LOCAL] "
+def execute_shell_command(command, log_cmd: Optional[str] = None):
+    """Execute a shell command safely with shell=False.
+
+    *command* may be a list of arguments (preferred) or a string.
+    If a string is passed it is split with :func:`shlex.split`.
+    """
+    if isinstance(command, str):
+        cmd_list = shlex.split(command)
+    else:
+        cmd_list = list(command)
+
+    display_cmd = log_cmd or (command if isinstance(command, str) else " ".join(command))
+    prefix = "" if str(display_cmd).strip().startswith("[") else "[LOCAL] "
     _verbose_print("CMD", display_cmd)
     try:
         logging.info(f"{prefix}Executing: {display_cmd}")
         result = subprocess.run(
-            command,
-            shell=True,
+            cmd_list,
+            shell=False,
             check=True,
             capture_output=True,
             text=True)
@@ -144,6 +235,46 @@ def execute_shell_command(command, log_cmd=None):
         _verbose_print("ERROR", e.stderr.strip() if e.stderr else str(e))
         logging.error(f"{prefix}Command failed: {e.stderr}")
         return False, e.stderr
+
+
+def pipe_shell_commands(producer_args: list, consumer_args: list,
+                        log_cmd: Optional[str] = None):
+    """Run *producer_args* | *consumer_args* safely without ``shell=True``.
+
+    Both arguments must be lists (no string interpolation).
+    Returns ``(success: bool, combined_output: str)``.
+    """
+    display_cmd = log_cmd or f"{' '.join(producer_args)} | {' '.join(consumer_args)}"
+    prefix = "" if display_cmd.strip().startswith("[") else "[LOCAL] "
+    _verbose_print("PIPE", display_cmd)
+    try:
+        logging.info(f"{prefix}Executing: {display_cmd}")
+        p1 = subprocess.Popen(producer_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        p2 = subprocess.Popen(consumer_args, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if p1.stdout:
+            p1.stdout.close()  # Allow p1 to receive SIGPIPE if p2 exits
+
+        stdout, stderr = p2.communicate()
+        p1.wait()
+
+        # pg_dump|psql: psql may report non-fatal errors (e.g. "already exists")
+        # so we check both exit codes
+        if p1.returncode != 0:
+            p1_stderr = p1.stderr.read() if p1.stderr else ""
+            _verbose_print("ERROR", f"Producer failed (rc={p1.returncode}): {p1_stderr}")
+            logging.error(f"{prefix}Producer failed: {p1_stderr}")
+            return False, p1_stderr
+        if p2.returncode != 0:
+            _verbose_print("ERROR", stderr.strip() if stderr else "(empty)")
+            logging.error(f"{prefix}Consumer failed: {stderr}")
+            return False, stderr
+
+        _verbose_print("STDOUT", stdout.strip() if stdout.strip() else "(empty)")
+        return True, stdout
+    except Exception as e:
+        _verbose_print("ERROR", str(e))
+        logging.error(f"{prefix}Pipe command failed: {e}")
+        return False, str(e)
 
 
 def resolve_target_schemas(client, config, db_name=None):
@@ -173,6 +304,5 @@ def resolve_target_schemas(client, config, db_name=None):
                 return resolved
         return ['all']
     except Exception as e:
-        import logging
         logging.error(f"Failed to resolve schemas: {e}")
         return ['all']

@@ -94,12 +94,12 @@ def test_setup_reverse_replication_allowed_when_no_forward_sub():
         # Verify it attempted to create reverse publication on dest
         calls_dest = [c[0][0]
                       for c in mock_dest_instance.execute_script.call_args_list]
-        assert any("CREATE PUBLICATION pub_rev" in call for call in calls_dest)
+        assert any('CREATE PUBLICATION "pub_rev"' in call for call in calls_dest)
 
         # Verify it attempted to create reverse subscription on source
         calls_src = [c[0][0]
                      for c in mock_source_instance.execute_script.call_args_list]
-        assert any("CREATE SUBSCRIPTION sub_rev" in call for call in calls_src)
+        assert any('CREATE SUBSCRIPTION "sub_rev"' in call for call in calls_src)
 
 
 def test_cleanup_reverse_replication():
@@ -143,13 +143,13 @@ def test_cleanup_reverse_replication():
         calls_src = [c[0][0]
                      for c in mock_source_instance.execute_script.call_args_list]
         assert any(
-            "ALTER SUBSCRIPTION sub_rev DISABLE" in call for call in calls_src)
+            'ALTER SUBSCRIPTION "sub_rev" DISABLE' in call for call in calls_src)
 
         # Verify it attempted to drop reverse publication on dest
         calls_dest = [c[0][0]
                       for c in mock_dest_instance.execute_script.call_args_list]
         assert any(
-            "DROP PUBLICATION IF EXISTS pub_rev" in call for call in calls_dest)
+            'DROP PUBLICATION IF EXISTS "pub_rev"' in call for call in calls_dest)
 
 
 def test_cleanup_reverse_replication_failure():
