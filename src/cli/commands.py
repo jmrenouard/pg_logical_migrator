@@ -24,13 +24,33 @@ def cmd_check(args):
     checker = DBChecker(sc, dc, cfg)
     res = checker.check_connectivity()
     print("\n=== Step 1 — Connectivity Check ===")
-    print_status(
-        res["source"], f"Source  : {'CONNECTED' if res['source'] else 'UNREACHABLE'}"
-    )
-    print_status(
-        res["dest"], f"Dest    : {'CONNECTED' if res['dest'] else 'UNREACHABLE'}"
-    )
-    return 0 if res["source"] and res["dest"] else 1
+    
+    source_status = res["source"]
+    dest_status = res["dest"]
+    
+    if source_status is True:
+        source_msg = "CONNECTED"
+    elif source_status == "MISSING_DB":
+        source_msg = "UNREACHABLE (Database does not exist)"
+    else:
+        source_msg = "UNREACHABLE"
+        
+    if dest_status is True:
+        dest_msg = "CONNECTED"
+    elif dest_status == "MISSING_DB":
+        dest_msg = "UNREACHABLE (Database does not exist)"
+    else:
+        dest_msg = "UNREACHABLE"
+
+    print_status(source_status is True, f"Source  : {source_msg}")
+    print_status(dest_status is True, f"Dest    : {dest_msg}")
+    
+    if dest_status == "MISSING_DB":
+        print("\n  💡 TIP: The destination database does not exist.")
+        print("  If you run 'init-replication' or 'migrate-schema-pre-data' with '--drop-dest',")
+        print("  the database will be created automatically. Alternatively, create it manually.\n")
+        
+    return 0 if (source_status is True and dest_status is True) else 1
 
 
 # -- Step 2 ------------------------------------------------------------------

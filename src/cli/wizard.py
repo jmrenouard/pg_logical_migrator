@@ -235,25 +235,40 @@ class WizardModel:
                     state["subscription_opts"] = ""
                 filter_sys = "n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_toast'"
                 
-                q_pre = f"SELECT 1 FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE {filter_sys} AND c.relkind = 'r' LIMIT 1"
-                res = self.dc.execute_query(q_pre)
-                state["schema_pre"] = len(res) > 0 if res else False
-                
-                q_fk = f"SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON c.connamespace = n.oid WHERE {filter_sys} AND c.contype = 'f' LIMIT 1"
-                res_fk = self.dc.execute_query(q_fk)
+                state["schema_pre"] = False
+                if state["source"] and state["dest"]:
+                    q_pre = f"SELECT count(*) as cnt FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE {filter_sys} AND c.relkind IN ('r', 'v', 'S')"
+                    try:
+                        src_pre = self.sc.execute_query(q_pre)
+                        dst_pre = self.dc.execute_query(q_pre)
+                        if src_pre and dst_pre:
+                            s_cnt = src_pre[0]['cnt']
+                            d_cnt = dst_pre[0]['cnt']
+                            if s_cnt == d_cnt and s_cnt > 0:
+                                state["schema_pre"] = True
+                            elif s_cnt == 0:
+                                state["schema_pre"] = True
+                    except Exception:
+                        pass
                 
                 state["schema_post"] = False
                 if state["source"] and state["dest"]:
                     q_idx_count = f"SELECT count(*) as cnt FROM pg_index i JOIN pg_class c ON i.indrelid = c.oid JOIN pg_namespace n ON c.relnamespace = n.oid WHERE {filter_sys} AND not i.indisprimary AND not i.indisunique"
+                    q_fk_count = f"SELECT count(*) as cnt FROM pg_constraint c JOIN pg_namespace n ON c.connamespace = n.oid WHERE {filter_sys} AND c.contype IN ('f', 'c')"
                     try:
                         src_idx = self.sc.execute_query(q_idx_count)
                         dst_idx = self.dc.execute_query(q_idx_count)
-                        if src_idx and dst_idx:
-                            s_cnt = src_idx[0]['cnt']
-                            d_cnt = dst_idx[0]['cnt']
-                            if s_cnt == d_cnt and s_cnt > 0:
+                        src_fk = self.sc.execute_query(q_fk_count)
+                        dst_fk = self.dc.execute_query(q_fk_count)
+                        if src_idx and dst_idx and src_fk and dst_fk:
+                            s_idx_cnt = src_idx[0]['cnt']
+                            d_idx_cnt = dst_idx[0]['cnt']
+                            s_fk_cnt = src_fk[0]['cnt']
+                            d_fk_cnt = dst_fk[0]['cnt']
+                            
+                            if s_idx_cnt == d_idx_cnt and s_fk_cnt == d_fk_cnt and (s_idx_cnt > 0 or s_fk_cnt > 0):
                                 state["schema_post"] = True
-                            elif s_cnt == 0 and res_fk:
+                            elif s_idx_cnt == 0 and s_fk_cnt == 0:
                                 state["schema_post"] = True
                     except Exception:
                         pass
@@ -663,10 +678,15 @@ class MigrationWizard:
                 self.model.history[step["id"]] = "SKIP"
                 return
 
+        args = self._prepare_args(step)
+        if args is None:
+            self.model.history[step["id"]] = "SKIP"
+            return
+
         result = {"rc": None, "error": None}
         def _worker():
             try:
-                result["rc"] = self._dispatch(step)
+                result["rc"] = self._dispatch(step, args)
             except Exception:
                 import traceback
                 result["error"] = traceback.format_exc()
@@ -708,38 +728,48 @@ class MigrationWizard:
         
         sub_info_str = None
         if not progress and self.model.dc:
-            sub_name = self.model.cfg.get_replication().get('subscription_name', 'migrator_sub')
-            sub_rows = self.model.dc.execute_query("SELECT subname, subenabled FROM pg_subscription WHERE subname = %s", (sub_name,))
-            if sub_rows:
-                enabled = sub_rows[0].get('subenabled', False)
-                rel_rows = self.model.dc.execute_query(
-                    "SELECT srsubstate, count(*) as cnt FROM pg_subscription_rel sr JOIN pg_subscription s ON s.oid = sr.srsubid WHERE s.subname = %s GROUP BY srsubstate", (sub_name,))
-                state_map = {'i': 'init', 'd': 'copy', 'f': 'finalize', 's': 'sync', 'r': 'ready'}
-                parts = [f"{state_map.get(r.get('srsubstate', '?'), r.get('srsubstate', '?'))}={r.get('cnt', 0)}" for r in (rel_rows or [])]
-                state_str = " | ".join(parts) if parts else "no tables"
-                en_str = "enabled" if enabled else "disabled"
-                sub_info_str = f"  [dim][repl-status] sub={sub_name} [{en_str}] tables: {state_str}[/dim]"
+            try:
+                sub_name = self.model.cfg.get_replication().get('subscription_name', 'migrator_sub')
+                sub_rows = self.model.dc.execute_query("SELECT subname, subenabled FROM pg_subscription WHERE subname = %s", (sub_name,))
+                if sub_rows:
+                    enabled = sub_rows[0].get('subenabled', False)
+                    rel_rows = self.model.dc.execute_query(
+                        "SELECT srsubstate, count(*) as cnt FROM pg_subscription_rel sr JOIN pg_subscription s ON s.oid = sr.srsubid WHERE s.subname = %s GROUP BY srsubstate", (sub_name,))
+                    state_map = {'i': 'init', 'd': 'copy', 'f': 'finalize', 's': 'sync', 'r': 'ready'}
+                    parts = [f"{state_map.get(r.get('srsubstate', '?'), r.get('srsubstate', '?'))}={r.get('cnt', 0)}" for r in (rel_rows or [])]
+                    state_str = " | ".join(parts) if parts else "no tables"
+                    en_str = "enabled" if enabled else "disabled"
+                    sub_info_str = f"  [dim][repl-status] sub={sub_name} [{en_str}] tables: {state_str}[/dim]"
+            except Exception as e:
+                sub_info_str = f"  [dim][repl-status] Status unavailable: {type(e).__name__}[/dim]"
 
         self.view.show_repl_status_inline(progress, sub_info_str)
 
-    def _dispatch(self, step: dict) -> int:
+    def _prepare_args(self, step: dict):
         cmd = step["cmd"]
         args = self._build_args()
 
-        if cmd == "migrate-schema-pre-data":
-            args.drop_dest = Confirm.ask("Drop destination DB first? (--drop-dest)", default=False)
-        elif cmd == "migrate-schema-post-data":
-            args.drop_dest = False
-        elif cmd == "reassign-owner":
-            default_user = "postgres"
-            if self.model.cfg:
-                default_user = self.model.cfg.get_dest_dict().get('user', 'postgres')
-            args.owner = Prompt.ask("Target owner role", default=default_user)
-        elif cmd == "generate-config":
-            args.output = Prompt.ask("Output path", default="config_migrator.sample.ini")
-        elif cmd == "init-replication":
-            args.drop_dest = Confirm.ask("Drop destination first?", default=False)
-            args.wait = Confirm.ask("Wait for initial sync?", default=True)
+        try:
+            if cmd == "migrate-schema-pre-data":
+                args.drop_dest = Confirm.ask("Drop destination DB first? (--drop-dest)", default=False)
+            elif cmd == "migrate-schema-post-data":
+                args.drop_dest = False
+            elif cmd == "reassign-owner":
+                default_user = "postgres"
+                if self.model.cfg:
+                    default_user = self.model.cfg.get_dest_dict().get('user', 'postgres')
+                args.owner = Prompt.ask("Target owner role", default=default_user)
+            elif cmd == "generate-config":
+                args.output = Prompt.ask("Output path", default="config_migrator.sample.ini")
+            elif cmd == "init-replication":
+                args.drop_dest = Confirm.ask("Drop destination first?", default=False)
+                args.wait = Confirm.ask("Wait for initial sync?", default=True)
+            return args
+        except EOFError:
+            return None
+
+    def _dispatch(self, step: dict, args) -> int:
+        cmd = step["cmd"]
 
         if cmd == "init-replication":
             return cmd_init_replication(args)

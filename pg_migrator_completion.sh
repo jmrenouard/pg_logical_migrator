@@ -10,11 +10,11 @@ _pg_migrator_completion() {
     opts="-h --help -V --version -c --config --results-dir --loglevel --log-file --sync-delay -n --dry-run -v --verbose --use-stats"
     
     # Subcommands
-    subcmds="check diagnose params migrate-schema-pre-data setup-pub setup-sub repl-progress refresh-matviews sync-sequences terminate-repl sync-lobs enable-triggers reassign-owner audit-objects validate-rows cleanup setup-reverse progress wait-sync cleanup-reverse init-replication post-migration tui generate-config"
+    subcmds="check diagnose params migrate-schema-pre-data setup-pub setup-sub repl-progress refresh-matviews sync-sequences terminate-repl migrate-schema-post-data sync-lobs sync-unlogged enable-triggers reassign-owner audit-objects validate-rows cleanup setup-reverse stop-repl start-repl wait-sync cleanup-reverse generate-config init-replication post-migration wizard"
 
     # If the previous word is an option that expects a value
     case "${prev}" in
-        -c|--config|--results-dir|--log-file|-o|--output)
+        -c|--config|--results-dir|--log-file|-o|--output|--owner)
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
@@ -45,8 +45,11 @@ _pg_migrator_completion() {
     else
         # Complete options specific to the subcommand
         case "${subcmd_found}" in
-            migrate-schema-pre-data|init-replication)
+            migrate-schema-pre-data)
                 COMPREPLY=( $(compgen -W "--drop-dest ${opts}" -- "${cur}") )
+                ;;
+            init-replication)
+                COMPREPLY=( $(compgen -W "--drop-dest --wait ${opts}" -- "${cur}") )
                 ;;
             reassign-owner)
                 COMPREPLY=( $(compgen -W "--owner ${opts}" -- "${cur}") )
@@ -65,3 +68,6 @@ _pg_migrator_completion() {
 
 complete -F _pg_migrator_completion pg_migrator.py
 complete -F _pg_migrator_completion ./pg_migrator.py
+complete -F _pg_migrator_completion pg_migrator
+complete -F _pg_migrator_completion ./pg_migrator
+complete -F _pg_migrator_completion dist/pg_migrator

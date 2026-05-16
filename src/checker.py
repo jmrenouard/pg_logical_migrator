@@ -28,18 +28,27 @@ class DBChecker(SchemaFilterMixin):
 
     def check_connectivity(self):
         results = {"source": False, "dest": False}
+        import psycopg
         try:
             with self.source.get_conn():
                 results["source"] = True
         except Exception as e:
-            logging.error(f"[SOURCE] Source Connection Failed: {e}")
+            if isinstance(e, psycopg.errors.InvalidCatalogName) or "does not exist" in str(e):
+                logging.warning(f"[SOURCE] Source Database missing: {e}")
+                results["source"] = "MISSING_DB"
+            else:
+                logging.error(f"[SOURCE] Source Connection Failed: {e}")
 
         if self.dest:
             try:
                 with self.dest.get_conn():
                     results["dest"] = True
             except Exception as e:
-                logging.error(f"[DEST] Destination Connection Failed: {e}")
+                if isinstance(e, psycopg.errors.InvalidCatalogName) or "does not exist" in str(e):
+                    logging.warning(f"[DEST] Destination Database missing: {e}")
+                    results["dest"] = "MISSING_DB"
+                else:
+                    logging.error(f"[DEST] Destination Connection Failed: {e}")
         return results
 
     def get_pg_parameters(self, client):
