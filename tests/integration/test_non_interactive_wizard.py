@@ -1,6 +1,5 @@
-import pytest
-from unittest.mock import patch, MagicMock
-from src.cli.wizard import MigrationWizard, WizardModel, WizardView
+from unittest.mock import patch
+from src.cli.wizard import MigrationWizard
 
 @patch("src.cli.wizard.WizardModel.init_config")
 @patch("src.cli.wizard.WizardModel.init_clients")
