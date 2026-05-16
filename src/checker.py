@@ -1,36 +1,54 @@
+"""
+checker.py — Pre-migration diagnostic checks.
+
+Provides the DBChecker class responsible for verifying database connectivity,
+scanning for problematic objects (tables without PK, LOBs, identity columns,
+unlogged/temporary/foreign tables), validating replication parameters, and
+analysing database size distribution.
+"""
+
 import logging
 
+from src.db import sanitize_identifier
+from src.schema_utils import SchemaFilterMixin
 
-class DBChecker:
+
+class DBChecker(SchemaFilterMixin):
+    """Performs pre-migration diagnostics on source and destination databases.
+
+    Inherits ``_get_schema_filter()`` from :class:`SchemaFilterMixin` for
+    consistent schema-level SQL filtering across the codebase.
+    """
+
     def __init__(self, source_client, dest_client=None, config=None):
+        super().__init__()
         self.source = source_client
         self.dest = dest_client
         self.config = config
 
-    def _get_schema_filter(self, nspname_col="n.nspname"):
-        if not self.config:
-            return ""
-        from src.db import resolve_target_schemas
-        schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None)) if self.source else self.config.get_target_schemas(getattr(self.config, 'override_db', None))
-        if schemas == ['all']:
-            return ""
-        schema_list = ", ".join([f"'{s}'" for s in schemas])
-        return f"AND {nspname_col} IN ({schema_list})"
-
     def check_connectivity(self):
         results = {"source": False, "dest": False}
+        import psycopg
         try:
             with self.source.get_conn():
                 results["source"] = True
         except Exception as e:
-            logging.error(f"[SOURCE] Source Connection Failed: {e}")
+            if isinstance(e, psycopg.errors.InvalidCatalogName) or "does not exist" in str(e):
+                logging.warning(f"[SOURCE] Source Database missing: {e}")
+                results["source"] = "MISSING_DB"
+            else:
+                logging.error(f"[SOURCE] Source Connection Failed: {e}")
 
         if self.dest:
             try:
                 with self.dest.get_conn():
                     results["dest"] = True
             except Exception as e:
-                logging.error(f"[DEST] Destination Connection Failed: {e}")
+                if isinstance(e, psycopg.errors.InvalidCatalogName) or "does not exist" in str(e):
+                    logging.warning(f"[DEST] Destination Database missing: {e}")
+                    results["dest"] = "MISSING_DB"
+                else:
+                    logging.error(f"[DEST] Destination Connection Failed: {e}")
         return results
 
     def get_pg_parameters(self, client):
@@ -66,13 +84,7 @@ class DBChecker:
         lo_count = self.source.execute_query(query_lo)[0]['count']
 
         # Tables with Identity Columns
-        schema_filter_identity = ""
-        if self.config:
-            from src.db import resolve_target_schemas
-            schemas = resolve_target_schemas(self.source, self.config, getattr(self.config, 'override_db', None))
-            if schemas != ['all']:
-                schema_list = ", ".join([f"'{s}'" for s in schemas])
-                schema_filter_identity = f"AND table_schema IN ({schema_list})"
+        schema_filter_identity = self._get_schema_filter("table_schema")
 
         query_identity = f"""
         SELECT table_schema, table_name, column_name
@@ -220,8 +232,9 @@ class DBChecker:
                 # Apply parameter if specified and needed
                 if needs_apply and apply_flags[label] and apply_val is not None:
                     try:
+                        safe_name = sanitize_identifier(name)
                         client.execute_query(
-                            f"ALTER SYSTEM SET {name} = '{apply_val}';")
+                            f"ALTER SYSTEM SET {safe_name} = '{apply_val}';")
                         status = "PENDING RESTART"
                         logging.info(
                             f"[{label.upper()}] Applied {name} = '{apply_val}' on {label}. Restart required.")

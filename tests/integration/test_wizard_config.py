@@ -1,14 +1,14 @@
-import pytest
 from unittest.mock import patch, MagicMock
-from src.cli.wizard import MigrationWizard
+from src.cli.wizard import MigrationWizard, WizardModel
 
+@patch("src.cli.wizard.os.path.exists", return_value=True)
 @patch("builtins.input")
 @patch("src.cli.wizard.Config")
 @patch("src.cli.wizard.build_clients")
 @patch("src.cli.wizard.Prompt.ask")
 @patch("src.cli.wizard.Confirm.ask")
 @patch("src.cli.wizard.os.makedirs")
-def test_wizard_config_flow(mock_makedirs, mock_confirm, mock_ask, mock_clients, mock_config, mock_input):
+def test_wizard_config_flow(mock_makedirs, mock_confirm, mock_ask, mock_clients, mock_config, mock_input, mock_exists):
     mock_config.return_value.get_databases.return_value = ["postgres"]
     mock_clients.return_value = (MagicMock(), MagicMock())
     # Side effects for input()
@@ -25,19 +25,17 @@ def test_wizard_config_flow(mock_makedirs, mock_confirm, mock_ask, mock_clients,
     ]
     
     # Side effects for Confirm.ask
-    # 1. Generate default config? -> No (during init)
-    # 2. Generate default config? -> No (during _menu_configure)
-    # 3. Configure Source? -> Yes
-    # 4. Configure Destination? -> Yes
-    # 5. Configure Replication? -> Yes
-    # 6. Save configuration? -> Yes
-    mock_confirm.side_effect = [False, False, True, True, True, True]
+    # 1. Configure Source? -> Yes
+    # 2. Configure Destination? -> Yes
+    # 3. Configure Replication? -> Yes
+    # 4. Save configuration? -> Yes
+    mock_confirm.side_effect = [True, True, True, True]
 
     wizard = MigrationWizard("dummy.ini")
 
     
     # Mock _detect_state to avoid real DB calls during the loop
-    with patch.object(wizard, "_detect_state") as mock_detect:
+    with patch.object(WizardModel, "detect_state") as mock_detect:
         mock_detect.return_value = {
             "connectivity": {"source": True, "dest": True},
             "schema_pre": False,

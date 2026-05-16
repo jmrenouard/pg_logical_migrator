@@ -18,7 +18,7 @@ def mock_prompts():
 
 def test_wizard_init(mock_clients):
     wizard = MigrationWizard("tests/test_config.ini")
-    assert wizard.config_path == "tests/test_config.ini"
+    assert wizard.model.config_path == "tests/test_config.ini"
 
 @patch("src.cli.wizard.console.clear")
 @patch("src.cli.wizard.console.print")

@@ -1,8 +1,16 @@
+"""
+test_validation.py — Unit tests for the Validator class.
+
+Tests cover row count comparison (exact and estimated modes) and structural
+object parity auditing between source and destination databases.
+"""
+
 from unittest.mock import MagicMock
 from src.validation import Validator
 
 
 def test_validator_compare_row_counts_exact():
+    """Verify exact row count comparison reports OK when counts match."""
     source = MagicMock()
     dest = MagicMock()
 
@@ -25,6 +33,7 @@ def test_validator_compare_row_counts_exact():
 
 
 def test_validator_compare_row_counts_stats():
+    """Verify estimated (pg_stat) row comparison reports DIFF on count mismatch."""
     source = MagicMock()
     dest = MagicMock()
 
@@ -46,6 +55,7 @@ def test_validator_compare_row_counts_stats():
 
 
 def test_validator_audit_objects():
+    """Verify structural audit flags DIFF for views but OK for tables when counts match."""
     source = MagicMock()
     dest = MagicMock()
 

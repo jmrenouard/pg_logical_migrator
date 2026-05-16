@@ -1,0 +1,22 @@
+services:
+  test_runner:
+    build:
+      context: ..
+      dockerfile: test_env/Dockerfile.tester
+    container_name: migrator_test_runner
+    depends_on:
+      source_db:
+        condition: service_healthy
+      target_db:
+        condition: service_healthy
+    environment:
+      - PGHOST_SOURCE=pg_source
+      - PGHOST_TARGET=pg_target
+    volumes:
+      - ../:/app
+      # Cache for pip to speed up builds locally
+      - pip_cache:/root/.cache/pip
+    command: ["./test_env/run_e2e_tests.sh"]
+
+volumes:
+  pip_cache:

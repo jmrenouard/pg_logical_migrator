@@ -6,7 +6,7 @@ def test_sync_large_objects_no_columns():
     mock_config.get_source_conn.return_value = "host=h1"
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_instance = mock_pc.return_value
         mock_instance.execute_query.return_value = []
 
@@ -21,7 +21,7 @@ def test_sync_large_objects_success():
     mock_config.get_dest_conn.return_value = "host=h2"
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_pc_instance = mock_pc.return_value
         # 1st call is to fetch LOB metadata
         mock_pc_instance.execute_query.return_value = [{"oid": 12345}]
@@ -68,7 +68,7 @@ def test_sync_large_objects_failure():
     mock_config.get_dest_conn.return_value = "host=h2"
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.return_value = [{"oid": 12345}]
 
@@ -97,7 +97,7 @@ def test_sync_large_objects_connection_failure():
     mock_config.get_source_conn.return_value = "host=h1"
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.return_value = [{"oid": 12345}]
         mock_pc_instance.get_conn.side_effect = Exception("Connection Failed")
@@ -113,7 +113,7 @@ def test_sync_large_objects_outer_failure():
     mock_config.get_source_conn.return_value = "host=h1"
     m = Migrator(mock_config)
 
-    with patch("src.migrator.PostgresClient") as mock_pc:
+    with patch("src.db.PostgresClient") as mock_pc:
         mock_pc_instance = mock_pc.return_value
         mock_pc_instance.execute_query.side_effect = Exception("Outer query failed")
 

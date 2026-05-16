@@ -6,10 +6,8 @@ Missing lines (original analysis):
   451-453, 457-512, 521-553, 613-614, 643, 694-697, 703-706, 717,
   783-785, 802
 """
-import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.migrator import Migrator
 from src.config import Config
@@ -62,8 +60,9 @@ class TestStep4aDropDest:
             client.get_conn.return_value.__exit__ = MagicMock(return_value=False)
             return client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+        with patch("src.db.PostgresClient", side_effect=client_factory), \
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         assert ok is True
 
@@ -78,8 +77,9 @@ class TestStep4aDropDest:
             client.get_conn.side_effect = Exception("conn refused")
             return client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+        with patch("src.db.PostgresClient", side_effect=client_factory), \
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         # Admin drop also fails → step returns False (correct behaviour)
         assert ok is False
@@ -106,7 +106,7 @@ class TestStep4aDropDest:
                 client.get_conn.side_effect = Exception("cannot connect")
             return client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         assert ok is False
         assert "drop/recreate" in msg.lower()
@@ -126,8 +126,9 @@ class TestStep4aDropDest:
             client.get_conn.return_value.__exit__ = MagicMock(return_value=False)
             return client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+        with patch("src.db.PostgresClient", side_effect=client_factory), \
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         # Subscription cleanup ran, then continued to shell command
         assert ok is True
@@ -160,8 +161,9 @@ class TestStep4aDropDest:
             client.get_conn.return_value.__exit__ = MagicMock(return_value=False)
             return client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+        with patch("src.db.PostgresClient", side_effect=client_factory), \
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=True)
         assert ok is True
 
@@ -170,8 +172,9 @@ class TestStep4aDropDest:
         cfg = _make_config(schemas=["public", "sales"])
         m = Migrator(cfg)
 
-        with patch("src.migrator.PostgresClient"), \
-             patch("src.db.execute_shell_command", return_value=(True, "ok")):
+        with patch("src.db.PostgresClient"), \
+             patch("src.db.pipe_shell_commands", return_value=(True, "ok")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4a_migrate_schema_pre_data(drop_dest=False)
         assert ok is True
         assert any("public" in c or "sales" in c for c in cmds)
@@ -185,7 +188,8 @@ class TestStep4bMigrateSchemaPostData:
     def test_failure(self):
         cfg = _make_config()
         m = Migrator(cfg)
-        with patch("src.db.execute_shell_command", return_value=(False, "error")):
+        with patch("src.db.pipe_shell_commands", return_value=(False, "error")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4b_migrate_schema_post_data()
         assert ok is False
         assert "POST-DATA" in msg.upper()
@@ -193,7 +197,8 @@ class TestStep4bMigrateSchemaPostData:
     def test_with_schema_filter(self):
         cfg = _make_config(schemas=["myschema"])
         m = Migrator(cfg)
-        with patch("src.db.execute_shell_command", return_value=(True, "")):
+        with patch("src.db.pipe_shell_commands", return_value=(True, "")), \
+             patch("src.db.pgpass_context"):
             ok, msg, cmds, outs = m.step4b_migrate_schema_post_data()
         assert ok is True
 
@@ -210,7 +215,7 @@ class TestStep5SetupSourceExtended:
         client = MagicMock()
         client.execute_query.return_value = []
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step5_setup_source()
         assert ok is True
         assert any("myschema" in str(c) for c in cmds)
@@ -223,7 +228,7 @@ class TestStep5SetupSourceExtended:
         client.execute_query.return_value = [
             {"schema_name": "public", "table_name": "no_pk_table"}]
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step5_setup_source()
         assert ok is True
         assert any("REPLICA IDENTITY" in str(c) for c in cmds)
@@ -237,7 +242,7 @@ class TestStep5SetupSourceExtended:
         # Make execute_script fail after first SQL
         client.execute_script.side_effect = [None, Exception("fail")]
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step5_setup_source()
         assert ok is False
 
@@ -248,7 +253,7 @@ class TestStep5SetupSourceExtended:
         client = MagicMock()
         client.execute_query.side_effect = Exception("timeout")
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step5_setup_source()
         assert ok is False
         assert "INITIALIZATION" in cmds
@@ -265,7 +270,7 @@ class TestStep6SetupDestinationError:
         client = MagicMock()
         client.execute_script.side_effect = Exception("SSL error")
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step6_setup_destination()
         assert ok is False
         assert "SSL error" in msg
@@ -282,7 +287,7 @@ class TestStep6SetupDestinationError:
         m = Migrator(cfg)
         client = MagicMock()
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step6_setup_destination()
         assert ok is True
 
@@ -304,7 +309,7 @@ class TestWaitForSync:
             
         client.execute_query.side_effect = _exec_query
 
-        with patch("src.migrator.PostgresClient", return_value=client), \
+        with patch("src.db.PostgresClient", return_value=client), \
              patch("time.sleep"):
             ok, msg, cmds, outs = m.wait_for_sync(timeout=0.1, poll_interval=1)
         assert ok is False
@@ -322,7 +327,7 @@ class TestWaitForSync:
             
         client.execute_query.side_effect = _exec_query
 
-        with patch("src.migrator.PostgresClient", return_value=client), \
+        with patch("src.db.PostgresClient", return_value=client), \
              patch("time.sleep"):
             ok, msg, cmds, outs = m.wait_for_sync(
                 timeout=60, poll_interval=1, show_progress=True)
@@ -346,7 +351,7 @@ class TestWaitForSync:
 
         client.execute_query.side_effect = _exec_query
 
-        with patch("src.migrator.PostgresClient", return_value=client), \
+        with patch("src.db.PostgresClient", return_value=client), \
              patch("time.sleep"), \
              patch.object(m, "get_initial_copy_progress", return_value={
                  "summary": {"percent_bytes": 50, "bytes_copied_pretty": "50MB", "total_source_pretty": "100MB"}}):
@@ -375,7 +380,7 @@ class TestWaitForSync:
 
         client.execute_query.side_effect = _exec_query
 
-        with patch("src.migrator.PostgresClient", return_value=client), \
+        with patch("src.db.PostgresClient", return_value=client), \
              patch("time.sleep"):
             ok, msg, cmds, outs = m.wait_for_sync(timeout=60, poll_interval=0)
         assert ok is True
@@ -398,7 +403,7 @@ class TestWaitForSync:
 
         client.execute_query.side_effect = _exec_query
 
-        with patch("src.migrator.PostgresClient", return_value=client), \
+        with patch("src.db.PostgresClient", return_value=client), \
              patch("time.sleep"):
             ok, msg, cmds, outs = m.wait_for_sync(timeout=60, poll_interval=0)
         assert ok is True
@@ -422,7 +427,7 @@ class TestGetInitialCopyProgressErrors:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             result = m.get_initial_copy_progress()
         assert result is None
 
@@ -440,7 +445,7 @@ class TestGetInitialCopyProgressErrors:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             result = m.get_initial_copy_progress()
         assert result is None
 
@@ -465,7 +470,7 @@ class TestGetInitialCopyProgressErrors:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             result = m.get_initial_copy_progress()
         assert result is not None
         assert result["tables"][0]["bytes_copied"] == 500
@@ -490,7 +495,7 @@ class TestGetInitialCopyProgressErrors:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             result = m.get_initial_copy_progress()
         assert result["tables"][0]["bytes_copied"] == 0
 
@@ -514,7 +519,7 @@ class TestGetInitialCopyProgressErrors:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             result = m.get_initial_copy_progress()
         assert result["tables"][0]["percent"] == 100.0
 
@@ -531,7 +536,7 @@ class TestGetReplicationStatus:
         client = MagicMock()
         client.execute_query.return_value = []
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             result = m.get_replication_status()
 
         assert "publisher" in result
@@ -545,7 +550,7 @@ class TestGetReplicationStatus:
         client = MagicMock()
         client.execute_query.side_effect = Exception("down")
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             result = m.get_replication_status()
         # All lists should be empty (exceptions silenced)
         assert result["publisher"] == []
@@ -563,7 +568,7 @@ class TestStep10TerminateReplication:
         client = MagicMock()
         client.execute_script.side_effect = Exception("locked")
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.step10_terminate_replication()
         assert ok is False
         assert "locked" in msg
@@ -581,7 +586,7 @@ class TestSetupReverseReplicationExtended:
         client = MagicMock()
         client.execute_query.side_effect = Exception("boom")
 
-        with patch("src.migrator.PostgresClient", return_value=client):
+        with patch("src.db.PostgresClient", return_value=client):
             ok, msg, cmds, outs = m.setup_reverse_replication()
         assert ok is False
         assert "INITIALIZATION" in cmds
@@ -601,7 +606,7 @@ class TestSetupReverseReplicationExtended:
         # count=0 → forward sub not present → proceed
         dest_client.execute_query.return_value = [{"count": 0}]
 
-        with patch("src.migrator.PostgresClient", return_value=dest_client):
+        with patch("src.db.PostgresClient", return_value=dest_client):
             ok, msg, cmds, outs = m.setup_reverse_replication()
         assert ok is True
 
@@ -616,7 +621,7 @@ class TestCleanupReverseReplicationExtended:
         cfg = _make_config()
         m = Migrator(cfg)
 
-        with patch("src.migrator.PostgresClient", side_effect=Exception("fatal")):
+        with patch("src.db.PostgresClient", side_effect=Exception("fatal")):
             ok, msg, cmds, outs = m.cleanup_reverse_replication()
         assert ok is False
         assert "INITIALIZATION" in cmds
@@ -643,7 +648,7 @@ class TestCleanupReverseReplicationExtended:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             ok, msg, cmds, outs = m.cleanup_reverse_replication()
         # Partial failure: slot drop failed
         assert any("slot busy" in str(o) for o in outs)
@@ -676,7 +681,7 @@ class TestCleanupReverseReplicationExtended:
                 return source_client
             return dest_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             ok, msg, cmds, outs = m.cleanup_reverse_replication()
         assert any("pub locked" in str(o) for o in outs)
 
@@ -703,6 +708,6 @@ class TestSyncLargeObjectsExtended:
         def client_factory(conn_str, label=None):
             return source_client
 
-        with patch("src.migrator.PostgresClient", side_effect=client_factory):
+        with patch("src.db.PostgresClient", side_effect=client_factory):
             ok, msg, cmds, outs = m.sync_large_objects()
         assert ok is True

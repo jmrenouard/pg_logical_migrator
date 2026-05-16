@@ -6,13 +6,17 @@ CONTAINER_SOURCE="pg_source"
 CONTAINER_TARGET="pg_target"
 DB_NAME="test_migration"
 
-echo "Waiting for PostgreSQL containers to be healthy..."
-for CONTAINER in "${CONTAINER_SOURCE}" "${CONTAINER_TARGET}"; do
-    until [ "$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER}")" = "healthy" ]; do
+HOST_SOURCE=${PGHOST_SOURCE:-127.0.0.1}
+HOST_TARGET=${PGHOST_TARGET:-127.0.0.1}
+
+
+echo "Waiting for PostgreSQL servers to be healthy..."
+for HOST in "${HOST_SOURCE}" "${HOST_TARGET}"; do
+    until PGPASSWORD=secret pg_isready -h "${HOST}" -U postgres; do
         sleep 2;
         echo -n "."
     done
-    echo " ${CONTAINER} is ready."
+    echo " ${HOST} is ready."
 done
 
 # Download Pagila if not exists
@@ -28,21 +32,23 @@ fi
 
 echo "Resetting source database (drop & recreate)..."
 for DB in ${DB_NAME} ${DB_NAME}_2 ${DB_NAME}_3; do
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -h localhost -c \
+    PGPASSWORD=secret psql -U postgres -h ${HOST_SOURCE} -c \
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB}' AND pid <> pg_backend_pid();" postgres
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -h localhost -c "DROP DATABASE IF EXISTS ${DB};" postgres
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -h localhost -c "CREATE DATABASE ${DB};" postgres
+    PGPASSWORD=secret psql -U postgres -h ${HOST_SOURCE} -c "SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE database = '${DB}' AND active_pid IS NOT NULL;" postgres || true
+    PGPASSWORD=secret psql -U postgres -h ${HOST_SOURCE} -c "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE database = '${DB}';" postgres || true
+    PGPASSWORD=secret psql -U postgres -h ${HOST_SOURCE} -c "DROP DATABASE IF EXISTS ${DB};" postgres
+    PGPASSWORD=secret psql -U postgres -h ${HOST_SOURCE} -c "CREATE DATABASE ${DB};" postgres
 done
 
 for DB in ${DB_NAME} ${DB_NAME}_2 ${DB_NAME}_3; do
     echo "Loading schema into source for ${DB}..."
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB} -h localhost < "${DIR}/pagila-schema.sql"
+    PGPASSWORD=secret psql -U postgres -d ${DB} -h ${HOST_SOURCE} < "${DIR}/pagila-schema.sql"
 
     echo "Loading data into source for ${DB}..."
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB} -h localhost < "${DIR}/pagila-data.sql"
+    PGPASSWORD=secret psql -U postgres -d ${DB} -h ${HOST_SOURCE} < "${DIR}/pagila-data.sql"
 
     echo "Injecting no_pk_table for testing into ${DB}..."
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB} -h localhost -c "
+    PGPASSWORD=secret psql -U postgres -d ${DB} -h ${HOST_SOURCE} -c "
     CREATE TABLE public.no_pk_table (
         id integer,
         random_data text
@@ -52,11 +58,11 @@ for DB in ${DB_NAME} ${DB_NAME}_2 ${DB_NAME}_3; do
     "
 
     echo "Injecting extra test data (multi-schema, no-PK, unlogged, LOBs) into ${DB}..."
-    docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB} -h localhost < "${DIR}/extra_test_data.sql"
+    PGPASSWORD=secret psql -U postgres -d ${DB} -h ${HOST_SOURCE} < "${DIR}/extra_test_data.sql"
 done
 
 echo "Injecting VERY LARGE DATASET (100 million rows in schema_large) only to ${DB_NAME}..."
 echo "  -> This step is slow by design. Please wait..."
-docker exec -i ${CONTAINER_SOURCE} psql -U postgres -d ${DB_NAME} -h localhost < "${DIR}/large_data.sql"
+PGPASSWORD=secret psql -U postgres -d ${DB_NAME} -h ${HOST_SOURCE} < "${DIR}/large_data.sql"
 
 echo "Setup complete!"

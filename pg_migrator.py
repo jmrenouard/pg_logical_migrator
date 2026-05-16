@@ -26,7 +26,7 @@ import logging
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -373,6 +373,10 @@ def build_parser() -> argparse.ArgumentParser:
         "wizard",
         parents=[global_parser],
         help="Launch interactive step-by-step assistant")
+    p_wizard.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Run wizard in non-interactive mode for CI/CD")
     p_wizard.set_defaults(func=cmd_wizard)
 
     return parser

@@ -1,8 +1,17 @@
+"""
+test_post_sync.py — Unit tests for the PostSync class.
+
+Tests cover post-migration cleanup and object synchronization tasks, including
+refreshing materialized views, synchronizing sequences, enabling triggers,
+and reassigning ownership.
+"""
+
 from unittest.mock import MagicMock
 from src.post_sync import PostSync
 
 
 def test_post_sync_refresh_matviews():
+    """Verify materialized views are correctly refreshed."""
     source = MagicMock()
     dest = MagicMock()
 
@@ -18,6 +27,7 @@ def test_post_sync_refresh_matviews():
 
 
 def test_post_sync_sequences():
+    """Verify sequence synchronization fetches the last value from source and applies to dest."""
     source = MagicMock()
     dest = MagicMock()
 
@@ -35,6 +45,7 @@ def test_post_sync_sequences():
 
 
 def test_post_sync_enable_triggers():
+    """Verify all triggers are enabled on the target tables after sync."""
     source = MagicMock()
     dest = MagicMock()
 
@@ -50,6 +61,7 @@ def test_post_sync_enable_triggers():
 
 
 def test_post_sync_reassign_ownership():
+    """Verify ownership of databases, schemas, tables, and types are correctly reassigned."""
     source = MagicMock()
     dest = MagicMock()
 

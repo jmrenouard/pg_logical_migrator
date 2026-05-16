@@ -90,6 +90,30 @@ Postgres logical replication has native limitations. `pg_logical_migrator` solve
 
 ---
 
+## 🪄 Shell Autocompletion
+
+To improve your productivity, `pg_logical_migrator` includes a bash completion script. 
+This script enables autocompletion for commands, subcommands, and flags when pressing the `<TAB>` key.
+
+### Activation
+Source the script in your current terminal session, or add it to your `~/.bashrc` / `~/.bash_profile` for persistence:
+```bash
+source ./pg_migrator_completion.sh
+```
+
+### Usage Notes
+To trigger autocompletion, you must invoke the script as an executable. 
+It will **not** work if you explicitly call the Python interpreter (`python pg_migrator.py <TAB>`).
+
+✅ **Supported usages:**
+```bash
+./pg_migrator.py <TAB>
+./pg_migrator <TAB>
+./dist/pg_migrator <TAB>
+```
+
+---
+
 ## 🐳 Running in Docker
 
 To start the built-in test environment (PG 16 Source → PG 17 Target):

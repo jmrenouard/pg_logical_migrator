@@ -5,9 +5,8 @@ Missing lines (original analysis):
   116-142, 150-153, 173-176, 194-197, 218-221, 235-245, 259-269,
   283-293, 309-321, 343-346
 """
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
-import pytest
 
 from src.post_sync import PostSync
 

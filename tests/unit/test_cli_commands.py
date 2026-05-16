@@ -275,7 +275,7 @@ def test_cmd_validate_rows(mock_val, mock_bc, mock_cfg, mock_args):
 @patch("src.cli.commands.Migrator")
 def test_cmd_cleanup(mock_migrator, mock_cfg, mock_args):
     mock_mig_instance = mock_migrator.return_value
-    mock_mig_instance.step10_terminate_replication.return_value = (
+    mock_mig_instance.step16_cleanup_replication.return_value = (
         True, "msg", [], [])
 
     assert cmd_cleanup(mock_args) == 0

@@ -6,7 +6,6 @@ Missing lines (original analysis):
 import types
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.cli import commands
 

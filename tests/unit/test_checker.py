@@ -1,26 +1,65 @@
+"""
+test_checker.py — Unit tests for DBChecker (pre-migration diagnostics).
+
+Each test validates a single, well-defined behaviour of the DBChecker class.
+Previously, some tests (e.g. test_check_connectivity) combined success and
+failure scenarios in a single function, hiding failures; they have been split
+into atomic tests for clarity.
+"""
+
 from unittest.mock import MagicMock
 from src.checker import DBChecker
 
 
-def test_check_connectivity():
-    source = MagicMock()
-    dest = MagicMock()
+# ---------------------------------------------------------------------------
+# Connectivity checks
+# ---------------------------------------------------------------------------
 
-    # Success case
-    source.get_conn.return_value.__enter__.return_value = MagicMock()
-    dest.get_conn.return_value.__enter__.return_value = MagicMock()
+class TestCheckConnectivity:
+    """Verify DBChecker.check_connectivity behaviour for reachable/unreachable hosts."""
 
-    checker = DBChecker(source, dest)
-    res = checker.check_connectivity()
-    assert res == {"source": True, "dest": True}
+    def test_both_reachable(self):
+        """Both source and destination databases are reachable → both True."""
+        source = MagicMock()
+        dest = MagicMock()
+        source.get_conn.return_value.__enter__.return_value = MagicMock()
+        dest.get_conn.return_value.__enter__.return_value = MagicMock()
 
-    # Failure case
-    source.get_conn.side_effect = Exception("error")
-    res = checker.check_connectivity()
-    assert res == {"source": False, "dest": True}
+        checker = DBChecker(source, dest)
+        res = checker.check_connectivity()
+        assert res == {"source": True, "dest": True}
 
+    def test_source_unreachable(self):
+        """Source database unreachable → source=False, dest=True."""
+        source = MagicMock()
+        dest = MagicMock()
+        source.get_conn.side_effect = Exception("Connection refused")
+        dest.get_conn.return_value.__enter__.return_value = MagicMock()
+
+        checker = DBChecker(source, dest)
+        res = checker.check_connectivity()
+        assert res["source"] is False
+        assert res["dest"] is True
+
+    def test_dest_unreachable(self):
+        """Destination database unreachable → source=True, dest=False."""
+        source = MagicMock()
+        dest = MagicMock()
+        source.get_conn.return_value.__enter__.return_value = MagicMock()
+        dest.get_conn.side_effect = Exception("Connection refused")
+
+        checker = DBChecker(source, dest)
+        res = checker.check_connectivity()
+        assert res["source"] is True
+        assert res["dest"] is False
+
+
+# ---------------------------------------------------------------------------
+# Problematic objects scan
+# ---------------------------------------------------------------------------
 
 def test_check_problematic_objects():
+    """Verify diagnostic scan identifies tables without primary keys and LOBs."""
     source = MagicMock()
     source.execute_query.side_effect = [
         [{"schema": "public", "table": "no_pk_table"}],  # no_pk
@@ -43,7 +82,12 @@ def test_check_problematic_objects():
     assert len(res["unowned_seqs"]) == 0
 
 
+# ---------------------------------------------------------------------------
+# Replication parameters
+# ---------------------------------------------------------------------------
+
 def test_check_replication_params():
+    """Verify that wal_level=minimal is flagged as FAIL (expected: logical)."""
     source = MagicMock()
     source.execute_query.return_value = [
         {"name": "wal_level", "setting": "minimal"},
@@ -58,7 +102,12 @@ def test_check_replication_params():
     assert wal_param['expected'] == 'logical'
 
 
+# ---------------------------------------------------------------------------
+# Database size analysis
+# ---------------------------------------------------------------------------
+
 def test_get_database_size_analysis():
+    """Verify database size analysis returns correct structure and values."""
     source = MagicMock()
     source.execute_query.side_effect = [
         [{"total_bytes": 1024, "total_pretty": "1 kB"}],  # db size
@@ -76,15 +125,29 @@ def test_get_database_size_analysis():
     assert res["tables"][0]["percent"] == 50.0
 
 
-def test_db_checker_schema_filter():
-    source = MagicMock()
-    mock_config = MagicMock()
-    mock_config.get_target_schemas.return_value = ["s1", "s2"]
+# ---------------------------------------------------------------------------
+# Schema filter (now inherited from SchemaFilterMixin)
+# ---------------------------------------------------------------------------
 
-    checker = DBChecker(source, config=mock_config)
-    sf = checker._get_schema_filter("col")
-    assert "col IN ('s1', 's2')" in sf
+class TestSchemaFilter:
+    """Verify that SchemaFilterMixin behaviour is correctly inherited by DBChecker."""
 
-    mock_config.get_target_schemas.return_value = ["all"]
-    sf = checker._get_schema_filter("col")
-    assert sf == ""
+    def test_specific_schemas_filter(self):
+        """Specific schemas should produce a SQL IN clause."""
+        source = MagicMock()
+        mock_config = MagicMock()
+        mock_config.get_target_schemas.return_value = ["s1", "s2"]
+
+        checker = DBChecker(source, config=mock_config)
+        sf = checker._get_schema_filter("col")
+        assert "col IN ('s1', 's2')" in sf
+
+    def test_all_schemas_returns_empty(self):
+        """'all' schemas should return an empty filter string."""
+        source = MagicMock()
+        mock_config = MagicMock()
+        mock_config.get_target_schemas.return_value = ["all"]
+
+        checker = DBChecker(source, config=mock_config)
+        sf = checker._get_schema_filter("col")
+        assert sf == ""

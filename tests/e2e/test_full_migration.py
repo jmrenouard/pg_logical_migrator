@@ -83,11 +83,23 @@ def test_full_migration_e2e(tmp_path):
         f"SELECT count(*) FROM pg_largeobject_metadata WHERE oid = {new_oid};")
     assert res_dest_lo[0]['count'] == 1, f"LOB OID {new_oid} not found on destination"
 
-    # 5. Verify Reverse Replication setup
+    # 5. Cleanup Forward Replication
+    print("Cleaning up forward replication...")
+    cmd_cleanup = [
+        python_bin,
+        "pg_migrator.py",
+        "cleanup",
+        "-c",
+        config_path]
+    res_cleanup = subprocess.run(cmd_cleanup, capture_output=True, text=True)
+    assert res_cleanup.returncode == 0, f"cleanup failed: {res_cleanup.stderr}"
+
+    # 6. Verify Reverse Replication setup
     print("Testing Reverse Replication setup...")
     cmd_rev = [
         python_bin,
         "pg_migrator.py",
+
         "setup-reverse",
         "-c",
         config_path]

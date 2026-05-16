@@ -7,22 +7,6 @@ from src.post_sync import PostSync
 from src.validation import Validator
 from src.report_generator import ReportGenerator
 from src.cli.helpers import build_clients, print_status, setup_results_dir, setup_logging
-
-__version__ = "unknown"
-try:
-    base_dir = os.path.dirname(
-        os.path.dirname(
-            os.path.dirname(
-                os.path.abspath(__file__))))
-    pg_mig_path = os.path.join(base_dir, "pg_migrator.py")
-    with open(pg_mig_path, "r") as f:
-        for line in f:
-            if line.startswith("__version__"):
-                __version__ = line.split("=")[1].strip().strip('\'"')
-                break
-except Exception:
-    pass
-
 # -- Full Init Replication pipeline --------------------------------------
 
 
@@ -36,13 +20,17 @@ def cmd_init_replication(args):
     sc, dc = build_clients(cfg)
     checker = DBChecker(sc, dc, cfg)
     migrator = Migrator(cfg)
-    PostSync(sc, dc, cfg)
+    # NOTE: PostSync is not needed in init-replication pipeline (used in post-migration)
     validator = Validator(sc, dc, cfg)
     reporter = ReportGenerator()
 
     sync_delay = args.sync_delay
 
     print(f"\n{'=' * 60}")
+    try:
+        from pg_migrator import __version__
+    except ImportError:
+        __version__ = "unknown"
     print(f"  pg_logical_migrator — Automated Pipeline v{__version__}")
     print(f"  Config      : {args.config}")
     print(f"  Results dir : {results_dir}")
@@ -181,6 +169,11 @@ def cmd_init_replication(args):
         print("[Step  4] Schema pre-data migration...")
         s, m, c, o = migrator.step4a_migrate_schema_pre_data(
             drop_dest=args.drop_dest)
+        if getattr(args, "drop_dest", False):
+            # Terminating connections during drop_dest closes existing backend processes.
+            # Close connection pool locally to force a fresh reconnect.
+            dc.close()
+            
         reporter.add_step(
             "4",
             "Schema Pre-Data",
@@ -297,6 +290,10 @@ def cmd_post_migration(args):
     reporter = ReportGenerator()
 
     print(f"\n{'=' * 60}")
+    try:
+        from pg_migrator import __version__
+    except ImportError:
+        __version__ = "unknown"
     print(f"  pg_logical_migrator — Automated Pipeline v{__version__}")
     print(f"  Config      : {args.config}")
     print(f"  Results dir : {results_dir}")
@@ -342,6 +339,14 @@ def cmd_post_migration(args):
             timeout=args.sync_delay, show_progress=True)
         print_status(success_sync, msg_sync)
 
+        # Step 10 — Terminate Replication
+        print("[Step 10] Terminate replication...")
+        # 1. Stop Replication
+        s10_1, m10_1, c10_1, o10_1 = migrator.step10_terminate_replication()
+        print_status(s10_1, f"Replication stop: {m10_1}")
+        if not s10_1:
+            raise RuntimeError(f"Step 10 failed: {m10_1}")
+
         # Step 8 — MatViews
         print("[Step  8] Refresh materialized views...")
         s8, m8, c8, o8 = post_sync.refresh_materialized_views()
@@ -352,19 +357,12 @@ def cmd_post_migration(args):
         s9, m9, c9, o9 = post_sync.sync_sequences()
         print_status(s9, m9)
 
-        # Step 10 — Terminate & Post-Data Schema
-        print("[Step 10] Terminate replication & Deploy Schema (post-data)...")
-        # 1. Stop Replication
-        s10_1, m10_1, c10_1, o10_1 = migrator.step10_terminate_replication()
-        print_status(s10_1, f"Replication stop: {m10_1}")
-        if not s10_1:
-            raise RuntimeError(f"Step 10 failed: {m10_1}")
-
-        # 2. Schema post-data
+        # Schema post-data
+        print("[Step 10.2] Deploy Schema (post-data)...")
         s10_2, m10_2, c10_2, o10_2 = migrator.step4b_migrate_schema_post_data()
         print_status(s10_2, f"Schema post-data: {m10_2}")
         if not s10_2:
-            raise RuntimeError(f"Step 10 failed: {m10_2}")
+            raise RuntimeError(f"Step 10.2 failed: {m10_2}")
 
         # Step 11a — LOB Sync
         print("[Step 11a] Synchronize Large Objects (LOBs)...")

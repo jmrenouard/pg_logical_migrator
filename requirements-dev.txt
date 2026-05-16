@@ -1,0 +1,8 @@
+-r requirements.txt
+docker
+pytest
+pytest-html
+pytest-cov
+PyYAML
+ruff
+mypy

@@ -35,22 +35,61 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install -r requirements-dev.txt
+      - name: Lint with ruff
+        run: |
+          ruff check src/ tests/
+      - name: Type check with mypy
+        run: |
+          mypy src/
       - name: Prepare test config
-        run: cp config_migrator.sample.ini config_migrator.ini
+        run: |
+          mkdir -p tests
+          cat <<EOF > config_migrator.ini
+          [source]
+          host = localhost
+          port = 5432
+          user = postgres
+          password = secret
+          database = test_migration
+
+          [destination]
+          host = localhost
+          port = 5433
+          user = postgres
+          password = secret
+          database = test_migration
+
+          [replication]
+          publication_name = pub_test_migration
+          subscription_name = sub_test_migration
+          sync_lobs = true
+          sync_unlogged = true
+          drop_destination = true
+          target_schema = all
+          EOF
+          cp config_migrator.ini tests/test_config.ini
       - name: Start Docker Test Environment
-        run: make env-up
+        working-directory: ./test_env
+        run: |
+          docker compose down -v --remove-orphans 2>/dev/null || true
+          docker compose up -d
+          sleep 10
+      - name: Load Test Data
+        run: ./test_env/setup_pagila.sh
       - name: Run Tests with Coverage
         run: |
+          export MIGRATOR_CONFIG=tests/test_config.ini
           PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ \
             --cov=src \
             --cov-report=xml \
-            --cov-report=term \
-            --cov-report=html:RESULTS/coverage
+            --cov-report=term-missing \
+            --cov-report=html:RESULTS/coverage \
+            --cov-fail-under=70
       - name: Stop Docker Test Environment
         if: always()
-        run: make env-down
+        working-directory: ./test_env
+        run: docker compose down -v --remove-orphans
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4

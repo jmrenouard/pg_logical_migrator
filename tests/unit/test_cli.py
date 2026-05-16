@@ -9,7 +9,7 @@ def test_cmd_sync_lobs_success():
     args.config = "dummy.ini"
     args.dry_run = False
 
-    with patch("src.cli.commands.Config") as mock_config_cls, \
+    with patch("src.cli.commands.Config"), \
             patch("src.cli.commands.Migrator") as mock_migrator_cls, \
             patch("src.cli.commands.print_status") as mock_print_status, \
             patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
@@ -35,7 +35,7 @@ def test_cmd_sync_lobs_failure():
     args.config = "dummy.ini"
     args.dry_run = False
 
-    with patch("src.cli.commands.Config") as mock_config_cls, \
+    with patch("src.cli.commands.Config"), \
             patch("src.cli.commands.Migrator") as mock_migrator_cls, \
             patch("src.cli.commands.print_status") as mock_print_status, \
             patch("src.cli.commands.print_verbose_execution") as mock_print_verbose:
@@ -61,7 +61,7 @@ def test_cmd_sync_lobs_dry_run():
     args.config = "dummy.ini"
     args.dry_run = True
 
-    with patch("src.cli.commands.Config") as mock_config_cls, \
+    with patch("src.cli.commands.Config"), \
             patch("src.cli.commands.Migrator") as mock_migrator_cls:
 
         mock_migrator_instance = MagicMock()
