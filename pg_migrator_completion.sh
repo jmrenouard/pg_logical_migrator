@@ -57,6 +57,9 @@ _pg_migrator_completion() {
             generate-config)
                 COMPREPLY=( $(compgen -W "-o --output ${opts}" -- "${cur}") )
                 ;;
+            wizard)
+                COMPREPLY=( $(compgen -W "--non-interactive ${opts}" -- "${cur}") )
+                ;;
             *)
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 ;;

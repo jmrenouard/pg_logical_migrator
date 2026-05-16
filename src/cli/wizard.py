@@ -499,13 +499,17 @@ class WizardView:
 
 
 class MigrationWizard:
-    def __init__(self, config_path: str, database: Optional[str] = None):
+    def __init__(self, config_path: str, database: Optional[str] = None, non_interactive: bool = False):
         self.model = WizardModel(config_path, database)
         self.view = WizardView()
+        self.non_interactive = non_interactive
 
     def run(self):
         if not self.model.init_config():
             self.view.console.print(f"[yellow]Config file '{self.model.config_path}' not found.[/yellow]")
+            if self.non_interactive:
+                self.view.console.print("[red]Cannot run non-interactive wizard without a configuration file.[/red]")
+                return
             if Confirm.ask("Generate a default configuration file?", default=True):
                 out = Prompt.ask("Output path", default=self.model.config_path)
                 self.model.generate_default_config(out)
@@ -515,6 +519,8 @@ class MigrationWizard:
         self._select_database()
         if not self.model.init_clients():
             self.view.console.print("[yellow]Could not connect clients.[/yellow]")
+            if self.non_interactive:
+                return
             
         self._setup_readline()
         self.view.show_banner(self.model.database, self.model.config_path, self.model.dry_run)
@@ -525,6 +531,23 @@ class MigrationWizard:
             state = self.model.detect_state()
             self.model.update_history_from_state(state)
         self.view.display_state(state, self.model.cfg, self.model.config_path)
+
+        if self.non_interactive:
+            self.view.console.print("[bold cyan]Running in non-interactive mode. Executing all uncompleted steps...[/bold cyan]")
+            while True:
+                state = self.model.detect_state()
+                step = self.model.get_next_step(state)
+                if step:
+                    self._execute_step(step)
+                    # If step failed, halt automation
+                    if self.model.history.get(step["id"]) == "FAIL":
+                        self.view.console.print("[bold red]Non-interactive execution aborted due to step failure.[/bold red]")
+                        break
+                else:
+                    self.view.console.print("[green]All 17 migration steps completed![/green]")
+                    self._generate_report()
+                    break
+            return
 
         while True:
             try:
@@ -591,23 +614,27 @@ class MigrationWizard:
         except Exception:
             dbs = []
         if not dbs:
-            self.model.database = Prompt.ask("Database name", default="postgres")
+            self.model.database = "postgres" if getattr(self, "non_interactive", False) else Prompt.ask("Database name", default="postgres")
         elif len(dbs) == 1:
             self.model.database = dbs[0]
         else:
-            self.view.console.print("[bold]Available databases:[/bold]")
-            for i, d in enumerate(dbs, 1):
-                self.view.console.print(f"  {i}. {d}")
-            while True:
-                choice = Prompt.ask("Select database (name or number)", default="1")
-                if choice.isdigit() and 1 <= int(choice) <= len(dbs):
-                    self.model.database = dbs[int(choice) - 1]
-                    break
-                elif choice in dbs:
-                    self.model.database = choice
-                    break
-                else:
-                    self.view.console.print(f"[red]Unknown database '{choice}'. Use a number or exact name.[/red]")
+            if getattr(self, "non_interactive", False):
+                self.model.database = dbs[0]
+                self.view.console.print(f"[yellow]Non-interactive mode: auto-selecting first database '{self.model.database}' from {dbs}[/yellow]")
+            else:
+                self.view.console.print("[bold]Available databases:[/bold]")
+                for i, d in enumerate(dbs, 1):
+                    self.view.console.print(f"  {i}. {d}")
+                while True:
+                    choice = Prompt.ask("Select database (name or number)", default="1")
+                    if choice.isdigit() and 1 <= int(choice) <= len(dbs):
+                        self.model.database = dbs[int(choice) - 1]
+                        break
+                    elif choice in dbs:
+                        self.model.database = choice
+                        break
+                    else:
+                        self.view.console.print(f"[red]Unknown database '{choice}'. Use a number or exact name.[/red]")
         self.model.cfg.set_override_db(self.model.database)
 
     def _menu_configure(self):
@@ -674,7 +701,7 @@ class MigrationWizard:
             return
 
         if step["cmd"] not in ("repl-progress", "check", "diagnose", "params", "audit-objects", "stop-repl", "start-repl"):
-            if not Confirm.ask(f"Execute [cyan]{step['cmd']}[/cyan]?", default=True):
+            if not getattr(self, "non_interactive", False) and not Confirm.ask(f"Execute [cyan]{step['cmd']}[/cyan]?", default=True):
                 self.model.history[step["id"]] = "SKIP"
                 return
 
@@ -719,6 +746,22 @@ class MigrationWizard:
             color = "green" if rc == 0 else "red"
             self.view.console.print(f"[{color}]Step {step['id']} → {status}[/{color}]")
 
+            # Update corresponding sub-steps if a pipeline completes successfully
+            if rc == 0:
+                if step["id"] == "P1":
+                    for sid in ["1", "2", "3", "4", "5", "6", "7", "14", "15"]:
+                        self.model.history[sid] = "OK"
+                elif step["id"] == "P2":
+                    for sid in ["1", "8", "9", "10", "10b", "11a", "11b", "12", "13", "14", "15", "16"]:
+                        self.model.history[sid] = "OK"
+                
+                # Refresh state dynamically for all observable elements
+                try:
+                    state = self.model.detect_state()
+                    self.model.update_history_from_state(state)
+                except Exception:
+                    pass
+
     def _show_repl_status_polling(self):
         progress = None
         try:
@@ -751,19 +794,19 @@ class MigrationWizard:
 
         try:
             if cmd == "migrate-schema-pre-data":
-                args.drop_dest = Confirm.ask("Drop destination DB first? (--drop-dest)", default=False)
+                args.drop_dest = False if getattr(self, "non_interactive", False) else Confirm.ask("Drop destination DB first? (--drop-dest)", default=False)
             elif cmd == "migrate-schema-post-data":
                 args.drop_dest = False
             elif cmd == "reassign-owner":
                 default_user = "postgres"
                 if self.model.cfg:
                     default_user = self.model.cfg.get_dest_dict().get('user', 'postgres')
-                args.owner = Prompt.ask("Target owner role", default=default_user)
+                args.owner = default_user if getattr(self, "non_interactive", False) else Prompt.ask("Target owner role", default=default_user)
             elif cmd == "generate-config":
-                args.output = Prompt.ask("Output path", default="config_migrator.sample.ini")
+                args.output = "config_migrator.sample.ini" if getattr(self, "non_interactive", False) else Prompt.ask("Output path", default="config_migrator.sample.ini")
             elif cmd == "init-replication":
-                args.drop_dest = Confirm.ask("Drop destination first?", default=False)
-                args.wait = Confirm.ask("Wait for initial sync?", default=True)
+                args.drop_dest = False if getattr(self, "non_interactive", False) else Confirm.ask("Drop destination first?", default=False)
+                args.wait = True if getattr(self, "non_interactive", False) else Confirm.ask("Wait for initial sync?", default=True)
             return args
         except EOFError:
             return None
@@ -836,6 +879,8 @@ class MigrationWizard:
             pass
 
 def cmd_wizard(args):
-    wizard = MigrationWizard(args.config, getattr(args, "database", None))
+    wizard = MigrationWizard(args.config, getattr(args, "database", None), getattr(args, "non_interactive", False))
+    if getattr(args, "dry_run", False):
+        wizard.model.dry_run = True
     wizard.run()
     return 0

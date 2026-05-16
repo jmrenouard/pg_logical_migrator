@@ -373,6 +373,10 @@ def build_parser() -> argparse.ArgumentParser:
         "wizard",
         parents=[global_parser],
         help="Launch interactive step-by-step assistant")
+    p_wizard.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Run wizard in non-interactive mode for CI/CD")
     p_wizard.set_defaults(func=cmd_wizard)
 
     return parser
