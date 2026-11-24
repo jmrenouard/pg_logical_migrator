@@ -18,7 +18,7 @@ make env-up
 Verify that both databases accept connections using the bundled test config (`tests/test_config.ini`):
 
 ```bash
-PYTHONPATH=. python pg_migrator.py -c tests/test_config.ini check
+PYTHONPATH=. python pg_migrator.py check -c tests/test_config.ini
 ```
 
 ## Step 2: Inspect the Two-Phase Migration Flow
@@ -43,7 +43,7 @@ sequenceDiagram
 Initialize schema, publication, and subscription, dropping any leftover target database in the test sandbox:
 
 ```bash
-PYTHONPATH=. python pg_migrator.py -c tests/test_config.ini init-replication --drop-dest --wait
+PYTHONPATH=. python pg_migrator.py init-replication -c tests/test_config.ini --drop-dest --wait
 ```
 
 Inspect the generated HTML report inside `RESULTS/<timestamp>/report_init.html`.
@@ -53,7 +53,7 @@ Inspect the generated HTML report inside `RESULTS/<timestamp>/report_init.html`.
 Execute the cutover pipeline once initial sync completes:
 
 ```bash
-PYTHONPATH=. python pg_migrator.py -c tests/test_config.ini post-migration
+PYTHONPATH=. python pg_migrator.py post-migration -c tests/test_config.ini
 ```
 
 Review `RESULTS/<timestamp>/report_post.html` to verify object parity and row counts across all Pagila tables.
@@ -63,7 +63,7 @@ Review `RESULTS/<timestamp>/report_post.html` to verify object parity and row co
 Launch the Rich terminal assistant for guided step-by-step inspections:
 
 ```bash
-PYTHONPATH=. python pg_migrator.py -c tests/test_config.ini wizard
+PYTHONPATH=. python pg_migrator.py wizard -c tests/test_config.ini
 ```
 
 Use `--non-interactive` in CI/automation checks to execute detected pending steps automatically without interactive prompts.

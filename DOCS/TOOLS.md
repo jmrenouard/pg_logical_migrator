@@ -137,17 +137,17 @@ python pg_migrator.py <command> [options]
 
 ---
 
-## 5. Global Options
+## 5. Shared Subcommand Options
 
-These options apply to **all** commands and must be placed **before** the subcommand:
+These options are inherited by **all** subcommands and must be placed **after** `<command>` (only `-h`/`--help` and `-V`/`--version` apply before `<command>`):
 
 ```bash
-python pg_migrator.py [GLOBAL OPTIONS] <command> [COMMAND OPTIONS]
+python pg_migrator.py <command> [OPTIONS]
 ```
 
 | Option | Short | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--version` | `-V` | flag | — | Display the program version and exit |
+| `--version` | `-V` | flag | — | Display the program version and exit (top-level option) |
 | `--config FILE` | `-c` | string | `config_migrator.ini` | Path to the `.ini` configuration file |
 | `--results-dir DIR` | — | string | `RESULTS/<timestamp>` | Directory for storing results and HTML reports |
 | `--loglevel LEVEL` | — | choice | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
@@ -157,17 +157,17 @@ python pg_migrator.py [GLOBAL OPTIONS] <command> [COMMAND OPTIONS]
 | `--verbose` | `-v` | flag | `False` | Print executed SQL commands, results, and errors to stderr |
 | `--use-stats` | — | flag | `False` | Estimate row counts from `pg_stat_user_tables` instead of `COUNT(*)` |
 
-### Examples with global options
+### Examples with shared options
 
 ```bash
 # Use a custom config and DEBUG logging
-python pg_migrator.py -c /etc/pg_migrator/prod.ini --loglevel DEBUG check
+python pg_migrator.py check -c /etc/pg_migrator/prod.ini --loglevel DEBUG
 
 # Dry-run the initialization phase with a 20s sync delay
-python pg_migrator.py --dry-run --sync-delay 20 init-replication
+python pg_migrator.py init-replication --dry-run --sync-delay 20
 
 # Store results in a custom directory
-python pg_migrator.py --results-dir /var/reports/migration_001 post-migration
+python pg_migrator.py post-migration --results-dir /var/reports/migration_001
 ```
 
 ---
@@ -269,7 +269,7 @@ python pg_migrator.py init-replication --wait
 python pg_migrator.py post-migration
 
 # Dry-run (shows steps without executing)
-python pg_migrator.py --dry-run init-replication
+python pg_migrator.py init-replication --dry-run
 
 # Generate a config file
 python pg_migrator.py generate-config --output my_config.ini
@@ -351,7 +351,7 @@ RESULTS/
 **Dry-run mode**: Use `--dry-run` to preview the sequence without executing any step:
 
 ```bash
-python pg_migrator.py --dry-run init-replication
+python pg_migrator.py init-replication --dry-run
 ```
 
 ---
@@ -406,7 +406,7 @@ ssh ops@target
 vi /etc/pg_migrator/config_migrator.ini
 
 # Run using an explicit config path
-pg_migrator --config /etc/pg_migrator/config_migrator.ini init-replication
+pg_migrator init-replication --config /etc/pg_migrator/config_migrator.ini
 ```
 
 > **Note**: `pg_dump` and `psql` are **not** bundled — they are called as external processes and must be installed on the target machine (any PostgreSQL client package ≥ v10).

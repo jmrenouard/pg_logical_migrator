@@ -18,19 +18,19 @@ NOTE: To check flags and defaults, see [CLI Reference](../03-reference/cli-comma
 1. Run connectivity validation on both database servers:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini check
+python pg_migrator.py check -c config_migrator.ini
 ```
 
 2. Run source object diagnostics:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini diagnose
+python pg_migrator.py diagnose -c config_migrator.ini
 ```
 
 3. Verify replication parameters on both servers:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini params
+python pg_migrator.py params -c config_migrator.ini
 ```
 
 If parameters fail, update `postgresql.conf` and restart PostgreSQL before Phase 2.
@@ -40,7 +40,7 @@ If parameters fail, update `postgresql.conf` and restart PostgreSQL before Phase
 1. Preview the initialization steps in dry-run mode:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini --dry-run init-replication
+python pg_migrator.py init-replication -c config_migrator.ini --dry-run
 ```
 
 CAUTION: The `--drop-dest` option deletes and recreates the destination database. Do not use `--drop-dest` on shared production databases unless you accept full replacement.
@@ -48,7 +48,7 @@ CAUTION: The `--drop-dest` option deletes and recreates the destination database
 2. Start schema deployment and logical replication:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini init-replication --wait
+python pg_migrator.py init-replication -c config_migrator.ini --wait
 ```
 
 NOTE: Omit `--wait` to return control immediately during large initial copies.
@@ -61,13 +61,13 @@ WARNING: Stop writes on the source database before cutover to prevent split-brai
 2. Wait until replication lag reaches zero:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini wait-sync
+python pg_migrator.py wait-sync -c config_migrator.ini
 ```
 
 3. Run the finalization pipeline:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini post-migration
+python pg_migrator.py post-migration -c config_migrator.ini
 ```
 
 ## Validation
@@ -75,8 +75,8 @@ python pg_migrator.py -c config_migrator.ini post-migration
 Verify that object counts and table row counts match across both servers:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini audit-objects
-python pg_migrator.py -c config_migrator.ini validate-rows
+python pg_migrator.py audit-objects -c config_migrator.ini
+python pg_migrator.py validate-rows -c config_migrator.ini
 ```
 
 Open the latest `RESULTS/<timestamp>/report_post.html` file and confirm zero `FAIL` or `ERROR` rows.
@@ -86,7 +86,7 @@ Open the latest `RESULTS/<timestamp>/report_post.html` file and confirm zero `FA
 If application checks fail after cutover, configure reverse replication before you direct traffic back to the source:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini setup-reverse
+python pg_migrator.py setup-reverse -c config_migrator.ini
 ```
 
 Keep client writes on the new database until reverse sync catches up.
@@ -94,5 +94,5 @@ Keep client writes on the new database until reverse sync catches up.
 If migration aborts before cutover, remove replication objects from both clusters:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini cleanup
+python pg_migrator.py cleanup -c config_migrator.ini
 ```

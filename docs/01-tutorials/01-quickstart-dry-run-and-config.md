@@ -5,7 +5,7 @@ In this tutorial, we explore the **pg_logical_migrator** CLI safely without need
 ## Prerequisites
 
 - Python 3.9 or newer with dependencies installed (`pip install -r requirements.txt`) or access to the Docker image.
-- Note for Linux/macOS shells: `src/cli/wizard.py` uses Python's `readline` module (`py_migrator.py --help` runs natively on Linux/macOS and inside Docker/WSL).
+- Note for Linux/macOS shells: `src/cli/wizard.py` uses Python's `readline` module (`pg_migrator.py --help` runs natively on Linux/macOS and inside Docker/WSL).
 
 ## Step 1: Verify CLI Installation and Version
 
@@ -60,7 +60,7 @@ log_file = pg_migrator.log
 Run `init-replication` with `-n` / `--dry-run` pointing to your tutorial config and a temporary results directory:
 
 ```bash
-python pg_migrator.py -c /tmp/tutorial_migrator.ini --results-dir /tmp/tutorial_results --dry-run init-replication
+python pg_migrator.py init-replication -c /tmp/tutorial_migrator.ini --results-dir /tmp/tutorial_results --dry-run
 ```
 
 Notice that `--dry-run` executes zero SQL statements. It prints the 9 planned steps in the initialization sequence (`1`, `2`, `3`, `4`, `5`, `6`, wait `--sync-delay`, `14`, `15`):
@@ -84,7 +84,7 @@ Notice that `--dry-run` executes zero SQL statements. It prints the 9 planned st
 Preview the cutover pipeline without modifying databases:
 
 ```bash
-python pg_migrator.py -c /tmp/tutorial_migrator.ini --results-dir /tmp/tutorial_results --dry-run post-migration
+python pg_migrator.py post-migration -c /tmp/tutorial_migrator.ini --results-dir /tmp/tutorial_results --dry-run
 ```
 
 ```text

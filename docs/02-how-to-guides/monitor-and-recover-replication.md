@@ -16,13 +16,13 @@ NOTE: For flag syntax and defaults, see [CLI Reference](../03-reference/cli-comm
 1. Run the replication progress command to view table states and byte progress:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini repl-progress
+python pg_migrator.py repl-progress -c config_migrator.ini
 ```
 
 2. If scripts require synchronous completion, run `wait-sync`:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini wait-sync
+python pg_migrator.py wait-sync -c config_migrator.ini
 ```
 
 ### Pause and Resume Replication
@@ -32,13 +32,13 @@ CAUTION: When you pause replication, WAL consumption stops on the destination. L
 1. Disable the destination subscription to pause replication:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini stop-repl
+python pg_migrator.py stop-repl -c config_migrator.ini
 ```
 
 2. Enable the destination subscription when ready to resume:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini start-repl
+python pg_migrator.py start-repl -c config_migrator.ini
 ```
 
 ### Enable Reverse Replication for Rollback
@@ -46,7 +46,7 @@ python pg_migrator.py -c config_migrator.ini start-repl
 1. If post-cutover rollback protection is needed, create reverse replication from destination to source:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini setup-reverse
+python pg_migrator.py setup-reverse -c config_migrator.ini
 ```
 
 ## Validation
@@ -54,8 +54,8 @@ python pg_migrator.py -c config_migrator.ini setup-reverse
 Run structural object audit and fast row-count validation to check cluster synchronization:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini audit-objects
-python pg_migrator.py -c config_migrator.ini --use-stats validate-rows
+python pg_migrator.py audit-objects -c config_migrator.ini
+python pg_migrator.py validate-rows -c config_migrator.ini --use-stats
 ```
 
 Confirm both commands exit with status `0` and show zero discrepancies.
@@ -65,7 +65,7 @@ Confirm both commands exit with status `0` and show zero discrepancies.
 To discard the reverse replication channel after production stability is confirmed, run reverse cleanup:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini cleanup-reverse
+python pg_migrator.py cleanup-reverse -c config_migrator.ini
 ```
 
 WARNING: If you run `cleanup`, the command drops active forward replication subscriptions, publications, and slots permanently. Do not run `cleanup` until rollback is no longer needed.
@@ -73,5 +73,5 @@ WARNING: If you run `cleanup`, the command drops active forward replication subs
 To remove all forward replication artifacts, run `cleanup`:
 
 ```bash
-python pg_migrator.py -c config_migrator.ini cleanup
+python pg_migrator.py cleanup -c config_migrator.ini
 ```
