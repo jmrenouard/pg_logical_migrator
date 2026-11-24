@@ -2,6 +2,8 @@
 
 `pg_logical_migrator` is a high-performance, automated tool designed to migrate PostgreSQL databases with minimal downtime using native logical replication. It handles complex object types, provides real-time monitoring, and ensures data integrity through exhaustive validation.
 
+For structured learning guides, ASD-STE100 operational runbooks, full CLI parameter tables, and architectural explanations, see the **[Diátaxis Documentation Portal](docs/index.md)**.
+
 ---
 
 ## 🚀 Quick Start (Automated Pipeline)

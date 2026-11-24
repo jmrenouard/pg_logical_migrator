@@ -21,7 +21,7 @@ Schema changes (e.g., `ALTER TABLE`, `CREATE INDEX`) are **not** replicated.
 ### 🔄 Sequences
 Sequences are not automatically synchronized in real-time.
 - **Behavior**: Sequences remain at their initial values on the destination throughout the replication.
-- **Step 9/10**: We provide a explicit synchronization step to read current sequence values from the source and apply them to the destination just before cutover.
+- **Step 9 (`sync-sequences`)**: An explicit synchronization step reads current sequence values from the source and applies them to the destination during cutover.
 
 ### 📉 Unlogged Tables
 Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be natively replicated by PostgreSQL logical replication.
@@ -30,8 +30,8 @@ Data in `UNLOGGED` tables is not written to the WAL and therefore cannot be nati
 
 ### 🛡️ Triggers and Foreign Keys
 - **Triggers**: By default, triggers (like those for auditing or denormalization) are **not** executed on the subscriber to avoid duplicate actions.
-- **Foreign Keys**: These are checked only when data is initially copied, or when the `REPLICA IDENTITY` is set.
-- **Strategy**: We recommend disabling triggers and foreign key checks during the initial copy (handled in Step 4a/12) and re-enabling them after the data is fully synchronized (Step 11).
+- **Foreign Keys**: Applied during `post-data` schema deployment (`Step 10b`), after initial table data is synchronized.
+- **Strategy**: Keep application triggers disabled and foreign keys deferred to `post-data` (`Step 4` / `Step 10b`), then re-enable triggers after data synchronization (`Step 12`).
 
 ### 🌐 Multi-Database Migration Architecture
 - **Capability**: The tool now supports cross-database batch execution. By defining multiple databases (or `*` for auto-discovery) in `config_migrator.ini`, `pg_logical_migrator` iterates through them efficiently in a single pass.

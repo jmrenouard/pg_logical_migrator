@@ -17,10 +17,11 @@ Logical replication works by decoding the Write-Ahead Log (WAL) into a stream of
 
 ### 🏗️ Workflow Structure
 
-The migration is divided into three logical phases:
-1.  **Preparation (Steps 1-4)**: Connectivity checks, compatibility diagnostics, and structural (schema) setup.
-2.  **Execution (Steps 5-7)**: Initial data synchronization and continuous delta streaming.
-3.  **Finalization (Steps 8-16)**: Final data audit, object parity checks, and sequence synchronization before application cutover.
+The migration is divided into four core phases:
+1.  **Preparation (Steps 1-4)**: Connectivity checks, compatibility diagnostics, replication parameters, and pre-data schema setup.
+2.  **Execution (Steps 5-7)**: Publication/subscription setup, initial snapshot copy, and streaming progress monitoring.
+3.  **Finalization (Steps 8-13)**: MatViews, sequences, replication termination, post-data schema (indexes/FKs), LOB/UNLOGGED sync, triggers, and ownership.
+4.  **Validation & Cleanup (Steps 14-17)**: Object parity audit, row count verification, replication cleanup, and optional reverse replication rollback setup.
 
 ### ⚖️ Reliability & Rollback
 

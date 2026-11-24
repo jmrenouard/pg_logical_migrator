@@ -10,33 +10,69 @@ This document provides a comprehensive overview of the `pg_logical_migrator` cod
 
 The project is a modular Python application providing both a Command Line Interface (CLI) and an Interactive Wizard. It is built around single-responsibility classes managing logical replication phases (diagnostics, setup, post-sync, and validation).
 
+### Architecture Overview
+
+```mermaid
+flowchart LR
+    CLI["pg_migrator.py (argparse CLI)"] --> Dispatch["Database Loop (cfg.get_databases)"]
+    Dispatch --> Cmds["src/cli/commands.py"]
+    Dispatch --> Pipes["src/cli/pipelines.py"]
+    Dispatch --> Wiz["src/cli/wizard.py (MigrationWizard / WizardModel)"]
+    Cmds --> Core["Core Modules"]
+    Pipes --> Core
+    Wiz --> Core
+    subgraph Core["src/ Engine"]
+        direction TB
+        CFG["config.py (Config)"]
+        DB["db.py (PostgresClient)"]
+        CHK["checker.py (DBChecker)"]
+        MIG["migrator.py + migrator_components/"]
+        PSY["post_sync.py (PostSync)"]
+        VAL["validation.py (Validator)"]
+        RPT["report_generator.py (HTML)"]
+    end
+```
+
 ### Directory Structure
 
 ```text
 pg_logical_migrator/
-├── pg_migrator.py           # Main CLI entry point
-├── src/                     # Core Python modules
-│   ├── config.py            # Configuration management
-│   ├── db.py                # Database interaction wrapper & utilities
-│   ├── checker.py           # Pre-flight diagnostics and size analysis
-│   ├── migrator.py          # Core replication and schema setup
-│   ├── post_sync.py         # Sequences, triggers, materialized views, ownership
-│   ├── validation.py        # Object and data parity auditing
-│   ├── report_generator.py  # HTML audit report generation
-│   └── cli/                 # CLI-specific logic
-│       ├── commands.py      # Individual step command wrappers
-│       ├── pipelines.py     # Orchestrated multi-step pipelines (init-replication, post-migration)
-│       └── helpers.py       # Shared CLI formatting and logging utilities
-├── tests/                   # Test suite (Unit, Integration, E2E, Workflow)
-│   ├── unit/                # 205 unit tests — no Docker required (96% src/ coverage)
-│   ├── integration/         # Database connectivity tests (requires Docker)
-│   └── e2e/                 # Full 17-step migration tests (requires Docker + Pagila)
-├── .flake8                  # Linting config (excludes venv/.venv)
-├── .github/workflows/       # CI/CD pipelines
-│   ├── python-package.yml   # Lint, test, Docker GHCR, Python assets
+├── pg_migrator.py               # Main CLI entry point (27 subcommands)
+├── pg_migrator_completion.sh    # Bash completion for CLI and dist binary
+├── pyproject.toml               # Build & package metadata
+├── src/                         # Core Python modules
+│   ├── config.py                # Configuration management (.ini, multi-schema)
+│   ├── db.py                    # PostgresClient wrapper, pooling, redaction
+│   ├── schema_utils.py          # Schema filter SQL generation
+│   ├── checker.py               # Pre-flight diagnostics and size analysis
+│   ├── migrator.py              # Facade composing migrator_components/
+│   ├── migrator_components/     # Modular replication & migration internals
+│   │   ├── data_sync.py         # Large Objects & UNLOGGED table synchronization
+│   │   ├── monitoring.py        # Initial sync polling & byte progress tracking
+│   │   ├── replication.py       # Publication, subscription, reverse replication
+│   │   └── schema.py            # Pre-data and post-data pg_dump/psql execution
+│   ├── post_sync.py             # Sequences, triggers, matviews, ownership
+│   ├── validation.py            # Object and data parity auditing
+│   ├── report_generator.py      # Self-contained HTML audit reports
+│   └── cli/                     # CLI & Wizard interfaces
+│       ├── commands.py          # Individual step command wrappers
+│       ├── pipelines.py         # Automated pipelines (init-replication, post-migration)
+│       ├── helpers.py           # Logging, formatting, sample INI generator
+│       └── wizard.py            # Rich-based interactive MigrationWizard (MVC)
+├── docs/                        # Canonical Diátaxis portal + design specs
+├── DOCS/                        # Technical architecture and CI references
+├── PROJECT/                     # Project governance, specs, and milestones
+├── releases/                    # Versioned release notes (v1.0.0 - v1.4.1)
+├── tests/                       # Test suite (Unit, Integration, E2E)
+│   ├── unit/                    # 290 baseline unit tests — no Docker required
+│   ├── integration/             # 24 wizard + Docker connectivity tests
+│   └── e2e/                     # Full 17-step Pagila + packaging tests
+├── .flake8                      # Legacy Flake8 directory exclusions
+├── .github/workflows/           # CI/CD pipelines
+│   ├── python-package.yml       # Ruff, mypy, full test suite, GHCR, wheel/sdist
 │   ├── pyinstaller-publish.yml  # Standalone binaries + DEB/RPM + GitHub Release
-│   └── docker-publish.yml   # Docker Hub publish
-└── test_env/                # Docker Compose environment for testing
+│   └── docker-publish.yml       # Docker Hub publish
+└── test_env/                    # Docker Compose environment for testing
 ```
 
 ---
@@ -81,14 +117,13 @@ pg_logical_migrator/
 ## User Interfaces
 
 ### Command Line Interface (CLI)
-- **`pg_migrator.py`**: Entry point using `argparse`.
+- **`pg_migrator.py`**: Entry point using `argparse` (`27` subcommands) with sequential multi-database looping via `Config.get_databases()`.
 - **`src/cli/pipelines.py`**: Orchestrates high-level workflows:
-  - `init-replication`: Steps 1-6 + `wait_for_sync` + Validation. Includes `--no-wait` option.
-  - `post-migration`: `wait_for_sync` + Step 16 (Stop) + Step 12 (Post-Data) + Post-sync + Validation.
+  - `init-replication`: Steps 1-6 + optional `wait_for_sync` (`--wait`) + Step 14/15 validation -> `report_init.html`.
+  - `post-migration`: `wait_for_sync` + Step 10 (Terminate) + Step 8 (MatViews) + Step 9 (Sequences) + Step 10.2 (Post-Data) + Step 11a/11b (LOBs/UNLOGGED) + Step 12 (Triggers) + Step 13 (Ownership) + Step 14/15 validation -> `report_post.html`.
 
 ### Interactive Wizard
-- **`src/cli/commands.py (cmd_wizard)`**: A guided, step-by-step assistant with state detection.
-- Provides interactive menus to configure databases, run specific steps, or execute pipelines.
+- **`src/cli/wizard.py` (`cmd_wizard`, `MigrationWizard`, `WizardModel`, `WizardView`)**: A Rich-based MVC assistant with database discovery, state detection, and `--non-interactive` support.
 
 ---
 
@@ -101,18 +136,18 @@ pg_logical_migrator/
 
 ## Test Infrastructure
 
-The project maintains **96% unit test coverage** across `src/`. See [DOCS/TESTING.md](TESTING.md) for the full reference.
+The baseline unit suite contains **290 unit tests** (`69%` unit-only coverage on `src/`; full CI coverage passes the `70%` gate when including `tests/integration/test_wizard*.py`). See [DOCS/TESTING.md](TESTING.md) for the full reference.
 
 ### Makefile Targets
 
 | Target | Description |
 |---|---|
-| `make test-unit` | Run 205 unit tests (no Docker) |
-| `make test-coverage` | Unit tests + coverage report (HTML + terminal) |
-| `make test-integration` | Integration tests (requires Docker) |
+| `make test-unit` | Run unit tests (`tests/unit`, no Docker) |
+| `make test-coverage` | Unit tests + coverage report (HTML + terminal, `--cov-fail-under=70`) |
+| `make test-integration` | Integration tests (`test_wizard.py` + Docker tests) |
 | `make test-e2e` | End-to-end migration test (requires Docker) |
 | `make test-packaging` | Binary + DEB/RPM + wheel packaging validation |
 | `make test-all` | All of the above in sequence |
 | `make test-report` | Unit tests + HTML report + full pipeline run |
-| `make env-up` | Start Docker test environment (PostgreSQL × 2 + Pagila) |
+| `make env-up` | Start Docker test environment (PostgreSQL 16/17 + Pagila) |
 | `make env-down` | Tear down Docker environment |
