@@ -34,3 +34,7 @@ pg_migrator = "pg_migrator:main"
 [tool.setuptools]
 py-modules = ["pg_migrator"]
 packages = ["src", "src.cli", "src.migrator_components"]
+
+[tool.ruff.lint]
+# Restore pre-0.17 default rule selection so unpinned CI ruff matches codebase baseline
+select = ["E4", "E7", "E9", "F"]
