@@ -64,7 +64,7 @@ pg_logical_migrator/
 ├── PROJECT/                     # Project governance, specs, and milestones
 ├── releases/                    # Versioned release notes (v1.0.0 - v1.4.1)
 ├── tests/                       # Test suite (Unit, Integration, E2E)
-│   ├── unit/                    # 290 baseline unit tests — no Docker required
+│   ├── unit/                    # 301 unit tests — no Docker required
 │   ├── integration/             # 24 wizard + Docker connectivity tests
 │   └── e2e/                     # Full 17-step Pagila + packaging tests
 ├── .flake8                      # Legacy Flake8 directory exclusions
@@ -136,7 +136,7 @@ pg_logical_migrator/
 
 ## Test Infrastructure
 
-The baseline unit suite contains **290 unit tests** (`69%` unit-only coverage on `src/`; full CI coverage passes the `70%` gate when including `tests/integration/test_wizard*.py`). See [DOCS/TESTING.md](TESTING.md) for the full reference.
+The unit suite contains **301 unit tests** (full CI coverage passes the `70%` gate when including `tests/integration/test_wizard*.py`). See [DOCS/TESTING.md](TESTING.md) for the full reference.
 
 ### Makefile Targets
 

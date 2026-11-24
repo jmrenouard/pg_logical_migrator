@@ -18,6 +18,7 @@ tests/
 │   ├── test_config.py             # Config parsing and multi-schema helpers
 │   ├── test_config_save.py        # Config section updates and serialization
 │   ├── test_db.py                 # PostgresClient pooling, identifier sanitization, redaction
+│   ├── test_docs_tutorials_howtos.py  # Tutorial/CLI execution, Diátaxis, STE, Mermaid checks
 │   ├── test_github_workflows.py   # GitHub Actions YAML structure & contracts (requires: pyyaml)
 │   ├── test_helpers.py            # CLI helpers: logging, formatting, config
 │   ├── test_migrator.py           # Core migrator steps (basic cases)
@@ -84,7 +85,7 @@ PYTHONPATH=. venv/bin/pytest tests/unit \
     --cov-fail-under=70
 ```
 
-**Baseline suite**: **290 unit tests** pass without Docker (`69%` across `src/` alone because `src/cli/wizard.py` is exercised by `tests/integration/test_wizard*.py`). Together with the **24** integration tests and **2** E2E tests in CI (Python `3.11 / 3.12 / 3.13`), coverage exceeds the `70%` gate.
+**Baseline suite**: **301 unit tests** pass without Docker (covering `src/` plus `docs/`, with `src/cli/wizard.py` covered by `tests/integration/test_wizard*.py`). Together with the **24** integration tests and **2** E2E tests in CI (Python `3.11 / 3.12 / 3.13`), coverage exceeds the `70%` gate.
 
 | Core Module (Unit Only) | Coverage |
 |---|---|
