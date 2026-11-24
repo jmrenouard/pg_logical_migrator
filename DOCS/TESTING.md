@@ -11,23 +11,38 @@ tests/
 ├── unit/                          # Fast, dependency-free unit tests (run in CI)
 │   ├── test_checker.py            # DBChecker diagnostics
 │   ├── test_checker_extended.py   # Edge cases: apply, pending_restart, schema filters
+│   ├── test_cli.py                # CLI wrapper tests (sync-lobs)
 │   ├── test_cli_commands.py       # All CLI subcommands
 │   ├── test_cli_commands_extended.py  # Dry-run, error paths, edge branches
 │   ├── test_cli_pipelines.py      # init-replication / post-migration pipelines
+│   ├── test_config.py             # Config parsing and multi-schema helpers
+│   ├── test_config_save.py        # Config section updates and serialization
+│   ├── test_db.py                 # PostgresClient pooling, identifier sanitization, redaction
 │   ├── test_github_workflows.py   # GitHub Actions YAML structure & contracts (requires: pyyaml)
 │   ├── test_helpers.py            # CLI helpers: logging, formatting, config
 │   ├── test_migrator.py           # Core migrator steps (basic cases)
 │   ├── test_migrator_extended.py  # Complex branches: drop_dest, LOBs, timeouts
+│   ├── test_migrator_lobs.py      # Large Object synchronization edge cases
+│   ├── test_migrator_reverse_block.py  # Reverse replication safety checks
+│   ├── test_migrator_unlogged.py  # UNLOGGED table synchronization checks
 │   ├── test_post_sync.py          # PostSync basic operations
 │   ├── test_post_sync_extended.py # Error paths, disable_triggers, reassign_ownership
 │   ├── test_report_generator.py   # HTML report generation
-│   └── test_validation.py        # Row-count and object-audit validation
+│   ├── test_schema_utils.py       # Schema filter resolution helpers
+│   └── test_validation.py         # Row-count and object-audit validation
 │
-├── integration/                   # Requires Docker test environment
-│   └── (database connectivity tests)
+├── integration/                   # Wizard unit-mocked + DB integration suites
+│   ├── test_destructive_workflow.py
+│   ├── test_non_interactive_wizard.py
+│   ├── test_steps.py
+│   ├── test_wizard.py
+│   ├── test_wizard_commands.py
+│   └── test_wizard_config.py
 │
-└── e2e/                           # Full migration pipeline tests (requires Docker)
-    └── test_full_migration.py     # 17-step migration with Pagila dataset
+└── e2e/                           # Full migration & packaging tests (requires Docker)
+    ├── test_compiled_binary.py
+    ├── test_full_migration.py     # 17-step migration with Pagila dataset
+    └── test_release_artifacts.sh
 ```
 
 ---
@@ -58,30 +73,33 @@ PYTHONPATH=. venv/bin/pytest tests/unit/test_migrator_extended.py -v
 ### Coverage Report
 
 ```bash
-# Generate terminal + HTML coverage report (threshold: 80%)
+# Generate terminal + HTML coverage report (CI threshold: 70%)
 make test-coverage
 
 # Manual invocation
 PYTHONPATH=. venv/bin/pytest tests/unit \
     --cov=src \
     --cov-report=term-missing \
-    --cov-report=html:RESULTS/coverage
+    --cov-report=html:RESULTS/coverage \
+    --cov-fail-under=70
 ```
 
-**Current coverage**: **96%** across `src/` — **205 tests** collected in CI (Python 3.9 / 3.10 / 3.11)
+**Baseline suite**: **290 unit tests** pass without Docker (`69%` across `src/` alone because `src/cli/wizard.py` is exercised by `tests/integration/test_wizard*.py`). Together with the **24** integration tests and **2** E2E tests in CI (Python `3.11 / 3.12 / 3.13`), coverage exceeds the `70%` gate.
 
-| Module | Coverage |
+| Core Module (Unit Only) | Coverage |
 |---|---|
-| `src/checker.py` | 99% |
-| `src/cli/commands.py` | 96% |
-| `src/cli/helpers.py` | 100% |
-| `src/cli/pipelines.py` | 98% |
-| `src/config.py` | 92% |
-| `src/db.py` | 100% |
-| `src/migrator.py` | 96% |
 | `src/post_sync.py` | 99% |
 | `src/report_generator.py` | 100% |
-| `src/validation.py` | 84% |
+| `src/schema_utils.py` | 100% |
+| `src/cli/pipelines.py` | 98% |
+| `src/checker.py` | 96% |
+| `src/cli/helpers.py` | 94% |
+| `src/migrator_components/data_sync.py` | 95% |
+| `src/validation.py` | 90% |
+| `src/migrator_components/monitoring.py` | 90% |
+| `src/migrator_components/replication.py` | 89% |
+| `src/cli/commands.py` | 87% |
+| `src/migrator_components/schema.py` | 83% |
 
 ### Integration Tests (requires Docker)
 
@@ -135,8 +153,8 @@ The file `tests/unit/test_github_workflows.py` validates the CI/CD pipeline defi
 |---|---|
 | **YAML Validity** | All 3 workflow files parse without errors |
 | **Trigger Rules** | Push/PR triggers, tag patterns (`v*`), workflow_dispatch |
-| **Job Dependencies** | Correct `needs:` chain (test → docker → publish) |
-| **Python Matrix** | CI covers Python 3.9, 3.10, 3.11 |
+| **Job Dependencies** | Correct `needs:` chain (test → docker → build-python-assets) |
+| **Python Matrix** | CI covers Python 3.11, 3.12, 3.13 |
 | **Permissions** | `packages: write` for GHCR push |
 | **Binary Build** | UBI8 container for glibc compatibility |
 | **Checksums** | SHA256 generated for all artifacts |
@@ -161,39 +179,39 @@ PYTHONPATH=. venv/bin/pytest tests/unit/test_github_workflows.py -v
 
 Triggered on every branch push and PR to `main`.
 
-```
-push (any branch) / pull_request (main)
-    └── test (Python 3.9, 3.10, 3.11)
-            ├── flake8 lint
-            ├── pytest tests/unit
-            └── upload HTML report
-        └── docker (build & push GHCR)
-        └── build-python-assets (wheel + sdist)
+```mermaid
+flowchart LR
+    T["push / pull_request (main)"] --> TEST["test (Python 3.11, 3.12, 3.13)"]
+    subgraph TEST_STEPS["Test Job Steps"]
+        direction TB
+        LINT["ruff check src/ tests/ + mypy src/"] --> ENV["Docker PostgreSQL + setup_pagila.sh"]
+        ENV --> PYTEST["pytest tests/unit/ tests/integration/ tests/e2e/ (--cov-fail-under=70)"]
+        PYTEST --> ART["upload pytest cache + coverage HTML"]
+    end
+    TEST --> DOC["docker (build and push GHCR)"]
+    TEST --> PY["build-python-assets (wheel + sdist)"]
 ```
 
 ### `pyinstaller-publish.yml` (Packaging — v* tags/branches)
 
-Triggered on `v*` tags (stable) or `v*` branches (prerelease).
+Triggered on `v*` tags (stable) or `v*` branches (prerelease) or `workflow_dispatch`.
 
-```
-build-binaries (Linux/Win/macOS × Python 3.9/3.11)
-    └── validate-linux-binary (UBI 8 glibc check)
-        └── package-os (DEB + RPM via nfpm)
-            └── publish-release (GitHub Release + all assets)
-build-binaries
-    └── package-python (wheel + sdist per Python version)
-        └── publish-release
+```mermaid
+flowchart LR
+    BIN["build-binaries (Linux/Win/macOS x Python 3.11/3.12/3.13)"] --> VAL["validate-linux-binary (UBI 8 glibc check)"]
+    VAL --> PKG["package-os (DEB + RPM via nfpm)"]
+    PKG --> REL["publish-release (GitHub Release + checksums)"]
+    BIN --> PY["package-python (wheel + sdist per Python version)"]
+    PY --> REL
 ```
 
 ### `docker-publish.yml` (Docker Hub — v* tags only)
 
-```
-push v* tag / workflow_dispatch
-    └── build-and-push
-            ├── version extraction
-            ├── pre-publish validation (files + tag/version check)
-            ├── Docker Hub login
-            └── build + push (latest + versioned tag)
+```mermaid
+flowchart LR
+    TRIG["push v* tag / workflow_dispatch"] --> VER["extract version + pre-publish file check"]
+    VER --> AUTH["Docker Hub login"]
+    AUTH --> PUSH["build and push (latest + version tag)"]
 ```
 
 ---

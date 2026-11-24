@@ -18,11 +18,12 @@ Welcome to the **pg_logical_migrator** documentation suite. This repository is o
 
 ### 🛠️ Developer Resources
 - **[TOOLS.md](TOOLS.md)**: Guide for extending the tool, internal utilities, and local development setup.
-- **[TESTING.md](TESTING.md)**: Complete test infrastructure reference — unit tests (279 tests, 96% coverage), GitHub Actions workflow tests, packaging validation, and CI/CD pipeline documentation.
+- **[TESTING.md](TESTING.md)**: Complete test infrastructure reference — unit tests (`290` baseline tests, `>=70%` CI coverage gate), GitHub Actions workflow tests, packaging validation, and CI/CD pipeline documentation.
 
 ---
 
 ### 🚀 Quick Links
+- **[Diátaxis Portal](../docs/index.md)**: Tutorials, ASD-STE100 How-To runbooks, CLI Reference, and Explanations.
 - **[Root README](../README.md)**: Project overview, Demo, and Quickstart.
-- **[HOWTO.md](../HOWTO.md)**: Step-by-step tutorial for your first migration.
+- **[HOWTO.md](../HOWTO.md)**: Step-by-step quickstart and command cheat sheet.
 - **[CONTRIBUTING.md](../CONTRIBUTING.md)**: Workflow for community contributions.

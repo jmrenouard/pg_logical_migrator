@@ -129,11 +129,12 @@ python pg_migrator.py post-migration
 
 | Resource | Description |
 | :--- | :--- |
+| **[docs/index.md](docs/index.md)** | **Diátaxis Portal**: Tutorials, ASD-STE100 How-To Runbooks, CLI Reference, and Architecture Explanations. |
 | **[DOCS/WORKFLOW.md](DOCS/WORKFLOW.md)** | **Standardized 17-Step Workflow** with technical deep-dives. |
 | **[DOCS/CONFIGURATION.md](DOCS/CONFIGURATION.md)** | `config_migrator.ini` reference and PG parameters. |
 | **[DOCS/LIMITATIONS.md](DOCS/LIMITATIONS.md)** | Critical constraints (PK, LOBs, DDL restrictions). |
 | **[DOCS/DOCKER.md](DOCS/DOCKER.md)** | Running within isolated containerized environments. |
-| **[DOCS/README.md](DOCS/README.md)** | **Complete Documentation Hub**. |
+| **[DOCS/README.md](DOCS/README.md)** | **Technical Reference Hub**. |
 
 ---
 

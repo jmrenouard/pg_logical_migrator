@@ -1,0 +1,85 @@
+# CLI Commands and Configuration Reference
+
+Exact command-line interface and INI configuration reference verified against `pg_migrator.py` (`v1.4.1`).
+
+## Global CLI Options
+
+| Option | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--help` | `-h` | — | Show help message and exit |
+| `--version` | `-V` | — | Print `pg_migrator.py <version>` and exit |
+| `--config FILE` | `-c` | `config_migrator.ini` | Path to the `.ini` configuration file |
+| `--results-dir DIR` | — | `RESULTS/<YYYYMMDD_HHMMSS>` | Directory for logs and HTML audit reports |
+| `--loglevel LEVEL` | — | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `--log-file FILE` | — | `pg_migrator.log` | Custom log file path |
+| `--sync-delay SECONDS` | — | `3600` | Max seconds to wait for initial sync completion |
+| `--dry-run` | `-n` | `False` | Simulate execution without modifying databases |
+| `--verbose` | `-v` | `False` | Print executed SQL/shell commands and outputs to stderr |
+| `--use-stats` | — | `False` | Use `pg_stat_user_tables` estimates in `validate-rows` |
+
+## Subcommands (27 Total)
+
+### Individual Migration Steps (1–17)
+
+| Subcommand | Step | Subcommand Options | Purpose |
+| :--- | :--- | :--- | :--- |
+| `check` | 1 | — | Check source and destination connectivity |
+| `diagnose` | 2 | — | Scan tables without PK, LOBs, identities, unowned sequences, unlogged/temp/foreign tables, matviews |
+| `params` | 3 | — | Verify `wal_level`, slots, and worker parameters |
+| `migrate-schema-pre-data` | 4 | `--drop-dest` | Deploy `pg_dump -s --section=pre-data` to destination |
+| `setup-pub` | 5 | — | Create logical publication on source |
+| `setup-sub` | 6 | — | Create logical subscription on destination |
+| `repl-progress` | 7 | — | Monitor table states and byte sync progress |
+| `refresh-matviews` | 8 | — | Refresh materialized views on destination |
+| `sync-sequences` | 9 | — | Sync sequence values from source to destination |
+| `terminate-repl` | 10 | — | Stop forward subscription and publication |
+| `migrate-schema-post-data` | 10b | — | Deploy `pg_dump -s --section=post-data` (indexes, FKs) |
+| `sync-lobs` | 11a | — | Export/import Large Objects and remap table OIDs |
+| `sync-unlogged` | 11b | — | Truncate and copy `UNLOGGED` tables |
+| `enable-triggers` | 12 | — | Enable user triggers on destination tables |
+| `reassign-owner` | 13 | `--owner ROLE` | Reassign migrated object ownership |
+| `audit-objects` | 14 | — | Compare object counts (tables, views, indexes, sequences, functions) |
+| `validate-rows` | 15 | — | Compare table row counts (`COUNT(*)` or `--use-stats`) |
+| `cleanup` | 16 | — | Drop subscription, publication, and slot |
+| `setup-reverse` | 17 | — | Configure reverse replication (destination -> source) |
+
+### Utilities, Pipelines, and Wizard
+
+| Subcommand | Subcommand Options | Purpose |
+| :--- | :--- | :--- |
+| `stop-repl` | — | Run `ALTER SUBSCRIPTION ... DISABLE` |
+| `start-repl` | — | Run `ALTER SUBSCRIPTION ... ENABLE` |
+| `wait-sync` | — | Block until initial sync finishes |
+| `cleanup-reverse` | — | Drop reverse replication objects |
+| `generate-config` | `-o` / `--output FILE` | Write `config_migrator.sample.ini` template |
+| `init-replication` | `--drop-dest`, `--wait` | Execute Phases 1–2 (`check`..`setup-sub`, optional wait/parity, `audit-objects`) |
+| `post-migration` | — | Execute Phases 3–4 (`wait_for_sync`, `terminate-repl`, `refresh-matviews`, `sync-sequences`, `post-data`, `sync-lobs`, `sync-unlogged`, `enable-triggers`, `reassign-owner`, `audit-objects`, `validate-rows`) |
+| `wizard` | `--non-interactive` | Launch Rich MVC step-by-step assistant |
+
+## INI Configuration Schema (`config_migrator.ini`)
+
+| Section | Keys | Notes |
+| :--- | :--- | :--- |
+| `[source]` | `host`, `port`, `user`, `password`, `database` | Source PostgreSQL connection (`POSTGRES_*` defaults to localhost:5432/`postgres`) |
+| `[destination]` | `host`, `port`, `user`, `password`, `database` | Destination PostgreSQL connection |
+| `[replication]` | `publication_name`, `subscription_name`, `slot_name`, `target_schema`, `databases`, `source_host`, `source_port`, `dest_host`, `dest_port`, `loglevel`, `log_file` | Multi-schema (`public`, comma list, or `all`/`*`); multi-DB list or `*` |
+| `[database:<dbname>]` | `source_*`, `dest_*`, `target_schema` | Per-database connection and schema overrides (`src/config.py`) |
+
+Publication, subscription, and slot names receive an automatic `_{safe_db}_{safe_schema}` suffix (or `_multi_<md5[:8]>` for multiple schemas) via `Config.get_replication()`.
+
+## Exit Codes and Output Artifacts
+
+| Exit Code | Meaning |
+| :--- | :--- |
+| `0` | Success (`--help`, `--version`, `--dry-run`, or passing command) |
+| `1` | Validation mismatch, step failure, or missing configuration file |
+| `2` | Unhandled pipeline exception (error report written) |
+| `130` | User interrupt (`KeyboardInterrupt`) |
+
+| File | Location | Generated By |
+| :--- | :--- | :--- |
+| `pg_migrator.log` | `RESULTS/<timestamp>/` or `--log-file` | All CLI logging runs |
+| `report_init.html` | `RESULTS/<timestamp>/` | Successful `init-replication` |
+| `report_post.html` | `RESULTS/<timestamp>/` | Successful `post-migration` |
+| `report_init_error.html` | `RESULTS/<timestamp>/` | Fatal failure during `init-replication` |
+| `report_post_error.html` | `RESULTS/<timestamp>/` | Fatal failure during `post-migration` |

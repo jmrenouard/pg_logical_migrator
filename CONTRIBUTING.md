@@ -16,9 +16,11 @@ Thank you for your interest in contributing to **pg_logical_migrator**! We welco
 1. Fork the repository.
 2. Create a new branch for your feature or fix (`git checkout -b feature/my-new-feature`).
 3. Ensure your code follows the project's style and includes tests.
-4. Run tests to make sure everything is working:
+4. Run tests and static checks to verify your changes:
    ```bash
-   make test
+   make test-unit
+   ruff check src/ tests/
+   mypy src/
    ```
 5. Commit your changes and push to your fork.
 6. Open a Pull Request with a clear description of the changes.

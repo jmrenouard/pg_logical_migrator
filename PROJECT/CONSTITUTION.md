@@ -53,8 +53,8 @@ Migration history is critical for post-mortem analysis and compliance:
 
 ### Code Quality Gates
 
-- **Linting**: 100% pass rate on standard Python linters (Ruff/Flake8).
-- **Test Coverage**: Focus on 100% coverage for the core `src/replication.py` and `src/db_checks.py`.
+- **Linting & Typing**: Clean pass rate on `ruff check src/ tests/` and strict `mypy src/` checks.
+- **Test Coverage**: Maintain >= 70% overall CI coverage (`--cov-fail-under=70`) with thorough coverage across `src/migrator_components/replication.py`, `src/checker.py`, `src/post_sync.py`, and `src/validation.py`.
 
 ## Governance
 

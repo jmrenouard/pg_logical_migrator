@@ -17,12 +17,14 @@
 | Module | Class / Function | Responsibility |
 | :--- | :--- | :--- |
 | `src/config.py` | `Config` | Reads and validates `config_migrator.ini` |
-| `src/db.py` | `PostgresClient` | Low-level connection management and query execution |
+| `src/db.py` | `PostgresClient` | Connection pooling, identifier sanitization, password redaction |
+| `src/schema_utils.py` | `SchemaFilterMixin` | Schema-filter SQL builders (`public`, list, or `all`) |
 | `src/checker.py` | `DBChecker` | Steps 1–3: Connectivity, diagnostics, parameter checks |
-| `src/migrator.py` | `Migrator` | Steps 4–7, 12: Schema migration, pub/sub setup, cleanup |
-| `src/post_sync.py` | `PostSync` | Steps 8–11: MatViews refresh, sequence sync, trigger activation |
-| `src/validation.py` | `Validator` | Steps 13–14: Object audit and row parity comparison |
+| `src/migrator.py` | `Migrator` | Facade composing `src/migrator_components/` (`schema`, `replication`, `monitoring`, `data_sync`) |
+| `src/post_sync.py` | `PostSync` | Steps 8, 9, 12, 13: MatViews refresh, sequence sync, triggers, ownership |
+| `src/validation.py` | `Validator` | Steps 14–15: Object audit and row parity comparison |
 | `src/report_generator.py` | `ReportGenerator` | Generates self-contained HTML audit reports |
+| `src/cli/wizard.py` | `MigrationWizard`, `WizardModel`, `WizardView` | Rich MVC interactive migration assistant |
 
 ---
 
@@ -58,15 +60,17 @@ Entry point: `pg_migrator.py` (project root).
 | `--results-dir PATH` | string | `RESULTS/<timestamp>` | Output directory for logs and HTML reports |
 | `--loglevel LEVEL` | choice | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `--log-file FILE` | string | `pg_migrator.log` | Path to the log file |
-| `--sync-delay SECONDS` | integer | `10` | Seconds to poll after subscription creation for initial sync |
+| `--sync-delay SECONDS` | integer | `3600` | Max seconds to wait for initial sync to complete |
 | `--dry-run` / `-n` | flag | `False` | Preview steps without executing any changes |
+| `--verbose` / `-v` | flag | `False` | Print executed SQL commands, results, and errors to stderr |
+| `--use-stats` | flag | `False` | Use `pg_stat_user_tables` estimates instead of `COUNT(*)` |
 | `--version` / `-V` | flag | — | Display version and exit |
 
 ---
 
 ## Step-by-Step Wizard
 
-Launched via `python pg_migrator.py wizard`. Provides an interactive assistant for guided step-by-step migration execution using the `rich` library.
+Launched via `python pg_migrator.py wizard` (supports `--non-interactive`). Provides a Rich MVC assistant (`WizardModel`, `WizardView`, `MigrationWizard`) for guided step-by-step execution.
 
 ---
 
@@ -78,24 +82,30 @@ Executes **Phase 1** and **Phase 2**:
 - `check` (Step 1)
 - `diagnose` (Step 2)
 - `params` (Step 3)
-- `migrate-schema-pre-data` (Step 4)
+- `migrate-schema-pre-data` (Step 4, optional `--drop-dest`)
 - `setup-pub` (Step 5)
 - `setup-sub` (Step 6)
+- `wait_for_sync` (Step 7, when `--wait` is set)
+- `audit-objects` (Step 14)
+- `validate-rows` (Step 15, when `--wait` is set)
 
 ### `post-migration`
 
 Executes **Phase 3** and **Phase 4**:
-- `wait-for-sync` (Step 7: Monitoring)
+- `check` (Step 1)
+- `wait_for_sync` (Sync catch-up)
+- `terminate-repl` (Step 10)
 - `refresh-matviews` (Step 8)
 - `sync-sequences` (Step 9)
-- `terminate-repl` (Step 10: Terminate & Post-Schema)
-- `sync-lobs` (Step 11)
+- `migrate-schema-post-data` (Step 10.2)
+- `sync-lobs` (Step 11a)
+- `sync-unlogged` (Step 11b)
 - `enable-triggers` (Step 12)
 - `reassign-owner` (Step 13)
 - `audit-objects` (Step 14)
 - `validate-rows` (Step 15)
 
-All steps are wrapped in a `try/except` block. On any fatal exception, a partial error report is written to `RESULTS/<timestamp>/migration_report_error.html`.
+All steps are wrapped in a `try/except` block. On any fatal exception, a partial error report is written to `RESULTS/<timestamp>/report_init_error.html` or `report_post_error.html`.
 
 ---
 
@@ -106,7 +116,8 @@ All run outputs are stored in timestamped directories under `RESULTS/`.
 | Artifact | Path | Description |
 | :--- | :--- | :--- |
 | `pg_migrator.log` | `RESULTS/<timestamp>/` | Full structured log with timestamps |
-| `migration_report.html` | `RESULTS/<timestamp>/` | Self-contained HTML audit report |
+| `report_init.html` | `RESULTS/<timestamp>/` | Self-contained HTML audit report for `init-replication` |
+| `report_post.html` | `RESULTS/<timestamp>/` | Self-contained HTML audit report for `post-migration` |
 | `unit_tests.html` | `RESULTS/<timestamp>/` | Pytest HTML output (via `make test-report`) |
 
 Each HTML report step entry contains:

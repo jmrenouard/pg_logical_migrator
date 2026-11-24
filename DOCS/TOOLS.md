@@ -151,9 +151,11 @@ python pg_migrator.py [GLOBAL OPTIONS] <command> [COMMAND OPTIONS]
 | `--config FILE` | `-c` | string | `config_migrator.ini` | Path to the `.ini` configuration file |
 | `--results-dir DIR` | — | string | `RESULTS/<timestamp>` | Directory for storing results and HTML reports |
 | `--loglevel LEVEL` | — | choice | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `--log-file FILE` | — | string | pg_migrator.log | Path to the log file |
-| `--sync-delay SECONDS` | — | integer | `10` | Seconds to wait after subscription creation for initial sync |
+| `--log-file FILE` | — | string | `pg_migrator.log` | Path to the log file |
+| `--sync-delay SECONDS` | — | integer | `3600` | Max seconds to wait for initial sync to complete |
 | `--dry-run` | `-n` | flag | `False` | Simulate execution without making any changes |
+| `--verbose` | `-v` | flag | `False` | Print executed SQL commands, results, and errors to stderr |
+| `--use-stats` | — | flag | `False` | Estimate row counts from `pg_stat_user_tables` instead of `COUNT(*)` |
 
 ### Examples with global options
 
@@ -181,31 +183,31 @@ Each command corresponds to one or more steps in the 17-step migration workflow.
 | `check` | 1 | **SOURCE + DEST** | Test connectivity to source and destination databases |
 | `diagnose` | 2 | **SOURCE** | Pre-migration diagnostics: tables without PK, LOBs, identity columns, unowned sequences, unlogged/temp/foreign tables, materialized views |
 | `params` | 3 | **SOURCE + DEST** | Verify replication parameters (`wal_level`, `max_replication_slots`, `max_wal_senders`) |
-| `apply-params` | — | **SOURCE + DEST** | Utility: execute `ALTER SYSTEM SET` on **SOURCE** and/or **DEST** to fix missing parameters |
 | `migrate-schema-pre-data` | 4 | **SOURCE → DEST** | `pg_dump -s --section=pre-data` on **SOURCE** piped into `psql` on **DEST**. With `--drop-dest`: `DROP DATABASE` + `CREATE DATABASE` on **DEST** |
 
 ```bash
 python pg_migrator.py check            # SOURCE + DEST
 python pg_migrator.py diagnose         # SOURCE
 python pg_migrator.py params           # SOURCE + DEST
-python pg_migrator.py apply-params     # SOURCE + DEST
 python pg_migrator.py migrate-schema-pre-data # SOURCE → DEST
 ```
 
-### Replication Setup (Phase 2)
+### Replication Setup & Utilities (Phase 2)
 
 | Command | Step | Server | Description |
 | --- | --- | --- | --- |
-| `setup-pub` | 5 | **SOURCE** | `DROP PUBLICATION IF EXISTS` + `CREATE PUBLICATION … FOR ALL TABLES` on **SOURCE** |
+| `setup-pub` | 5 | **SOURCE** | `DROP PUBLICATION IF EXISTS` + `CREATE PUBLICATION … FOR ALL TABLES` (or filtered schemas) on **SOURCE** |
 | `setup-sub` | 6 | **DEST** | `DROP SUBSCRIPTION IF EXISTS` + `CREATE SUBSCRIPTION … CONNECTION '…' PUBLICATION …` on **DEST** |
 | `repl-progress` | 7 | **SOURCE + DEST** | Monitor byte-level data copy progress during initial synchronization |
-| `progress` | — | **SOURCE + DEST** | Utility: Quick one-shot status of replication progress |
+| `stop-repl` | — | **DEST** | Utility: Pause logical replication (`ALTER SUBSCRIPTION ... DISABLE`) |
+| `start-repl` | — | **DEST** | Utility: Resume logical replication (`ALTER SUBSCRIPTION ... ENABLE`) |
+| `wait-sync` | — | **DEST** | Utility: Block until replication reaches steady streaming state |
 
 ```bash
 python pg_migrator.py setup-pub        # SOURCE
 python pg_migrator.py setup-sub        # DEST
-python pg_migrator.py repl-progress    # Monitor progress (interactive)
-python pg_migrator.py progress         # Show progress (one-shot)
+python pg_migrator.py repl-progress    # Monitor progress
+python pg_migrator.py wait-sync        # Wait until initial copy completes
 ```
 
 ### Finalization (Phase 3)
@@ -214,20 +216,22 @@ python pg_migrator.py progress         # Show progress (one-shot)
 | --- | --- | --- | --- |
 | `refresh-matviews` | 8 | **DEST** | `REFRESH MATERIALIZED VIEW` for every materialized view on **DEST** |
 | `sync-sequences` | 9 | **SOURCE → DEST** | `SELECT last_value, is_called` on **SOURCE**, then `SELECT setval(…)` on **DEST** |
-| `terminate-repl` | 10 | **SOURCE → DEST** | Terminate replication and apply `post-data` schema (indexes, FKs) |
+| `terminate-repl` | 10 | **SOURCE → DEST** | Terminate replication, drop subscription on **DEST** and publication on **SOURCE** |
+| `migrate-schema-post-data` | 10b | **SOURCE → DEST** | Deploy `post-data` schema (indexes, foreign keys, constraints) |
 | `sync-lobs` | 11a | **SOURCE → DEST** | Synchronize Large Objects (LOBs) manually via temporary files and update matching OIDs |
 | `sync-unlogged` | 11b | **SOURCE → DEST** | Synchronize UNLOGGED tables via COPY |
 | `enable-triggers` | 12 | **DEST** | `ALTER TABLE … ENABLE TRIGGER ALL` on every user table on **DEST** |
-| `reassign-owner` | 13 | **DEST** | `REASSIGN OWNED BY ... TO ...` to ensure proper ownership matching source |
+| `reassign-owner` | 13 | **DEST** | Reassign object ownership (`--owner` overrides destination owner) |
 
 ```bash
-python pg_migrator.py refresh-matviews   # DEST
-python pg_migrator.py sync-sequences     # SOURCE → DEST
-python pg_migrator.py terminate-repl # SOURCE → DEST
-python pg_migrator.py sync-lobs          # SOURCE → DEST
-python pg_migrator.py sync-unlogged      # SOURCE → DEST
-python pg_migrator.py enable-triggers    # DEST
-python pg_migrator.py reassign-owner     # DEST
+python pg_migrator.py refresh-matviews         # DEST
+python pg_migrator.py sync-sequences           # SOURCE → DEST
+python pg_migrator.py terminate-repl           # SOURCE + DEST
+python pg_migrator.py migrate-schema-post-data # SOURCE → DEST
+python pg_migrator.py sync-lobs                # SOURCE → DEST
+python pg_migrator.py sync-unlogged            # SOURCE → DEST
+python pg_migrator.py enable-triggers          # DEST
+python pg_migrator.py reassign-owner           # DEST
 ```
 
 ### Validation & Cleanup (Phase 4)
@@ -254,13 +258,14 @@ python pg_migrator.py cleanup-reverse  # DEST + SOURCE
 
 | Command | Description |
 | --- | --- |
-| `init-replication` | Initialize replication and validate, leaving it active |
-| `post-migration` | Finish replication sync and complete validations, destructive cleanup |
-| `generate-config` | Generate a sample `config_migrator.ini` file |
+| `init-replication` | Initialize replication and validate, leaving replication active (`--drop-dest`, `--wait`) |
+| `post-migration` | Finish replication sync, finalize objects, validate, and stop replication |
+| `generate-config` | Generate a sample `config_migrator.ini` file (`-o/--output`) |
+| `wizard` | Launch the interactive Rich step-by-step assistant (`--non-interactive`) |
 
 ```bash
 # Incremental Pipeline Commands
-python pg_migrator.py init-replication
+python pg_migrator.py init-replication --wait
 python pg_migrator.py post-migration
 
 # Dry-run (shows steps without executing)
@@ -268,6 +273,9 @@ python pg_migrator.py --dry-run init-replication
 
 # Generate a config file
 python pg_migrator.py generate-config --output my_config.ini
+
+# Interactive or non-interactive Wizard
+python pg_migrator.py wizard --non-interactive
 ```
 
 ---
@@ -302,30 +310,33 @@ Runs the migration pipeline non-interactively in an incremental sequence via two
 
 ### A. Initialization (`init-replication`)
 
-1. **Connectivity Check** (`checker.check_connectivity()` on **SOURCE + DEST**)
-2. **Pre-Migration Diagnostics** (`checker.check_problematic_objects()` on **SOURCE**)
-3. **Replication Parameters Check** (`checker.check_replication_params()` on **SOURCE + DEST**)
-4. **Schema Pre-Data Migration** (`migrator.step4a_migrate_schema_pre_data()` on **SOURCE → DEST**)
-5. **Setup Publication** (`migrator.step5_setup_source()` on **SOURCE**)
-6. **Setup Subscription** (`migrator.step6_setup_destination()` on **DEST**)
-7. **Initial Data Sync Wait** (`migrator.wait_for_sync()` polling **DEST**)
-8. **Object Audit** (`validator.audit_objects()` on **SOURCE + DEST**)
-9. **Row Parity Check** (`validator.compare_row_counts()` on **SOURCE + DEST**)
+1. **Connectivity Check** (`checker.check_connectivity()` on **SOURCE + DEST**) [Step 1]
+2. **Pre-Migration Diagnostics** (`checker.check_problematic_objects()` on **SOURCE**) [Step 2]
+3. **Replication Parameters Check** (`checker.check_replication_params()` on **SOURCE + DEST**) [Step 3]
+4. **Schema Pre-Data Migration** (`migrator.step4a_migrate_schema_pre_data()` on **SOURCE → DEST**) [Step 4]
+5. **Setup Publication** (`migrator.step5_setup_source()` on **SOURCE**) [Step 5]
+6. **Setup Subscription** (`migrator.step6_setup_destination()` on **DEST**) [Step 6]
+7. **Initial Data Sync Wait** (`migrator.wait_for_sync()` when `--wait` is passed) [Step 7]
+8. **Object Audit** (`validator.audit_objects()` on **SOURCE + DEST**) [Step 14]
+9. **Row Parity Check** (`validator.compare_row_counts()` when `--wait` is passed) [Step 15]
 
 ### B. Post Migration (`post-migration`)
 
-1. **Connectivity Check** (`checker.check_connectivity()`)
-2. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()`) [Step 8]
-3. **Sync Sequences** (`post_sync.sync_sequences()`) [Step 9]
-4. **Terminate Replication & Schema Post-Data** (`migrator.step10_terminate_replication()` + `migrator.step4b_migrate_schema_post_data()`) [Step 10]
-5. **Sync Large Objects (LOBs)** (`migrator.sync_large_objects()`) [Step 11]
-6. **Enable Triggers** (`post_sync.enable_triggers()`) [Step 12]
-7. **Reassign Ownership** (`post_sync.reassign_ownership()`) [Step 13]
-8. **Object Audit** (`validator.audit_objects()`) [Step 14]
-9. **Row Parity Check** (`validator.compare_row_counts()`) [Step 15]
-10. **Report Generation** (Final Audit HTML)
+1. **Connectivity Check** (`checker.check_connectivity()`) [Step 1]
+2. **Wait for Sync** (`migrator.wait_for_sync()`)
+3. **Terminate Replication** (`migrator.step10_terminate_replication()`) [Step 10]
+4. **Refresh Materialized Views** (`post_sync.refresh_materialized_views()`) [Step 8]
+5. **Sync Sequences** (`post_sync.sync_sequences()`) [Step 9]
+6. **Schema Post-Data** (`migrator.step4b_migrate_schema_post_data()`) [Step 10.2]
+7. **Sync Large Objects (LOBs)** (`migrator.sync_large_objects()`) [Step 11a]
+8. **Sync UNLOGGED Tables** (`migrator.sync_unlogged_tables()`) [Step 11b]
+9. **Enable Triggers** (`post_sync.enable_triggers()`) [Step 12]
+10. **Reassign Ownership** (`post_sync.reassign_ownership()`) [Step 13]
+11. **Object Audit** (`validator.audit_objects()`) [Step 14]
+12. **Row Parity Check** (`validator.compare_row_counts()`) [Step 15]
+13. **Report Generation** (`RESULTS/<timestamp>/report_post.html`)
 
-A timestamped HTML report is generated at the completion of *both* commands. If any step raises a fatal exception, a partial error report is written instead.
+A timestamped HTML report is generated at the completion of *both* commands. If any step raises a fatal exception, a partial error report (`report_init_error.html` or `report_post_error.html`) is written instead.
 
 **Example output directory**:
 
@@ -333,7 +344,8 @@ A timestamped HTML report is generated at the completion of *both* commands. If 
 RESULTS/
 └── 20260329_221400/
     ├── pg_migrator.log
-    └── migration_report.html
+    ├── report_init.html
+    └── report_post.html
 ```
 
 **Dry-run mode**: Use `--dry-run` to preview the sequence without executing any step:
@@ -348,8 +360,8 @@ python pg_migrator.py --dry-run init-replication
 
 | Artifact | Location | Description |
 | --- | --- | --- |
-| `pg_migrator.log` | `RESULTS/<timestamp>/` (pipeline) or project root | Full structured log of all SQL and shell commands with timestamps |
-| `migration_report.html` | `RESULTS/<timestamp>/` | Self-contained, audit-ready HTML report of every step |
+| `pg_migrator.log` | `RESULTS/<timestamp>/` (pipeline) or `--log-file` | Full structured log of all SQL and shell commands with timestamps |
+| `report_init.html` / `report_post.html` | `RESULTS/<timestamp>/` | Self-contained HTML reports (`*_error.html` generated on fatal failures) |
 | `unit_tests.html` | `RESULTS/<timestamp>/` | Generated by `make test-report`; pytest HTML output |
 
 The HTML report contains, for each step:
@@ -376,7 +388,7 @@ This command:
 1. Creates (or reuses) the `venv/` virtual environment and installs all dependencies plus `pyinstaller`.
 2. Runs PyInstaller in `--onefile` mode, bundling:
    - `pg_migrator.py` — the CLI entry point
-   - `src/` — all migration modules (`migrator.py`, `main.py`, `checker.py`, `post_sync.py`, `validation.py`, …)
+   - `src/` — all migration modules (`config.py`, `db.py`, `checker.py`, `migrator.py`, `migrator_components/`, `post_sync.py`, `validation.py`, `cli/`, …)
    - `config_migrator.sample.ini` — the sample configuration template
 3. Writes the executable to **`dist/pg_migrator`**.
 
